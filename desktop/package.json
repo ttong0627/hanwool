@@ -1,0 +1,30 @@
+{
+  "name": "hanwool-desktop",
+  "version": "1.0.0",
+  "description": "경안시장 집배송 관리시스템 데스크탑 앱",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "NODE_ENV=development electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.hanwool.delivery",
+    "productName": "경안시장 집배송",
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["Korean"],
+      "language": "1042"
+    }
+  }
+}
