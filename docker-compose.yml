@@ -34,11 +34,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:-hanwool-secret-change-me}
       AES_KEY: ${AES_KEY:-hanwool-aes-32byte-key-change!!}
-      SOLAPI_API_KEY: ${SOLAPI_API_KEY:-}
-      SOLAPI_API_SECRET: ${SOLAPI_API_SECRET:-}
-      SOLAPI_SENDER: ${SOLAPI_SENDER:-}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
-      CORS_ORIGINS: http://localhost:5173,http://localhost:80
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}
     ports:
       - "8000:8000"
     depends_on:
