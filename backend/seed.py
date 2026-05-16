@@ -3,12 +3,11 @@
 실행: python seed.py
 """
 import asyncio
-from app.core.database import engine, AsyncSessionLocal
+from app.core.database import AsyncSessionLocal
 from app.core.security import hash_password, encrypt_field, hash_phone
 from app.models.user import User, UserRole
 from app.models.order import Order, OrderStatus
-from app.services.order_service import _generate_order_no
-from datetime import datetime, date
+from datetime import date
 from sqlalchemy import select
 
 
@@ -30,7 +29,7 @@ async def seed():
             role=UserRole.admin,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 1"),
-            hashed_password=hash_password("admin1234"),
+            password_hash=hash_password("admin1234"),
             is_active=True,
         )
 
@@ -42,7 +41,7 @@ async def seed():
             role=UserRole.receiver,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 경안시장"),
-            hashed_password=hash_password("receiver1234"),
+            password_hash=hash_password("receiver1234"),
             is_active=True,
         )
 
@@ -54,7 +53,7 @@ async def seed():
             role=UserRole.driver,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 2"),
-            hashed_password=hash_password("driver1234"),
+            password_hash=hash_password("driver1234"),
             is_active=True,
         )
 
@@ -76,7 +75,7 @@ async def seed():
                 role=UserRole.customer,
                 dong=dong,
                 address_enc=encrypt_field(address),
-                hashed_password=hash_password("customer1234"),
+                password_hash=hash_password("customer1234"),
                 is_active=True,
             )
             customer_objects.append(c)
