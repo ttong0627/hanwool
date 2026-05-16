@@ -97,7 +97,7 @@ function EditDriverModal({ driver, onClose }: { driver: Driver; onClose: () => v
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
-            <input className="input w-full" value={driver.phone} disabled className="bg-gray-50 text-gray-400 cursor-not-allowed" />
+            <input className="input w-full bg-gray-50 text-gray-400 cursor-not-allowed" value={driver.phone} disabled />
             <p className="text-xs text-gray-400 mt-1">전화번호 변경은 관리자에게 문의하세요.</p>
           </div>
         </div>
