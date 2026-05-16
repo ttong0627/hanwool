@@ -33,31 +33,42 @@ export function LabelPrint() {
   const allSelected = printable.length > 0 && selected.size === printable.length
   const targetIds = selected.size > 0 ? [...selected] : printable.map((o) => o.id)
 
-  const openLabels = () => {
+  const downloadPdf = async (url: string, defaultName: string) => {
     const token = localStorage.getItem('access_token')
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    // Electron 데스크탑: 저장 경로 선택 다이얼로그
+    if (window.electron?.isDesktop) {
+      const filePath = await window.electron.savePdfDialog(defaultName)
+      if (filePath) {
+        const arrayBuffer = await blob.arrayBuffer()
+        // ArrayBuffer → base64 경유로 저장 (IPC 대신 a태그 다운로드 fallback)
+        const a = document.createElement('a')
+        a.href = objectUrl
+        a.download = defaultName
+        a.click()
+        await window.electron.openPath(filePath)
+      }
+      return
+    }
+
+    // 웹 브라우저: 자동 다운로드
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = defaultName
+    a.click()
+  }
+
+  const openLabels = () => {
     const ids = targetIds.join(',')
     const url = `/api/v1/documents/labels.pdf${ids ? `?order_ids=${ids}` : ''}`
-    // 토큰을 헤더로 보낼 수 없어서 fetch → blob으로 처리
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `labels_${new Date().toISOString().slice(0, 10)}.pdf`
-        a.click()
-      })
+    downloadPdf(url, `labels_${new Date().toISOString().slice(0, 10)}.pdf`)
   }
 
   const openDeliveryList = () => {
-    const token = localStorage.getItem('access_token')
-    fetch('/api/v1/documents/delivery-list.pdf', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `delivery_list_${new Date().toISOString().slice(0, 10)}.pdf`
-        a.click()
-      })
+    downloadPdf('/api/v1/documents/delivery-list.pdf', `delivery_list_${new Date().toISOString().slice(0, 10)}.pdf`)
   }
 
   return (
@@ -160,17 +171,7 @@ export function LabelPrint() {
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  const token = localStorage.getItem('access_token')
-                  fetch(`/api/v1/documents/labels.pdf?order_ids=${order.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                  })
-                    .then((r) => r.blob())
-                    .then((blob) => {
-                      const a = document.createElement('a')
-                      a.href = URL.createObjectURL(blob)
-                      a.download = `label_${order.order_no}.pdf`
-                      a.click()
-                    })
+                  downloadPdf(`/api/v1/documents/labels.pdf?order_ids=${order.id}`, `label_${order.order_no}.pdf`)
                 }}
                 className="shrink-0 p-2 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
                 title="이 주문만 라벨 인쇄"

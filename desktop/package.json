@@ -1,12 +1,14 @@
 {
   "name": "hanwool-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "경안시장 집배송 관리시스템 데스크탑 앱",
   "main": "electron/main.js",
   "scripts": {
     "start": "NODE_ENV=development electron .",
+    "start:prod": "electron .",
     "build": "electron-builder",
-    "build:win": "electron-builder --win"
+    "build:win": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -15,16 +17,38 @@
   "build": {
     "appId": "com.hanwool.delivery",
     "productName": "경안시장 집배송",
-    "directories": { "output": "dist" },
+    "copyright": "Copyright © 2026 경안시장상인회",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "electron/**/*",
+      "!electron/offline.html",
+      "electron/offline.html"
+    ],
+    "extraFiles": [
+      { "from": "assets", "to": "resources/assets", "filter": ["**/*"] }
+    ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.business"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerLanguages": ["Korean"],
-      "language": "1042"
-    }
+      "language": "1042",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "경안시장 집배송"
+    },
+    "publish": null
   }
 }

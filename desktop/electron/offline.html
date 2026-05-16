@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서버 연결 오류</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Malgun Gothic', sans-serif;
+      background: #fff7ed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .box {
+      background: white;
+      border-radius: 20px;
+      padding: 48px 40px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+      max-width: 480px;
+    }
+    .icon { font-size: 64px; margin-bottom: 16px; }
+    h1 { font-size: 24px; color: #c2410c; margin-bottom: 8px; }
+    p { font-size: 15px; color: #6b7280; line-height: 1.6; margin-bottom: 24px; }
+    .server { background: #f3f4f6; border-radius: 8px; padding: 10px 16px; font-size: 13px; color: #374151; font-family: monospace; margin-bottom: 24px; }
+    button {
+      background: #f97316;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 32px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover { background: #ea580c; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon">🔌</div>
+    <h1>서버에 연결할 수 없습니다</h1>
+    <p>경안시장 집배송 서버에 연결하지 못했습니다.<br>네트워크 상태를 확인하고 다시 시도해주세요.</p>
+    <div class="server" id="serverUrl"></div>
+    <button onclick="location.reload()">다시 연결하기</button>
+  </div>
+  <script>
+    // 서버 URL 표시 (main.js에서 주입 불가하므로 일반 표시)
+    document.getElementById('serverUrl').textContent = '서버: http://34.64.146.168'
+  </script>
+</body>
+</html>
