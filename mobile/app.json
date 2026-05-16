@@ -16,13 +16,47 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f97316"
       },
-      "package": "com.hanwool.delivery"
+      "package": "com.hanwool.delivery",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.SEND_SMS",
+        "android.permission.READ_CONTACTS"
+      ]
     },
     "ios": {
-      "bundleIdentifier": "com.hanwool.delivery"
+      "bundleIdentifier": "com.hanwool.delivery",
+      "infoPlist": {
+        "NSCameraUsageDescription": "배달 완료 사진 촬영에 카메라를 사용합니다.",
+        "NSPhotoLibraryUsageDescription": "배달 완료 사진을 갤러리에서 선택할 수 있습니다.",
+        "NSPhotoLibraryAddUsageDescription": "배달 완료 사진을 갤러리에 저장합니다.",
+        "NSLocationWhenInUseUsageDescription": "배송 경로 안내 및 실시간 위치 공유에 위치 정보를 사용합니다.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "배송 중 백그라운드 위치 추적으로 관리자가 배송 현황을 확인합니다.",
+        "NSLocationAlwaysUsageDescription": "배송 중 백그라운드 위치 추적으로 관리자가 배송 현황을 확인합니다."
+      }
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "배송 중 백그라운드 위치 추적으로 관리자가 배송 현황을 확인합니다.",
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "배달 완료 사진을 갤러리에서 선택할 수 있습니다.",
+          "cameraPermission": "배달 완료 사진 촬영에 카메라를 사용합니다."
+        }
+      ]
+    ],
     "extra": {
-      "apiUrl": "http://localhost:8000"
+      "apiUrl": "http://34.64.146.168:8000"
     }
   }
 }
