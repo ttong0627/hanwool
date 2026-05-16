@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
     get_current_user,
-    require_admin_or_above,
     require_receiver_or_above,
     require_super_admin,
 )
@@ -75,10 +74,13 @@ async def create_user(
 async def list_users(
     role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_admin_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
     q = select(User).where(User.deleted_at == None, User.is_active == True)
-    if role:
+    # receiver는 고객 목록만 조회 가능
+    if current_user.role == "receiver":
+        q = q.where(User.role == "customer")
+    elif role:
         q = q.where(User.role == role)
     result = await db.execute(q)
     return [_to_out(u) for u in result.scalars().all()]
