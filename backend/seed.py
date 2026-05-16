@@ -21,6 +21,17 @@ async def seed():
 
         print("시드 데이터 생성 중...")
 
+        # 최고관리자
+        super_admin = User(
+            name_enc=encrypt_field("최고관리자"),
+            phone_enc=encrypt_field("010-9999-9999"),
+            phone_hash=hash_phone("010-9999-9999"),
+            role=UserRole.super_admin,
+            dong="경안동",
+            password_hash=hash_password("super1234!"),
+            is_active=True,
+        )
+
         # 관리자
         admin = User(
             name_enc=encrypt_field("관리자"),
@@ -80,10 +91,11 @@ async def seed():
             )
             customer_objects.append(c)
 
-        db.add_all([admin, receiver, driver] + customer_objects)
+        db.add_all([super_admin, admin, receiver, driver] + customer_objects)
         await db.flush()
 
-        print(f"  관리자: admin / admin1234")
+        print(f"  최고관리자: 010-9999-9999 / super1234!")
+        print(f"  관리자: 010-0000-0000 / admin1234")
         print(f"  접수자: 010-1111-1111 / receiver1234")
         print(f"  기사:   010-2222-2222 / driver1234")
         print(f"  고객 5명 생성 완료")
@@ -104,7 +116,6 @@ async def seed():
                 customer_phone_enc=customer.phone_enc,
                 receiver_id=receiver.id,
                 delivery_address_enc=customer.address_enc,
-                delivery_address_plain=f"테스트 주소 {i}",
                 dong=dong,
                 items_desc=items,
                 quantity=qty,
