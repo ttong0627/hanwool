@@ -1,5 +1,5 @@
 """개인정보 폐기 서비스 (계약 종료 시 실행)"""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ DELETED_PLACEHOLDER = "[DELETED]"
 
 async def destroy_personal_data(db: AsyncSession, confirmed_by: int) -> dict:
     """모든 고객 개인정보 완전 폐기"""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     await db.execute(
         update(User).where(User.role == "customer").values(

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin
+from app.api.v1.deps import require_admin, require_super_admin
 from app.core.database import get_db
 from app.models.complaint import Complaint
 from app.models.order import Order, OrderStatus
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/admin", tags=["관리자"])
 
 
 @router.get("/dashboard")
-async def get_dashboard(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_admin)):
+async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     today_start = datetime.combine(date.today(), datetime.min.time())
 
     total_today = (await db.execute(
@@ -124,6 +124,6 @@ async def stats_by_dong_period(days: int = 30, db: AsyncSession = Depends(get_db
 
 
 @router.post("/privacy/destroy")
-async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_admin)):
+async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_super_admin)):
     result = await destroy_personal_data(db, current_user.id)
     return result

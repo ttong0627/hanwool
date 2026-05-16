@@ -124,6 +124,49 @@ def generate_receipt_pdf(order: dict) -> bytes:
     return buffer.getvalue()
 
 
+def generate_privacy_destruction_pdf(info: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = _get_doc(buffer, "개인정보 폐기 확인서")
+    elements = []
+
+    elements.append(Paragraph("개 인 정 보 폐 기 확 인 서", _header_style()))
+    elements.append(Paragraph("경안시장 집배송 서비스", _sub_style()))
+    elements.append(Spacer(1, 0.5*cm))
+
+    data = [
+        ["기관명", "경기도 광주시 경안시장 집배송 서비스"],
+        ["폐기 일시", info.get("destroyed_at", "")],
+        ["폐기 항목", "고객 성명, 연락처, 주소, 주문 개인정보, 민원 개인정보, SMS 로그"],
+        ["폐기 방법", "AES-256 암호화 필드 [DELETED] 덮어쓰기 및 해시 초기화"],
+        ["폐기 사유", info.get("reason", "계약 종료에 따른 개인정보 보호법 제21조 이행")],
+        ["처리 담당자", info.get("confirmed_by_name", "")],
+        ["확인 내용", "위와 같이 개인정보를 완전히 폐기하였음을 확인합니다."],
+    ]
+    table = Table(data, colWidths=[4.5*cm, 12.5*cm])
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FEE2E2")),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 1.5*cm))
+    elements.append(Paragraph(
+        f"폐기 일자: {info.get('destroyed_at', '')}",
+        ParagraphStyle("date", fontName="Helvetica", fontSize=10, alignment=TA_CENTER, textColor=colors.grey)
+    ))
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(Paragraph(
+        "담당자 서명: ___________________",
+        ParagraphStyle("sign", fontName="Helvetica", fontSize=12, alignment=TA_CENTER)
+    ))
+    doc.build(elements)
+    return buffer.getvalue()
+
+
 def generate_complaint_report_pdf(complaint: dict) -> bytes:
     buffer = io.BytesIO()
     doc = _get_doc(buffer, "민원 처리 확인증")

@@ -6,12 +6,16 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_receiver_or_above
+from app.api.v1.deps import require_receiver_or_above, require_super_admin
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
+from app.core.security import decrypt_field
 from app.models.order import Order
+from app.models.user import User
 from app.services.order_service import decrypt_order, get_orders_today
 from app.services.pdf_service import (generate_complaint_report_pdf,
                                        generate_delivery_list_pdf,
+                                       generate_privacy_destruction_pdf,
                                        generate_receipt_pdf)
 from app.services.qr_service import generate_labels_pdf
 
@@ -103,4 +107,25 @@ async def download_labels(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=labels_{date.today().strftime('%Y%m%d')}.pdf"},
+    )
+
+
+@router.get("/privacy-destruction.pdf")
+async def download_privacy_destruction_pdf(
+    destroyed_at: str,
+    reason: Optional[str] = Query(None),
+    current_user: User = Depends(require_super_admin),
+):
+    """개인정보 폐기 확인서 PDF — super_admin 전용"""
+    name = decrypt_field(current_user.name_enc)
+    info = {
+        "destroyed_at": destroyed_at,
+        "reason": reason or "계약 종료에 따른 개인정보 보호법 제21조 이행",
+        "confirmed_by_name": name,
+    }
+    pdf_bytes = generate_privacy_destruction_pdf(info)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=privacy_destruction_{date.today().strftime('%Y%m%d')}.pdf"},
     )
