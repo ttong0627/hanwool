@@ -34,6 +34,24 @@ def require_roles(*roles: str):
     return check
 
 
-require_admin = require_roles("admin")
-require_admin_or_receiver = require_roles("admin", "receiver")
-require_driver = require_roles("driver", "admin")
+# 역할 계층: super_admin > admin > receiver/driver > customer
+
+# super_admin 전용 (DB 접근, 개인정보 폐기, 계정 역할 변경)
+require_super_admin = require_roles("super_admin")
+
+# admin 이상 (운영 관리: 통계, 민원, 기사 관리)
+require_admin_or_above = require_roles("super_admin", "admin")
+
+# receiver 이상 (주문 접수 + 고객 조회)
+require_receiver_or_above = require_roles("super_admin", "admin", "receiver")
+
+# driver 이상 (배송 관련)
+require_driver_or_above = require_roles("super_admin", "admin", "driver")
+
+# 스태프 전체 (고객 제외 모든 역할)
+require_staff = require_roles("super_admin", "admin", "receiver", "driver")
+
+# 하위 호환 별칭
+require_admin = require_admin_or_above
+require_admin_or_receiver = require_receiver_or_above
+require_driver = require_driver_or_above

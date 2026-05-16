@@ -8,6 +8,7 @@ from app.core.database import Base
 
 
 class UserRole(str, PyEnum):
+    super_admin = "super_admin"
     admin = "admin"
     receiver = "receiver"
     driver = "driver"

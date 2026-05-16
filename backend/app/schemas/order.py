@@ -58,3 +58,30 @@ class OrderListOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class OrderTransferRequest(BaseModel):
+    to_driver_id: int
+    reason: Optional[str] = None
+
+
+class OrderTransferOut(BaseModel):
+    id: int
+    order_id: int
+    from_driver_id: int
+    to_driver_id: int
+    reason: Optional[str] = None
+    transferred_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class OrderEditRequest(BaseModel):
+    delivery_address: Optional[str] = None
+    dong: Optional[str] = None
+    items_desc: Optional[str] = None
+    quantity: Optional[int] = None
+    notes: Optional[str] = None
+    request: Optional[str] = None
+    weight_estimate: Optional[str] = None

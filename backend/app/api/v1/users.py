@@ -1,14 +1,28 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_admin, require_admin_or_receiver
+from app.api.v1.deps import (
+    get_current_user,
+    require_admin_or_above,
+    require_receiver_or_above,
+    require_super_admin,
+)
 from app.core.database import get_db
 from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone
-from app.models.user import User
-from app.schemas.user import UserCreate, UserOut, UserUpdate
+from app.models.user import User, UserRole
+from app.schemas.user import RoleChangeRequest, UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["사용자"])
+
+# 역할별 생성 가능한 하위 역할 정의
+_CREATABLE_ROLES = {
+    "super_admin": {"super_admin", "admin", "receiver", "driver", "customer"},
+    "admin": {"receiver", "driver", "customer"},
+    "receiver": {"customer"},
+}
 
 
 def _to_out(user: User) -> UserOut:
@@ -25,16 +39,29 @@ def _to_out(user: User) -> UserOut:
 
 
 @router.post("/", response_model=UserOut, status_code=201)
-async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
+async def create_user(
+    data: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_receiver_or_above),
+):
+    allowed = _CREATABLE_ROLES.get(current_user.role, set())
+    target_role = data.role or "customer"
+    if target_role not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"'{current_user.role}' 권한으로는 '{target_role}' 역할을 생성할 수 없습니다.",
+        )
+
     phone_hash = hash_phone(data.phone)
     existing = await db.execute(select(User).where(User.phone_hash == phone_hash))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
+
     user = User(
         name_enc=encrypt_field(data.name),
         phone_enc=encrypt_field(data.phone),
         phone_hash=phone_hash,
-        role=data.role,
+        role=target_role,
         dong=data.dong,
         address_enc=encrypt_field(data.address) if data.address else None,
         password_hash=hash_password(data.password) if data.password else None,
@@ -45,7 +72,11 @@ async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db), _=De
 
 
 @router.get("/", response_model=list[UserOut])
-async def list_users(role: str = None, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
+async def list_users(
+    role: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin_or_above),
+):
     q = select(User).where(User.deleted_at == None, User.is_active == True)
     if role:
         q = q.where(User.role == role)
@@ -58,8 +89,26 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return _to_out(current_user)
 
 
+@router.get("/search/phone", response_model=UserOut | None)
+async def search_by_phone(
+    phone: str,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    phone_hash = hash_phone(phone)
+    result = await db.execute(
+        select(User).where(User.phone_hash == phone_hash, User.role == "customer")
+    )
+    user = result.scalar_one_or_none()
+    return _to_out(user) if user else None
+
+
 @router.get("/{user_id}", response_model=UserOut)
-async def get_user(user_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
+async def get_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -68,7 +117,12 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db), _=Depends(r
 
 
 @router.put("/{user_id}", response_model=UserOut)
-async def update_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
+async def update_user(
+    user_id: int,
+    data: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -84,11 +138,22 @@ async def update_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends
     return _to_out(user)
 
 
-@router.get("/search/phone")
-async def search_by_phone(phone: str, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
-    phone_hash = hash_phone(phone)
-    result = await db.execute(select(User).where(User.phone_hash == phone_hash, User.role == "customer"))
+@router.put("/{user_id}/role", response_model=UserOut)
+async def change_user_role(
+    user_id: int,
+    data: RoleChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_super_admin),
+):
+    """역할 변경 — super_admin 전용"""
+    valid_roles = {r.value for r in UserRole}
+    if data.role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다. 가능: {valid_roles}")
+
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        return None
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    user.role = data.role
     return _to_out(user)

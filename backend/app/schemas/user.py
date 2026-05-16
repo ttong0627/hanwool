@@ -20,6 +20,10 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class RoleChangeRequest(BaseModel):
+    role: str
+
+
 class UserOut(BaseModel):
     id: int
     name: str
