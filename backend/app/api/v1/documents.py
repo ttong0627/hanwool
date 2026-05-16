@@ -1,13 +1,15 @@
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin_or_receiver
+from app.api.v1.deps import require_receiver_or_above
 from app.core.database import get_db
-from app.services.order_service import get_orders_today
+from app.models.order import Order
+from app.services.order_service import decrypt_order, get_orders_today
 from app.services.pdf_service import (generate_complaint_report_pdf,
                                        generate_delivery_list_pdf,
                                        generate_receipt_pdf)
@@ -17,7 +19,10 @@ router = APIRouter(prefix="/documents", tags=["문서"])
 
 
 @router.get("/delivery-list.pdf")
-async def download_delivery_list(db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
+async def download_delivery_list(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
     orders = await get_orders_today(db)
     today = date.today().strftime("%Y년 %m월 %d일")
     pdf_bytes = generate_delivery_list_pdf(orders, today)
@@ -29,10 +34,11 @@ async def download_delivery_list(db: AsyncSession = Depends(get_db), _=Depends(r
 
 
 @router.get("/receipt/{order_id}.pdf")
-async def download_receipt(order_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
-    from sqlalchemy import select
-    from app.models.order import Order
-    from app.services.order_service import decrypt_order
+async def download_receipt(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
@@ -48,8 +54,11 @@ async def download_receipt(order_id: int, db: AsyncSession = Depends(get_db), _=
 
 
 @router.get("/complaint/{complaint_id}.pdf")
-async def download_complaint_report(complaint_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
-    from sqlalchemy import select
+async def download_complaint_report(
+    complaint_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
     from app.models.complaint import Complaint
     from app.core.security import decrypt_field
     result = await db.execute(select(Complaint).where(Complaint.id == complaint_id))
@@ -59,8 +68,8 @@ async def download_complaint_report(complaint_id: int, db: AsyncSession = Depend
         raise HTTPException(status_code=404, detail="민원을 찾을 수 없습니다.")
     complaint_dict = {
         "id": c.id,
-        "customer_name": decrypt_field(c.customer_name_enc),
-        "customer_phone": decrypt_field(c.customer_phone_enc),
+        "customer_name": decrypt_field(c.customer_name_enc) if c.customer_name_enc else "",
+        "customer_phone": decrypt_field(c.customer_phone_enc) if c.customer_phone_enc else "",
         "channel": c.channel,
         "content": c.content,
         "result": c.result or "",
@@ -76,8 +85,19 @@ async def download_complaint_report(complaint_id: int, db: AsyncSession = Depend
 
 
 @router.get("/labels.pdf")
-async def download_labels(db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
-    orders = await get_orders_today(db)
+async def download_labels(
+    order_ids: Optional[str] = Query(None, description="쉼표 구분 주문 ID (없으면 오늘 전체)"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """QR 라벨 PDF — order_ids 지정 시 선택 출력, 없으면 오늘 전체"""
+    if order_ids:
+        ids = [int(i.strip()) for i in order_ids.split(",") if i.strip().isdigit()]
+        result = await db.execute(select(Order).where(Order.id.in_(ids)).order_by(Order.sequence, Order.created_at))
+        orders = [decrypt_order(o) for o in result.scalars().all()]
+    else:
+        orders = await get_orders_today(db)
+
     pdf_bytes = generate_labels_pdf(orders)
     return Response(
         content=pdf_bytes,

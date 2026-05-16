@@ -11,6 +11,7 @@ import { Reports } from '@/pages/admin/Reports'
 import { Privacy } from '@/pages/admin/Privacy'
 import { OrderForm } from '@/pages/receiver/OrderForm'
 import { ReceiverOrderList } from '@/pages/receiver/OrderList'
+import { LabelPrint } from '@/pages/receiver/LabelPrint'
 
 function PrivateRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const user = useAuthStore((s) => s.user)
@@ -48,6 +49,7 @@ export default function App() {
             <Routes>
               <Route index element={<OrderForm />} />
               <Route path="list" element={<ReceiverOrderList />} />
+              <Route path="labels" element={<LabelPrint />} />
             </Routes>
           </Layout>
         </PrivateRoute>
