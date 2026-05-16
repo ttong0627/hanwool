@@ -5,11 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, require_admin, require_admin_or_receiver
+from app.api.v1.deps import require_receiver_or_above
 from app.core.database import get_db
 from app.core.security import decrypt_field, encrypt_field
 from app.models.complaint import Complaint
-from app.models.user import User
 from app.schemas.complaint import ComplaintCreate, ComplaintOut, ComplaintUpdate
 from app.services.sms_service import SMS_TEMPLATES
 
@@ -37,7 +36,7 @@ def _decrypt_complaint(c: Complaint) -> dict:
 async def create_complaint(
     data: ComplaintCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_admin_or_receiver),
+    _=Depends(require_receiver_or_above),
 ):
     complaint = Complaint(
         order_id=data.order_id,
@@ -56,7 +55,7 @@ async def create_complaint(
 
 
 @router.get("/")
-async def list_complaints(status: Optional[str] = None, db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
+async def list_complaints(status: Optional[str] = None, db: AsyncSession = Depends(get_db), _=Depends(require_receiver_or_above)):
     q = select(Complaint).order_by(Complaint.created_at.desc())
     if status:
         q = q.where(Complaint.status == status)
@@ -69,7 +68,7 @@ async def update_complaint(
     complaint_id: int,
     data: ComplaintUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_admin_or_receiver),
+    _=Depends(require_receiver_or_above),
 ):
     result = await db.execute(select(Complaint).where(Complaint.id == complaint_id))
     complaint = result.scalar_one_or_none()
