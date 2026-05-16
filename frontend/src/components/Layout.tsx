@@ -22,7 +22,7 @@ const receiverNavs = [
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
-  const navs = user?.role === 'admin' ? adminNavs : receiverNavs
+  const navs = ['admin', 'super_admin'].includes(user?.role || '') ? adminNavs : receiverNavs
 
   const handleLogout = () => { logout(); navigate('/login') }
 

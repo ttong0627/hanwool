@@ -1,10 +1,10 @@
-import { useEffect } from 'react'
-import { MapPin } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { MapPin, Loader2 } from 'lucide-react'
 
 declare global {
   interface Window {
     daum: {
-      Postcode: new (opts: { oncomplete: (data: DaumResult) => void; onclose?: () => void }) => { open: () => void }
+      Postcode: new (opts: { oncomplete: (data: DaumResult) => void }) => { open: () => void }
     }
   }
 }
@@ -23,22 +23,29 @@ interface Props {
 }
 
 export function KakaoAddressSearch({ value, onChange, placeholder, className }: Props) {
+  const [ready, setReady] = useState(false)
+
   useEffect(() => {
+    if (window.daum?.Postcode) { setReady(true); return }
+
     const id = 'daum-postcode-sdk'
-    if (!document.getElementById(id)) {
-      const s = document.createElement('script')
+    let s = document.getElementById(id) as HTMLScriptElement | null
+
+    if (!s) {
+      s = document.createElement('script')
       s.id = id
-      s.src = '//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
+      s.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
       s.async = true
       document.head.appendChild(s)
     }
+
+    const onLoad = () => setReady(true)
+    s.addEventListener('load', onLoad)
+    return () => s?.removeEventListener('load', onLoad)
   }, [])
 
   const open = () => {
-    if (!window.daum?.Postcode) {
-      alert('주소 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.')
-      return
-    }
+    if (!ready || !window.daum?.Postcode) return
     new window.daum.Postcode({
       oncomplete: (data) => {
         const base = data.roadAddress || data.jibunAddress
@@ -61,10 +68,13 @@ export function KakaoAddressSearch({ value, onChange, placeholder, className }: 
       <button
         type="button"
         onClick={open}
-        className="flex items-center gap-1.5 px-3 py-2 bg-brand-500 text-white text-sm font-medium rounded-xl hover:bg-brand-600 active:bg-brand-700 transition-colors shrink-0"
+        disabled={!ready}
+        className="flex items-center gap-1.5 px-3 py-2 bg-brand-500 text-white text-sm font-medium rounded-xl hover:bg-brand-600 active:bg-brand-700 disabled:opacity-60 disabled:cursor-wait transition-colors shrink-0"
       >
-        <MapPin className="w-4 h-4" />
-        주소 검색
+        {ready
+          ? <><MapPin className="w-4 h-4" />주소 검색</>
+          : <><Loader2 className="w-4 h-4 animate-spin" />로딩중</>
+        }
       </button>
     </div>
   )
