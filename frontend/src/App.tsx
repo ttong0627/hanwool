@@ -13,10 +13,18 @@ import { OrderForm } from '@/pages/receiver/OrderForm'
 import { ReceiverOrderList } from '@/pages/receiver/OrderList'
 import { LabelPrint } from '@/pages/receiver/LabelPrint'
 
+const WEB_APP_ROLES = ['admin', 'super_admin', 'receiver']
+
+function roleToHome(role: string): string {
+  if (['admin', 'super_admin'].includes(role)) return '/admin'
+  if (role === 'receiver') return '/receiver'
+  return '/login'
+}
+
 function PrivateRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const user = useAuthStore((s) => s.user)
   if (!user) return <Navigate to="/login" replace />
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />
+  if (roles && !roles.includes(user.role)) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
@@ -25,10 +33,14 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to={user.role === 'admin' ? '/admin' : '/receiver'} replace /> : <LoginPage />} />
+      <Route path="/login" element={
+        user && WEB_APP_ROLES.includes(user.role)
+          ? <Navigate to={roleToHome(user.role)} replace />
+          : <LoginPage />
+      } />
 
       <Route path="/admin/*" element={
-        <PrivateRoute roles={['admin']}>
+        <PrivateRoute roles={['admin', 'super_admin']}>
           <Layout>
             <Routes>
               <Route index element={<Dashboard />} />
@@ -44,7 +56,7 @@ export default function App() {
       } />
 
       <Route path="/receiver/*" element={
-        <PrivateRoute roles={['receiver', 'admin']}>
+        <PrivateRoute roles={['receiver', 'admin', 'super_admin']}>
           <Layout>
             <Routes>
               <Route index element={<OrderForm />} />
@@ -55,8 +67,10 @@ export default function App() {
         </PrivateRoute>
       } />
 
-      <Route path="/" element={
-        user ? <Navigate to={user.role === 'admin' ? '/admin' : '/receiver'} replace /> : <Navigate to="/login" replace />
+      <Route path="*" element={
+        user
+          ? <Navigate to={roleToHome(user.role)} replace />
+          : <Navigate to="/login" replace />
       } />
     </Routes>
   )
