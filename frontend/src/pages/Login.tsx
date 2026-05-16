@@ -20,7 +20,7 @@ export function LoginPage() {
       const res = await api.post('/auth/login', data)
       setAuth(res.data.user, res.data.access_token, res.data.refresh_token)
       const role = res.data.user.role
-      navigate(role === 'admin' ? '/admin' : '/receiver')
+      navigate(['admin', 'super_admin'].includes(role) ? '/admin' : '/receiver')
     } catch {
       setError('전화번호 또는 비밀번호가 올바르지 않습니다.')
     } finally {
