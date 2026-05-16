@@ -28,7 +28,7 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: n
         <Icon className="w-6 h-6 text-white" />
       </div>
       <div>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold">{typeof value === 'number' ? value.toLocaleString('ko-KR') : value}</div>
         <div className="text-sm text-gray-500">{label}</div>
       </div>
     </div>

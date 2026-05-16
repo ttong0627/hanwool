@@ -3,7 +3,8 @@ import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, ChevronDown, X } from 'lucide-react'
 import api from '@/lib/api'
-import { DONG_LIST } from '@/lib/utils'
+import { DONG_LIST, formatPhone, detectDong } from '@/lib/utils'
+import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
 
 interface FormData {
   customer_name: string
@@ -36,16 +37,15 @@ export function OrderForm() {
   const [nameQuery, setNameQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [addressValue, setAddressValue] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // 고객 목록 프리로드 (마운트 시 1회, 캐시 5분)
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: () => api.get('/users', { params: { role: 'customer' } }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
   })
 
-  // 전화번호·이름 입력에 따라 필터링
   const query = phoneQuery || nameQuery
   const filtered = query.length >= 2
     ? customers.filter(c =>
@@ -54,7 +54,6 @@ export function OrderForm() {
       ).slice(0, 8)
     : []
 
-  // 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -73,7 +72,9 @@ export function OrderForm() {
     setValue('customer_name', c.name)
     setValue('customer_id', c.id)
     setValue('dong', c.dong || '경안동')
-    setValue('delivery_address', c.address || '')
+    const addr = c.address || ''
+    setAddressValue(addr)
+    setValue('delivery_address', addr)
     setShowDropdown(false)
   }
 
@@ -81,9 +82,27 @@ export function OrderForm() {
     setSelectedCustomer(null)
     setPhoneQuery('')
     setNameQuery('')
+    setAddressValue('')
     setValue('customer_phone', '')
     setValue('customer_name', '')
     setValue('customer_id', undefined)
+    setValue('delivery_address', '')
+  }
+
+  const handleAddressChange = (addr: string) => {
+    setAddressValue(addr)
+    setValue('delivery_address', addr)
+    const dong = detectDong(addr)
+    if (dong) setValue('dong', dong)
+  }
+
+  const handlePhoneInput = (raw: string) => {
+    const formatted = formatPhone(raw)
+    setPhoneQuery(formatted)
+    setNameQuery('')
+    setValue('customer_phone', formatted)
+    setShowDropdown(true)
+    if (selectedCustomer) setSelectedCustomer(null)
   }
 
   const createMutation = useMutation({
@@ -112,22 +131,16 @@ export function OrderForm() {
 
       <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="card space-y-4">
 
-        {/* 고객 검색 — 인라인 자동완성 */}
+        {/* 고객 검색 */}
         <div ref={dropdownRef} className="relative">
           <label className="label">고객 검색 (전화번호 또는 이름)</label>
           <div className="flex gap-1.5">
             <div className="relative flex-1">
               <input
                 type="tel"
-                placeholder="전화번호 앞 4자리 이상 입력..."
+                placeholder="전화번호 입력 (숫자만 가능)"
                 value={phoneQuery}
-                onChange={(e) => {
-                  setPhoneQuery(e.target.value)
-                  setNameQuery('')
-                  setValue('customer_phone', e.target.value)
-                  setShowDropdown(true)
-                  if (selectedCustomer) setSelectedCustomer(null)
-                }}
+                onChange={(e) => handlePhoneInput(e.target.value)}
                 onFocus={() => query.length >= 2 && setShowDropdown(true)}
                 className="input pr-8"
               />
@@ -159,7 +172,6 @@ export function OrderForm() {
             </div>
           </div>
 
-          {/* 자동완성 드롭다운 */}
           {showDropdown && filtered.length > 0 && (
             <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
               {filtered.map((c) => (
@@ -182,7 +194,6 @@ export function OrderForm() {
             </div>
           )}
 
-          {/* 선택된 고객 표시 */}
           {selectedCustomer && (
             <div className="mt-2 flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-lg px-3 py-2 text-sm">
               <CheckCircle className="w-4 h-4 text-brand-600 shrink-0" />
@@ -193,12 +204,12 @@ export function OrderForm() {
           )}
         </div>
 
-        {/* 숨김 필드 */}
         <input type="hidden" {...register('customer_phone')} />
         <input type="hidden" {...register('customer_name')} />
         <input type="hidden" {...register('customer_id')} />
+        <input type="hidden" {...register('delivery_address')} />
 
-        {/* 신규 고객일 경우 이름 직접 입력 */}
+        {/* 신규 고객 */}
         {!selectedCustomer && (nameQuery.length > 0 || phoneQuery.length > 0) && filtered.length === 0 && (
           <div className="grid grid-cols-2 gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
             <p className="col-span-2 text-xs text-amber-700 font-medium">신규 고객 — 아래 정보를 직접 입력하세요</p>
@@ -206,7 +217,11 @@ export function OrderForm() {
               <label className="label">전화번호 *</label>
               <input
                 value={phoneQuery}
-                onChange={(e) => { setPhoneQuery(e.target.value); setValue('customer_phone', e.target.value) }}
+                onChange={(e) => {
+                  const f = formatPhone(e.target.value)
+                  setPhoneQuery(f)
+                  setValue('customer_phone', f)
+                }}
                 type="tel"
                 className="input"
               />
@@ -223,17 +238,29 @@ export function OrderForm() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="label">배송 동 *</label>
-            <select {...register('dong', { required: true })} className="input">
-              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+        {/* 배송 동 + 주소 검색 */}
+        <div>
+          <div className="grid grid-cols-3 gap-3 mb-2">
+            <div>
+              <label className="label">배송 동 *</label>
+              <select {...register('dong', { required: true })} className="input">
+                {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="label">배송 주소 *</label>
+              <KakaoAddressSearch
+                value={addressValue}
+                onChange={handleAddressChange}
+                placeholder="주소 검색 버튼으로 입력"
+              />
+            </div>
           </div>
-          <div className="col-span-2">
-            <label className="label">배송 주소 *</label>
-            <input {...register('delivery_address', { required: true })} placeholder="상세 주소 입력" className="input" />
-          </div>
+          {addressValue && (
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-1.5 truncate">
+              📍 {addressValue}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-3">

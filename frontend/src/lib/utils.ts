@@ -33,3 +33,27 @@ export const STATUS_COLOR: Record<string, string> = {
 }
 
 export const DONG_LIST = ['경안동', '송정동', '쌍령동', '탄벌동']
+
+export function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.startsWith('02')) {
+    if (digits.length <= 2) return digits
+    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`
+    if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`
+  }
+  if (digits.length <= 3) return digits
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
+}
+
+export function formatNumber(n: number): string {
+  return n.toLocaleString('ko-KR')
+}
+
+export function detectDong(address: string): string | null {
+  for (const dong of DONG_LIST) {
+    if (address.includes(dong)) return dong
+  }
+  return null
+}

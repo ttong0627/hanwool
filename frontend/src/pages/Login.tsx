@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { formatPhone } from '@/lib/utils'
 
 interface LoginForm { phone: string; password: string }
 
 export function LoginPage() {
-  const { register, handleSubmit } = useForm<LoginForm>()
+  const { register, handleSubmit, setValue } = useForm<LoginForm>()
+  const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -45,7 +47,13 @@ export function LoginPage() {
             <input
               {...register('phone', { required: true })}
               type="tel"
-              placeholder="01012345678"
+              placeholder="010-0000-0000"
+              value={phone}
+              onChange={(e) => {
+                const formatted = formatPhone(e.target.value)
+                setPhone(formatted)
+                setValue('phone', formatted)
+              }}
               className="input"
             />
           </div>

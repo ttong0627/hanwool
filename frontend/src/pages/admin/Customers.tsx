@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Users, UserPlus, Search, X, Edit2, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight } from 'lucide-react'
 import api from '@/lib/api'
-import { DONG_LIST, formatDate } from '@/lib/utils'
+import { DONG_LIST, formatDate, formatPhone } from '@/lib/utils'
+import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
 
 interface Customer {
   id: number
@@ -16,7 +17,6 @@ interface Customer {
 
 const PAGE_SIZE = 20
 
-// ── 고객 등록 모달 ──────────────────────────────────────────────
 function CreateCustomerModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', phone: '', dong: '', address: '' })
@@ -42,25 +42,42 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">성명 <span className="text-red-500">*</span></label>
-              <input className="input w-full" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="홍길동" />
+              <input
+                className="input w-full"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="홍길동"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">전화번호 <span className="text-red-500">*</span></label>
-              <input className="input w-full" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="010-0000-0000" />
+              <input
+                className="input w-full"
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
+                placeholder="010-0000-0000"
+              />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
-              <select className="input w-full" value={form.dong} onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}>
-                <option value="">선택</option>
-                {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상세 주소</label>
-              <input className="input w-full" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="OO아파트 101호" />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
+            <select
+              className="input w-full"
+              value={form.dong}
+              onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}
+            >
+              <option value="">선택</option>
+              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">상세 주소</label>
+            <KakaoAddressSearch
+              value={form.address}
+              onChange={(addr) => setForm((f) => ({ ...f, address: addr }))}
+              placeholder="주소 검색"
+            />
           </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
@@ -78,7 +95,6 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ── 고객 편집 모달 ──────────────────────────────────────────────
 function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose: () => void }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({
@@ -109,20 +125,30 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">성명</label>
-            <input className="input w-full" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className="input w-full"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
-              <select className="input w-full" value={form.dong} onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}>
-                <option value="">선택</option>
-                {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상세 주소</label>
-              <input className="input w-full" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
+            <select
+              className="input w-full"
+              value={form.dong}
+              onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}
+            >
+              <option value="">선택</option>
+              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">주소</label>
+            <KakaoAddressSearch
+              value={form.address}
+              onChange={(addr) => setForm((f) => ({ ...f, address: addr }))}
+              placeholder="주소 검색"
+            />
           </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
@@ -140,7 +166,6 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
   )
 }
 
-// ── 메인 컴포넌트 ───────────────────────────────────────────────
 export function Customers() {
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
@@ -174,7 +199,6 @@ export function Customers() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   const resetPage = () => setPage(1)
 
   return (
@@ -182,7 +206,6 @@ export function Customers() {
       {showCreate && <CreateCustomerModal onClose={() => setShowCreate(false)} />}
       {editing && <EditCustomerModal customer={editing} onClose={() => setEditing(null)} />}
 
-      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -190,8 +213,9 @@ export function Customers() {
             고객 관리
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            전체 {customers.filter((c) => c.is_active).length}명 활성
-            {customers.filter((c) => !c.is_active).length > 0 && ` · 비활성 ${customers.filter((c) => !c.is_active).length}명`}
+            전체 {customers.filter((c) => c.is_active).length.toLocaleString()}명 활성
+            {customers.filter((c) => !c.is_active).length > 0 &&
+              ` · 비활성 ${customers.filter((c) => !c.is_active).length.toLocaleString()}명`}
           </p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
@@ -199,7 +223,6 @@ export function Customers() {
         </button>
       </div>
 
-      {/* 필터 바 */}
       <div className="card flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-40">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -227,10 +250,9 @@ export function Customers() {
           />
           비활성 포함
         </label>
-        <span className="text-sm text-gray-400 ml-auto">{filtered.length}건</span>
+        <span className="text-sm text-gray-400 ml-auto">{filtered.length.toLocaleString()}건</span>
       </div>
 
-      {/* 테이블 */}
       {isLoading && <div className="text-center text-gray-400 py-12">불러오는 중...</div>}
 
       {!isLoading && (
@@ -295,7 +317,6 @@ export function Customers() {
         </div>
       )}
 
-      {/* 페이지네이션 */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <button
@@ -305,9 +326,7 @@ export function Customers() {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm text-gray-600 tabular-nums">
-            {page} / {totalPages}
-          </span>
+          <span className="text-sm text-gray-600 tabular-nums">{page} / {totalPages}</span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
