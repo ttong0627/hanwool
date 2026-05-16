@@ -54,7 +54,7 @@ async def create_user(
     phone_hash = hash_phone(data.phone)
     existing = await db.execute(select(User).where(User.phone_hash == phone_hash))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
+        raise HTTPException(status_code=400, detail="등록에 실패했습니다.")
 
     user = User(
         name_enc=encrypt_field(data.name),

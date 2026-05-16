@@ -107,11 +107,17 @@ async def list_orders(
 
 
 @router.get("/{order_id}")
-async def get_order(order_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    if current_user.role == "customer" and order.customer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     return order_service.decrypt_order(order)
 
 
@@ -133,7 +139,6 @@ async def edit_order(
     from app.core.security import encrypt_field
     if data.delivery_address is not None:
         order.delivery_address_enc = encrypt_field(data.delivery_address)
-        order.delivery_address_plain = data.delivery_address
     if data.dong is not None:
         order.dong = data.dong
     if data.items_desc is not None:
@@ -257,6 +262,11 @@ async def cancel_order(
     return {"message": "취소되었습니다."}
 
 
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+_ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
 @router.post("/{order_id}/photo")
 async def upload_delivery_photo(
     order_id: int,
@@ -269,13 +279,26 @@ async def upload_delivery_photo(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
+    # 확장자 화이트리스트
+    raw_ext = os.path.splitext(file.filename or "")[1].lower()
+    if raw_ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="jpg, jpeg, png, webp 파일만 업로드 가능합니다.")
+
+    # MIME 타입 검증
+    if file.content_type not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="허용되지 않는 파일 형식입니다.")
+
+    # 파일 크기 제한 (5MB)
+    content = await file.read()
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
+
+    # UUID 기반 안전한 파일명 생성 (원본 파일명 사용 안 함)
     os.makedirs(PHOTO_DIR, exist_ok=True)
-    ext = os.path.splitext(file.filename or "photo.jpg")[1] or ".jpg"
-    filename = f"{order.order_no}_{uuid.uuid4().hex[:8]}{ext}"
+    filename = f"{uuid.uuid4().hex}{raw_ext}"
     filepath = os.path.join(PHOTO_DIR, filename)
 
     async with aiofiles.open(filepath, "wb") as f:
-        content = await file.read()
         await f.write(content)
 
     order.delivery_photo_path = filename

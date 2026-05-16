@@ -1,13 +1,12 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import encrypt_field, decrypt_field, hash_phone
+from app.core.security import encrypt_field, decrypt_field
 from app.models.order import Order, OrderStatus
-from app.models.user import User
-from app.schemas.order import OrderCreate, OrderUpdate
+from app.schemas.order import OrderCreate
 
 
 def _generate_order_no(sequence: int) -> str:
@@ -32,7 +31,6 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         customer_phone_enc=encrypt_field(data.customer_phone),
         receiver_id=receiver_id,
         delivery_address_enc=encrypt_field(data.delivery_address),
-        delivery_address_plain=data.delivery_address,
         dong=data.dong,
         items_desc=data.items_desc,
         quantity=data.quantity,
@@ -91,9 +89,9 @@ async def update_order_status(db: AsyncSession, order_id: int, status: str, driv
     order.status = status
     if status == OrderStatus.assigned and driver_id:
         order.driver_id = driver_id
-        order.assigned_at = datetime.utcnow()
+        order.assigned_at = datetime.now(timezone.utc)
     elif status == OrderStatus.picked_up:
-        order.picked_up_at = datetime.utcnow()
+        order.picked_up_at = datetime.now(timezone.utc)
     elif status == OrderStatus.delivered:
-        order.delivered_at = datetime.utcnow()
+        order.delivered_at = datetime.now(timezone.utc)
     return order

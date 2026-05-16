@@ -31,7 +31,6 @@ class Order(Base):
     sequence: Mapped[int] = mapped_column(Integer, nullable=True)
     pickup_location: Mapped[str] = mapped_column(String(200), default="경안시장")
     delivery_address_enc: Mapped[str] = mapped_column(String(1024))
-    delivery_address_plain: Mapped[str] = mapped_column(String(500))
     dong: Mapped[str] = mapped_column(String(20), index=True)
     items_desc: Mapped[str] = mapped_column(Text, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class UserCreate(BaseModel):
@@ -11,6 +11,27 @@ class UserCreate(BaseModel):
     dong: Optional[str] = None
     address: Optional[str] = None
     password: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def name_max_length(cls, v: str) -> str:
+        if len(v) > 50:
+            raise ValueError("이름은 50자를 초과할 수 없습니다")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def phone_format(cls, v: str) -> str:
+        if len(v) > 20:
+            raise ValueError("전화번호 형식이 올바르지 않습니다")
+        return v
 
 
 class UserUpdate(BaseModel):
