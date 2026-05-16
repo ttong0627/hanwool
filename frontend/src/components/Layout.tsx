@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Truck, Users, MessageSquareWarning, BarChart3, LogOut, Shield, QrCode } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Truck, Users, MessageSquareWarning, BarChart3, LogOut, Shield, QrCode, UserCog } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 
@@ -11,6 +11,7 @@ const adminNavs = [
   { to: '/admin/complaints', icon: MessageSquareWarning, label: '민원 관리' },
   { to: '/admin/reports', icon: BarChart3, label: '통계·보고서' },
   { to: '/admin/privacy', icon: Shield, label: '개인정보' },
+  { to: '/admin/users', icon: UserCog, label: '사용자 관리' },
 ]
 
 const receiverNavs = [

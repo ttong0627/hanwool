@@ -9,6 +9,7 @@ import { Customers } from '@/pages/admin/Customers'
 import { Complaints } from '@/pages/admin/Complaints'
 import { Reports } from '@/pages/admin/Reports'
 import { Privacy } from '@/pages/admin/Privacy'
+import { StaffUsers } from '@/pages/admin/Users'
 import { OrderForm } from '@/pages/receiver/OrderForm'
 import { ReceiverOrderList } from '@/pages/receiver/OrderList'
 import { LabelPrint } from '@/pages/receiver/LabelPrint'
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="complaints" element={<Complaints />} />
               <Route path="reports" element={<Reports />} />
               <Route path="privacy" element={<Privacy />} />
+              <Route path="users" element={<StaffUsers />} />
             </Routes>
           </Layout>
         </PrivateRoute>

@@ -6,13 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
     get_current_user,
+    require_admin_or_above,
     require_receiver_or_above,
     require_super_admin,
 )
 from app.core.database import get_db
 from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone
 from app.models.user import User, UserRole
-from app.schemas.user import RoleChangeRequest, UserCreate, UserOut, UserUpdate
+from app.schemas.user import PasswordResetRequest, RoleChangeRequest, UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["사용자"])
 
@@ -137,6 +138,22 @@ async def update_user(
         user.address_enc = encrypt_field(data.address)
     if data.is_active is not None:
         user.is_active = data.is_active
+    return _to_out(user)
+
+
+@router.put("/{user_id}/password", response_model=UserOut)
+async def reset_password(
+    user_id: int,
+    data: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin_or_above),
+):
+    """비밀번호 재설정 — admin 이상 전용"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    user.password_hash = hash_password(data.password)
     return _to_out(user)
 
 

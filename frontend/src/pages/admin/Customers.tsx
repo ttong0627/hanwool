@@ -19,10 +19,10 @@ const PAGE_SIZE = 20
 
 function CreateCustomerModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', phone: '', dong: '', address: '' })
+  const [form, setForm] = useState({ name: '', phone: '', dong: '', address: '', password: '' })
 
   const createMutation = useMutation({
-    mutationFn: () => api.post('/users', { ...form, role: 'customer' }),
+    mutationFn: () => api.post('/users', { ...form, role: 'customer', password: form.password || undefined }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       onClose()
@@ -78,6 +78,19 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
               onChange={(addr) => setForm((f) => ({ ...f, address: addr }))}
               placeholder="주소 검색"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              앱 로그인 비밀번호 <span className="text-gray-400 font-normal">(선택)</span>
+            </label>
+            <input
+              className="input w-full"
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              placeholder="미입력 시 앱 로그인 불가"
+            />
+            <p className="text-xs text-gray-400 mt-1">8자 이상 · 고객이 배송 추적 앱을 사용할 경우에만 설정</p>
           </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
