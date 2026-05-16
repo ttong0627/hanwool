@@ -29,13 +29,12 @@ services:
 
   backend:
     build: ./backend
+    env_file:
+      - ./backend/.env
     environment:
+      # Docker 서비스명 기반 URL은 .env 값을 덮어씀
       DATABASE_URL: postgresql+asyncpg://hanwool:hanwool1234@db:5432/hanwool_db
       REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-hanwool-secret-change-me}
-      AES_KEY: ${AES_KEY:-hanwool-aes-32byte-key-change!!}
-      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}
     ports:
       - "8000:8000"
     depends_on:
