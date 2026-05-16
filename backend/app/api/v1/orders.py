@@ -34,10 +34,34 @@ PHOTO_DIR = "photos"
 async def create_order(
     data: OrderCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_receiver_or_above),
+    current_user: User = Depends(get_current_user),
 ):
+    from app.core.security import decrypt_field
+    # 고객이 직접 접수하는 경우 본인 정보 자동 주입
+    if current_user.role == "customer":
+        data.customer_id = current_user.id
+        data.customer_name = decrypt_field(current_user.name_enc)
+        data.customer_phone = decrypt_field(current_user.phone_enc)
+    elif current_user.role not in {"receiver", "admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="주문 접수 권한이 없습니다.")
     order = await order_service.create_order(db, data, current_user.id)
     return order_service.decrypt_order(order)
+
+
+@router.get("/my")
+async def get_my_orders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """고객 본인 주문 내역 (최근 50건)"""
+    q = (
+        select(Order)
+        .where(Order.customer_id == current_user.id)
+        .order_by(Order.created_at.desc())
+        .limit(50)
+    )
+    result = await db.execute(q)
+    return [order_service.decrypt_order(o) for o in result.scalars().all()]
 
 
 @router.get("/today")

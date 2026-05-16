@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 
-interface User { id: number; name: string; phone: string; role: string }
+interface User {
+  id: number
+  name: string
+  phone: string
+  role: string
+  dong?: string
+  address?: string
+}
 
 interface AuthState {
   user: User | null
