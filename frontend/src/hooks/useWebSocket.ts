@@ -27,8 +27,9 @@ export function useWebSocket(room: string, onMessage: (data: unknown) => void) {
   const connect = useCallback(() => {
     if (reconnectRef.current) { clearTimeout(reconnectRef.current); reconnectRef.current = null }
 
+    const token = localStorage.getItem('access_token') || ''
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${window.location.host}/ws/${room}`
+    const url = `${protocol}://${window.location.host}/ws/${room}?token=${encodeURIComponent(token)}`
     const ws = new WebSocket(url)
 
     ws.onopen = () => startHeartbeat(ws)
