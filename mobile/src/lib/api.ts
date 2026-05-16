@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = 'http://10.0.2.2:8000' // Android emulator → localhost. 실기기: 서버 IP 입력
+const BASE_URL = 'http://34.64.146.168:8000'
 
 const api = axios.create({ baseURL: `${BASE_URL}/api/v1` })
 

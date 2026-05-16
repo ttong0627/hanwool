@@ -4,6 +4,9 @@ import { Package, Truck, CheckCircle, Clock, AlertCircle, MapPin, WifiOff } from
 import api from '@/lib/api'
 import { useWebSocket, LOCATION_TIMEOUT } from '@/hooks/useWebSocket'
 import { OrderCard } from '@/components/OrderCard'
+import { KakaoDriverMap } from '@/components/KakaoDriverMap'
+
+const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 
 interface DriverLocation {
   driver_id: number
@@ -152,6 +155,22 @@ export function Dashboard() {
             <MapPin className="w-5 h-5 text-brand-500" />
             기사 위치 현황
           </h2>
+
+          {/* 카카오맵 실시간 지도 */}
+          <div className="mb-4">
+            <KakaoDriverMap
+              apiKey={KAKAO_MAP_KEY}
+              drivers={drivers
+                .map((d) => {
+                  const loc = driverLocations.get(d.id)
+                  if (!loc) return null
+                  return { driver_id: d.id, name: d.name, lat: loc.lat, lng: loc.lng, timestamp: loc.timestamp }
+                })
+                .filter(Boolean) as { driver_id: number; name: string; lat: number; lng: number; timestamp: number }[]}
+            />
+          </div>
+
+          {/* 기사별 상태 카드 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {drivers.map((driver) => (
               <DriverLocationCard

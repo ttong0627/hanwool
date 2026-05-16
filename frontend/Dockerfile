@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+ARG VITE_KAKAO_MAP_KEY
+ENV VITE_KAKAO_MAP_KEY=$VITE_KAKAO_MAP_KEY
 RUN npm run build
 
 FROM nginx:alpine

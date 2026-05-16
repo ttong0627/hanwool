@@ -40,12 +40,16 @@ export function useLocationTracking(driverId: number | null, apiBaseUrl: string)
     if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null }
   }
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!driverId || !isActiveRef.current) return
     if (reconnectRef.current) { clearTimeout(reconnectRef.current); reconnectRef.current = null }
 
+    // JWT 토큰 가져오기
+    const { useAuthStore } = await import('@/store/authStore')
+    const token = useAuthStore.getState().accessToken ?? ''
+
     const wsUrl = apiBaseUrl.replace(/^http/, 'ws').replace(':8000', '').replace(/\/$/, '')
-    const ws = new WebSocket(`${wsUrl}/ws/driver-location`)
+    const ws = new WebSocket(`${wsUrl}/ws/driver-location?token=${encodeURIComponent(token)}`)
 
     ws.onopen = () => {
       heartbeatRef.current = setInterval(() => {

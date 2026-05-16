@@ -7,10 +7,11 @@ import {
 import * as SMS from 'expo-sms'
 import * as ImagePicker from 'expo-image-picker'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import api from '@/lib/api'
+import api, { BASE_URL } from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
 import { useLocationTracking } from '@/hooks/useLocationTracking'
 
-const API_BASE = 'http://34.64.146.168:8000'
+const API_BASE = BASE_URL
 
 const STATUS_LABEL: Record<string, string> = {
   assigned: '배송 대기',
@@ -171,6 +172,7 @@ function TransferModal({
 // ── 메인 화면 ─────────────────────────────────────────────────────────────────
 export function DriverHomeScreen() {
   const qc = useQueryClient()
+  const logout = useAuthStore((s) => s.logout)
   const [routeMode, setRouteMode] = useState<'A' | 'B'>('A')
   const [completeTarget, setCompleteTarget] = useState<Order | null>(null)
   const [transferTarget, setTransferTarget] = useState<Order | null>(null)
@@ -309,14 +311,25 @@ export function DriverHomeScreen() {
       {/* 헤더 */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>오늘 배송 코스</Text>
-        <View style={styles.modeToggle}>
-          {(['A', 'B'] as const).map((m) => (
-            <TouchableOpacity key={m} style={[styles.modeBtn, routeMode === m && styles.modeBtnActive]} onPress={() => setRouteMode(m)}>
-              <Text style={[styles.modeBtnText, routeMode === m && styles.modeBtnTextActive]}>
-                {m === 'A' ? '시장 귀환' : '즉시 귀환'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.headerRight}>
+          <View style={styles.modeToggle}>
+            {(['A', 'B'] as const).map((m) => (
+              <TouchableOpacity key={m} style={[styles.modeBtn, routeMode === m && styles.modeBtnActive]} onPress={() => setRouteMode(m)}>
+                <Text style={[styles.modeBtnText, routeMode === m && styles.modeBtnTextActive]}>
+                  {m === 'A' ? '시장귀환' : '즉시귀환'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity
+            onPress={() => Alert.alert('로그아웃', '로그아웃 하시겠습니까?', [
+              { text: '취소', style: 'cancel' },
+              { text: '로그아웃', style: 'destructive', onPress: logout },
+            ])}
+            style={styles.logoutBtn}
+          >
+            <Text style={styles.logoutBtnText}>로그아웃</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -369,7 +382,7 @@ export function DriverHomeScreen() {
 
               {/* 배달 완료 사진 썸네일 */}
               {order.status === 'delivered' && order.delivery_photo_url && (
-                <Image source={{ uri: `http://10.0.2.2:8000${order.delivery_photo_url}` }} style={styles.thumbImage} resizeMode="cover" />
+                <Image source={{ uri: `${API_BASE}${order.delivery_photo_url}` }} style={styles.thumbImage} resizeMode="cover" />
               )}
 
               {/* 사진 재시도 버튼 */}
@@ -438,11 +451,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   header: { backgroundColor: '#f97316', padding: 16, paddingTop: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modeToggle: { flexDirection: 'row', gap: 6 },
   modeBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)' },
   modeBtnActive: { backgroundColor: 'white' },
   modeBtnText: { color: 'white', fontSize: 12, fontWeight: '600' },
   modeBtnTextActive: { color: '#f97316' },
+  logoutBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)' },
+  logoutBtnText: { color: 'white', fontSize: 11, fontWeight: '600' },
   stats: { flexDirection: 'row', backgroundColor: 'white', paddingVertical: 12 },
   statItem: { flex: 1, alignItems: 'center' },
   statNum: { fontSize: 24, fontWeight: 'bold' },
