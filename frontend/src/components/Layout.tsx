@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 const adminNavs = [
   { to: '/admin', icon: LayoutDashboard, label: '대시보드' },
   { to: '/admin/orders', icon: ClipboardList, label: '주문 관리' },
-  { to: '/admin/delivery-tracking', icon: MapPin, label: '배송조회' },
+  { to: '/admin/delivery-tracking', icon: MapPin, label: '배송확인' },
   { to: '/admin/drivers', icon: Truck, label: '기사 관리' },
   { to: '/admin/customers', icon: Users, label: '고객 관리' },
   { to: '/admin/complaints', icon: MessageSquareWarning, label: '민원 관리' },

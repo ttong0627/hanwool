@@ -130,7 +130,7 @@ export function DeliveryTracking() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Truck className="w-6 h-6 text-brand-500" />
-            배송조회
+            배송확인
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">오늘 진행 중인 배송과 기사 위치를 확인합니다</p>
         </div>
