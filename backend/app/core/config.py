@@ -13,7 +13,9 @@ _INSECURE_DEFAULTS = {
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://hanwool:hanwool1234@localhost:5432/hanwool_db"
+    POSTGRES_USER: str = "hanwool"
+    POSTGRES_PASSWORD: str = ""
+    DATABASE_URL: str = "postgresql+asyncpg://hanwool:change-this-password@localhost:5432/hanwool_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     SECRET_KEY: str  # .env에서 반드시 설정 — 기본값 없음
     ALGORITHM: str = "HS256"
@@ -23,6 +25,7 @@ class Settings(BaseSettings):
     KAKAO_REST_API_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     ENVIRONMENT: str = "development"
+    ALLOW_DEMO_SEED: bool = False
 
     @field_validator("SECRET_KEY")
     @classmethod

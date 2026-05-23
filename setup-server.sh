@@ -24,9 +24,12 @@ echo "=== .env 생성 ==="
 # SECRET_KEY, AES_KEY는 아래에서 랜덤 생성
 SECRET_KEY=$(openssl rand -hex 32)
 AES_KEY=$(openssl rand -hex 16 | head -c 32)
+POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | head -c 32)
 
 cat > backend/.env <<EOF
-DATABASE_URL=postgresql+asyncpg://hanwool:hanwool1234@db:5432/hanwool_db
+POSTGRES_USER=hanwool
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+DATABASE_URL=postgresql+asyncpg://hanwool:${POSTGRES_PASSWORD}@db:5432/hanwool_db
 REDIS_URL=redis://redis:6379/0
 SECRET_KEY=${SECRET_KEY}
 ALGORITHM=HS256
@@ -34,9 +37,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 AES_KEY=${AES_KEY}
 KAKAO_REST_API_KEY=
-CORS_ORIGINS=http://$(curl -s ifconfig.me):80,http://$(curl -s ifconfig.me):8000
+CORS_ORIGINS=https://ga.wssc.kr
 ENVIRONMENT=production
+ALLOW_DEMO_SEED=false
 EOF
+
+cp backend/.env .env
 
 echo "=== 빌드 & 실행 ==="
 docker compose up -d --build
@@ -48,12 +54,11 @@ echo "=== Alembic 마이그레이션 ==="
 docker compose exec backend alembic upgrade head
 
 echo "=== 시드 데이터 생성 ==="
-docker compose exec backend python seed.py
+echo "Production demo seed is disabled. Set ALLOW_DEMO_SEED=true and run seed.py manually only for demo data."
+echo "Create the first admin with: docker compose exec backend python create_admin.py"
 
 echo ""
 echo "==========================================="
 echo " 서버 준비 완료!"
-echo " API:      http://$(curl -s ifconfig.me):8000"
-echo " API Docs: http://$(curl -s ifconfig.me):8000/docs"
-echo " Web:      http://$(curl -s ifconfig.me):80"
+echo " Web:      https://ga.wssc.kr"
 echo "==========================================="

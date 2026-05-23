@@ -1,7 +1,7 @@
 from datetime import datetime, date, timezone
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import encrypt_field, decrypt_field
@@ -15,6 +15,7 @@ def _generate_order_no(sequence: int) -> str:
 
 
 async def _next_sequence(db: AsyncSession) -> int:
+    await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 2026052401})
     today_start = datetime.combine(date.today(), datetime.min.time())
     result = await db.execute(
         select(func.count()).select_from(Order).where(Order.created_at >= today_start)
@@ -30,6 +31,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         customer_name_enc=encrypt_field(data.customer_name),
         customer_phone_enc=encrypt_field(data.customer_phone),
         receiver_id=receiver_id,
+        sequence=seq,
         delivery_address_enc=encrypt_field(data.delivery_address),
         dong=data.dong,
         items_desc=data.items_desc,

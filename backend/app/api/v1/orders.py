@@ -1,4 +1,5 @@
 from datetime import datetime
+from io import BytesIO
 from typing import Optional
 
 import os
@@ -6,6 +7,7 @@ import uuid
 
 import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -164,8 +166,29 @@ async def update_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if status not in {item.value for item in OrderStatus}:
+        raise HTTPException(status_code=400, detail="유효하지 않은 주문 상태입니다.")
+
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    existing_order = result.scalar_one_or_none()
+    if not existing_order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    if current_user.role == "customer":
+        raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
+
     if current_user.role == "driver":
+        if existing_order.driver_id != current_user.id:
+            raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 변경할 수 있습니다.")
         driver_id = current_user.id
+    elif current_user.role not in {"super_admin", "admin", "receiver"}:
+        raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
+    elif driver_id is not None:
+        driver_result = await db.execute(
+            select(User).where(User.id == driver_id, User.role == "driver", User.is_active == True)
+        )
+        if not driver_result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="유효하지 않은 기사입니다.")
     order = await order_service.update_order_status(db, order_id, status, driver_id)
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
@@ -272,7 +295,7 @@ async def upload_delivery_photo(
     order_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_driver_or_above),
+    current_user: User = Depends(require_driver_or_above),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -280,6 +303,9 @@ async def upload_delivery_photo(
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
     # 확장자 화이트리스트
+    if current_user.role == "driver" and order.driver_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
+
     raw_ext = os.path.splitext(file.filename or "")[1].lower()
     if raw_ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="jpg, jpeg, png, webp 파일만 업로드 가능합니다.")
@@ -294,6 +320,11 @@ async def upload_delivery_photo(
         raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
 
     # UUID 기반 안전한 파일명 생성 (원본 파일명 사용 안 함)
+    try:
+        Image.open(BytesIO(content)).verify()
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{raw_ext}"
     filepath = os.path.join(PHOTO_DIR, filename)

@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form'
 import { Smartphone } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
-import { formatPhone } from '@/lib/utils'
 
 interface LoginForm { phone: string; password: string }
 
@@ -78,14 +77,15 @@ export function LoginPage() {
             <label className="label">전화번호</label>
             <input
               {...register('phone', { required: true })}
-              type="tel"
-              placeholder="010-0000-0000"
+              type="text"
+              placeholder="010-0000-0000 또는 ttong0627"
               value={phone}
               onChange={(e) => {
-                const formatted = formatPhone(e.target.value)
-                setPhone(formatted)
-                setValue('phone', formatted)
+                setPhone(e.target.value)
+                setValue('phone', e.target.value)
               }}
+              autoCapitalize="none"
+              autoCorrect="off"
               className="input"
             />
           </div>

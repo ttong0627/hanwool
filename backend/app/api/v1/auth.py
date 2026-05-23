@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -10,11 +11,13 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
 from app.core.security import (create_access_token, create_refresh_token,
-                                decrypt_field, hash_phone, verify_password, decode_token)
+                                decrypt_field, hash_phone, hash_phone_legacy,
+                                verify_password, decode_token)
 from app.models.user import User
 from app.schemas.user import TokenResponse, UserLogin
 
 router = APIRouter(prefix="/auth", tags=["인증"])
+logger = logging.getLogger("hanwool.auth")
 
 
 def _redis():
@@ -24,12 +27,15 @@ def _redis():
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(get_db)):
-    phone_hash = hash_phone(data.phone)
-    result = await db.execute(select(User).where(User.phone_hash == phone_hash, User.is_active == True))
+    logger.info("login attempt phone_digits_len=%s", len("".join(ch for ch in data.phone if ch.isdigit())))
+    phone_hashes = {hash_phone(data.phone), hash_phone_legacy(data.phone)}
+    result = await db.execute(select(User).where(User.phone_hash.in_(phone_hashes), User.is_active == True))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash or ""):
+        logger.warning("login failed user_found=%s", bool(user))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="전화번호 또는 비밀번호가 올바르지 않습니다.")
 
+    logger.info("login success user_id=%s role=%s", user.id, user.role)
     access_token = create_access_token({"sub": str(user.id), "role": user.role})
     refresh_token = create_refresh_token({"sub": str(user.id)})
 

@@ -32,10 +32,10 @@
 
 ## 서버 정보
 
-- **외부 IP**: 34.64.146.168
-- **API**: http://34.64.146.168:8000
-- **Web**: http://34.64.146.168:80
-- **API Docs**: http://34.64.146.168:8000/docs
+- **Domain**: https://ga.wssc.kr
+- **API**: https://ga.wssc.kr/api/v1
+- **Health**: https://ga.wssc.kr/health
+- **API Docs**: production disabled
 - **GCP 프로젝트**: hanwool-delivery-2026
 - **VM 이름**: hanwool-server
 - **GitHub**: https://github.com/ttong0627/hanwool
@@ -58,9 +58,7 @@
 
 | 역할 | 전화번호 | 비밀번호 |
 |------|----------|----------|
-| 관리자 | 010-0000-0000 | admin1234 |
-| 접수자 | 010-1111-1111 | receiver1234 |
-| 기사 | 010-2222-2222 | driver1234 |
+| Demo accounts | seed.py requires ALLOW_DEMO_SEED=true and SEED_* password environment variables |
 
 ---
 

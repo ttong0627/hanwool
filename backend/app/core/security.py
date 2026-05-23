@@ -70,4 +70,9 @@ def decrypt_field(encrypted: str) -> str:
 
 
 def hash_phone(phone: str) -> str:
+    normalized = "".join(ch for ch in phone if ch.isdigit())
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def hash_phone_legacy(phone: str) -> str:
     return hashlib.sha256(phone.encode()).hexdigest()

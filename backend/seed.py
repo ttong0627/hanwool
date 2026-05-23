@@ -3,6 +3,7 @@
 실행: python seed.py
 """
 import asyncio
+import os
 from app.core.database import AsyncSessionLocal
 from app.core.security import hash_password, encrypt_field, hash_phone
 from app.models.user import User, UserRole
@@ -11,7 +12,24 @@ from datetime import date
 from sqlalchemy import select
 
 
+def _required_seed_password(name: str) -> str:
+    value = os.getenv(name)
+    if not value or len(value) < 8:
+        raise RuntimeError(f"{name} must be set to a strong password before running seed.py")
+    return value
+
+
 async def seed():
+    if os.getenv("ALLOW_DEMO_SEED", "").lower() != "true":
+        print("Demo seed is disabled. Set ALLOW_DEMO_SEED=true only in a safe demo environment.")
+        return
+
+    super_admin_password = _required_seed_password("SEED_SUPER_ADMIN_PASSWORD")
+    admin_password = _required_seed_password("SEED_ADMIN_PASSWORD")
+    receiver_password = _required_seed_password("SEED_RECEIVER_PASSWORD")
+    driver_password = _required_seed_password("SEED_DRIVER_PASSWORD")
+    customer_password = _required_seed_password("SEED_CUSTOMER_PASSWORD")
+
     async with AsyncSessionLocal() as db:
         # 이미 데이터 있으면 스킵
         result = await db.execute(select(User).limit(1))
@@ -28,7 +46,7 @@ async def seed():
             phone_hash=hash_phone("010-9999-9999"),
             role=UserRole.super_admin,
             dong="경안동",
-            password_hash=hash_password("super1234!"),
+            password_hash=hash_password(super_admin_password),
             is_active=True,
         )
 
@@ -40,7 +58,7 @@ async def seed():
             role=UserRole.admin,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 1"),
-            password_hash=hash_password("admin1234"),
+            password_hash=hash_password(admin_password),
             is_active=True,
         )
 
@@ -52,7 +70,7 @@ async def seed():
             role=UserRole.receiver,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 경안시장"),
-            password_hash=hash_password("receiver1234"),
+            password_hash=hash_password(receiver_password),
             is_active=True,
         )
 
@@ -64,7 +82,7 @@ async def seed():
             role=UserRole.driver,
             dong="경안동",
             address_enc=encrypt_field("경기도 광주시 경안동 2"),
-            password_hash=hash_password("driver1234"),
+            password_hash=hash_password(driver_password),
             is_active=True,
         )
 
@@ -86,7 +104,7 @@ async def seed():
                 role=UserRole.customer,
                 dong=dong,
                 address_enc=encrypt_field(address),
-                password_hash=hash_password("customer1234"),
+                password_hash=hash_password(customer_password),
                 is_active=True,
             )
             customer_objects.append(c)
@@ -94,10 +112,7 @@ async def seed():
         db.add_all([super_admin, admin, receiver, driver] + customer_objects)
         await db.flush()
 
-        print(f"  최고관리자: 010-9999-9999 / super1234!")
-        print(f"  관리자: 010-0000-0000 / admin1234")
-        print(f"  접수자: 010-1111-1111 / receiver1234")
-        print(f"  기사:   010-2222-2222 / driver1234")
+        print("  Demo users created with passwords from SEED_* environment variables.")
         print(f"  고객 5명 생성 완료")
 
         # 테스트 주문 3건

@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = 'http://34.64.146.168:8000'
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://ga.wssc.kr'
 
 const api = axios.create({ baseURL: `${BASE_URL}/api/v1` })
 

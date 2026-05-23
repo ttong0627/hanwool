@@ -3,7 +3,7 @@ const path = require('path')
 const fs = require('fs')
 
 const isDev = process.env.NODE_ENV === 'development'
-const SERVER_URL = isDev ? 'http://localhost:5173' : 'http://34.64.146.168'
+const SERVER_URL = isDev ? 'http://localhost:5173' : (process.env.HANWOOL_SERVER_URL || 'https://ga.wssc.kr')
 
 // 창 상태 저장 경로
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json')
@@ -40,7 +40,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false, // 개발 편의 (배포 시 제거 불필요 — 사내망 전용)
+      webSecurity: !isDev,
     },
     icon: getIconPath(),
     title: '경안시장 집배송 관리시스템',
