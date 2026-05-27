@@ -698,7 +698,7 @@ function OrderListTab() {
   const { data, isLoading } = useQuery({
     queryKey: ['orders', { dong, status, page, dateFrom, dateTo }],
     queryFn: () => api.get('/orders', {
-      params: { dong: dong || undefined, status: status || undefined, page, page_size: 20, date_from: dateFrom || undefined, date_to: dateTo || undefined }
+      params: { dong: dong || undefined, status: status || undefined, page, page_size: 100, date_from: dateFrom || undefined, date_to: dateTo || undefined }
     }).then((r) => r.data),
   })
 
