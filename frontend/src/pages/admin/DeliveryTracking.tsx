@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Camera, ListOrdered, MapPin, Phone, RefreshCw, Route, Search, Truck, X } from 'lucide-react'
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
-import { getDriverColor } from '@/lib/driverColors'
+import { getDriverTone } from '@/lib/driverColors'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 const MARKET_LAT = 37.4069688196691
@@ -403,7 +403,13 @@ export function DeliveryTracking() {
   // 기사 ID → 고유 색상 매핑 (driver.id 기반 — 모든 메뉴에서 동일한 색상)
   const driverColorMap = useMemo(() => {
     const map = new Map<number, string>()
-    driverGroups.forEach((d) => map.set(d.id, getDriverColor(d.id)))
+    driverGroups.forEach((d) => map.set(d.id, getDriverTone(d.id).primary))
+    return map
+  }, [driverGroups])
+
+  const driverToneMap = useMemo(() => {
+    const map = new Map<number, ReturnType<typeof getDriverTone>>()
+    driverGroups.forEach((d) => map.set(d.id, getDriverTone(d.id)))
     return map
   }, [driverGroups])
 
@@ -574,25 +580,26 @@ export function DeliveryTracking() {
           )}
           {/* 기사별 */}
           {driverGroups.map((driver) => {
-            const color = driverColorMap.get(driver.id) ?? '#9ca3af'
+            const tone = driverToneMap.get(driver.id) ?? getDriverTone(driver.id)
+            const color = tone.primary
             const isActive = selectedDriverId === driver.id
             return (
               <button
                 key={driver.id}
                 onClick={() => { setSelectedDriverId(driver.id); setSelectedOrderId(undefined) }}
                 style={isActive
-                  ? { borderColor: color, background: `${color}12`, boxShadow: `0 0 0 3px ${color}18` }
-                  : {}
+                  ? { borderColor: tone.border, background: tone.wash, boxShadow: `0 10px 24px ${tone.shadow}` }
+                  : { background: 'linear-gradient(135deg, #fff, #f8fafc)' }
                 }
-                className={`driver-chip ${isActive ? 'driver-chip-active' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'}`}
+                className={`driver-chip transition-all hover:-translate-y-0.5 ${isActive ? 'driver-chip-active' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'}`}
               >
                 <span
-                  style={{ background: color, boxShadow: isActive ? `0 0 0 2px ${color}35` : 'none' }}
+                  style={{ background: tone.gradient, boxShadow: isActive ? `0 0 0 2px ${tone.border}` : 'none' }}
                   className="h-2.5 w-2.5 rounded-full shrink-0 transition-all"
                 />
-                <span style={isActive ? { color } : {}}>{driver.name}</span>
+                <span style={isActive ? { color: tone.text } : {}}>{driver.name}</span>
                 <span
-                  style={isActive ? { background: `${color}18`, color } : {}}
+                  style={isActive ? { background: tone.soft, color: tone.text } : {}}
                   className={`text-[11px] px-1.5 py-0.5 rounded-full tabular-nums font-bold ${!isActive ? 'text-gray-400' : ''}`}
                 >
                   {driver.count}
@@ -703,13 +710,14 @@ export function DeliveryTracking() {
               const isDelayed = order.status === 'delayed'
               const isDelivered = order.status === 'delivered'
               const isSelected = selectedOrderId === order.id
-              const driverColor = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
+              const driverTone = order.driver_id ? (driverToneMap.get(order.driver_id) ?? getDriverTone(order.driver_id)) : null
+              const driverColor = driverTone?.primary ?? '#9ca3af'
               return (
                 <button
                   key={order.id}
                   ref={(el) => { rowRefs.current[order.id] = el }}
                   onClick={() => setSelectedOrderId(order.id)}
-                  style={isSelected ? { background: `${driverColor}0c`, boxShadow: `inset 2px 0 0 ${driverColor}` } : {}}
+                  style={isSelected ? { background: driverTone?.soft ?? 'rgba(156,163,175,0.12)', boxShadow: `inset 3px 0 0 ${driverColor}` } : {}}
                   className={`w-full px-3 py-2.5 text-left transition-all duration-100 ${
                     isSelected
                       ? ''
@@ -721,7 +729,7 @@ export function DeliveryTracking() {
                   <div className="grid grid-cols-[28px_1fr] items-start gap-2.5">
                     {/* 순번 원 */}
                     <div
-                      style={{ background: driverColor, boxShadow: isSelected ? `0 0 0 3px ${driverColor}30` : 'none' }}
+                      style={{ background: driverTone?.gradient ?? driverColor, boxShadow: isSelected ? `0 0 0 3px ${driverTone?.border ?? 'rgba(156,163,175,0.30)'}` : 'none' }}
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white mt-0.5 transition-all"
                     >
                       {order.sequence ?? index + 1}
@@ -739,7 +747,7 @@ export function DeliveryTracking() {
                         <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
                         <span className="flex shrink-0 items-center gap-1">
                           {order.driver_id && (
-                            <span style={{ background: driverColor }} className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" />
+                            <span style={{ background: driverTone?.gradient ?? driverColor }} className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" />
                           )}
                           <span className="truncate max-w-[72px]">{order.driver_name || '미배정'}</span>
                         </span>

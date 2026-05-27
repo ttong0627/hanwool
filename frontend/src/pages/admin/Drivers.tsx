@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate } from '@/lib/utils'
-import { getDriverColor } from '@/lib/driverColors'
+import { getDriverTone } from '@/lib/driverColors'
 
 interface Driver {
   id: number
@@ -199,36 +199,42 @@ export function Drivers() {
         {drivers.map((driver) => {
           const stats = statsMap[driver.id] || { total: 0, delivered: 0 }
           const progressPct = stats.total > 0 ? Math.round((stats.delivered / stats.total) * 100) : 0
-          const color = getDriverColor(driver.id)
+          const tone = getDriverTone(driver.id)
+          const color = tone.primary
           const isActive = driver.is_active
 
           return (
-            <div key={driver.id} className="card-elevated rounded-xl overflow-hidden">
+            <div
+              key={driver.id}
+              className="card-elevated rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl"
+              style={isActive ? { borderColor: tone.border, boxShadow: `0 16px 38px ${tone.shadow}` } : {}}
+            >
               {/* 컬러 그래디언트 상단 바 */}
               <div
-                style={{ background: isActive ? `linear-gradient(90deg, ${color}, ${color}88)` : '#e5e7eb' }}
+                style={{ background: isActive ? tone.gradient : '#e5e7eb' }}
                 className="h-[6px] w-full"
               />
 
-              <div className="p-4">
+              <div className="p-4" style={isActive ? { background: tone.wash } : {}}>
                 {/* 헤더: 아바타 + 이름 + 액션 */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     {/* 프리미엄 아바타 */}
                     <div
                       style={{
-                        background: isActive ? `${color}18` : '#f3f4f6',
-                        border: `2px solid ${isActive ? color + '35' : '#e5e7eb'}`,
+                        background: isActive ? tone.gradient : '#f3f4f6',
+                        border: `2px solid ${isActive ? 'rgba(255,255,255,0.9)' : '#e5e7eb'}`,
+                        boxShadow: isActive ? `0 8px 20px ${tone.shadow}` : 'none',
                       }}
                       className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all"
                     >
-                      <Truck style={{ color: isActive ? color : '#9ca3af' }} className="w-5 h-5" />
+                      <Truck style={{ color: isActive ? '#fff' : '#9ca3af' }} className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-gray-900 text-[15px] leading-tight">{driver.name}</span>
                         <span
-                          style={isActive ? { background: `${color}15`, color, borderColor: `${color}30` } : {}}
+                          style={isActive ? { background: tone.soft, color: tone.text, borderColor: tone.border } : {}}
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                             isActive ? '' : 'bg-gray-100 text-gray-400 border-gray-200'
                           }`}
@@ -274,14 +280,14 @@ export function Drivers() {
                 {/* 통계 */}
                 <div className="grid grid-cols-2 gap-2.5 mb-3.5">
                   <div
-                    style={{ background: isActive ? `${color}0a` : '#f9fafb' }}
-                    className="rounded-xl p-3 border border-gray-50"
+                    style={{ background: isActive ? tone.soft : '#f9fafb', borderColor: isActive ? tone.border : '#f9fafb' }}
+                    className="rounded-xl p-3 border"
                   >
                     <div className="flex items-center gap-1.5 mb-1.5">
-                      <Clock className="w-3.5 h-3.5" style={{ color: isActive ? color : '#9ca3af' }} />
+                      <Clock className="w-3.5 h-3.5" style={{ color: isActive ? tone.text : '#9ca3af' }} />
                       <span className="text-[11px] text-gray-500 font-medium">오늘 배정</span>
                     </div>
-                    <div className="text-[22px] font-black tabular-nums leading-none" style={{ color: isActive ? color : '#9ca3af' }}>
+                    <div className="text-[22px] font-black tabular-nums leading-none" style={{ color: isActive ? tone.text : '#9ca3af' }}>
                       {stats.total}
                     </div>
                   </div>
@@ -301,15 +307,15 @@ export function Drivers() {
                   <div className="mb-3">
                     <div className="flex justify-between items-center text-[11px] mb-1.5">
                       <span className="text-gray-500">배송 진행률</span>
-                      <span className="font-bold tabular-nums" style={{ color }}>{progressPct}%</span>
+                      <span className="font-bold tabular-nums" style={{ color: tone.text }}>{progressPct}%</span>
                     </div>
                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-700"
                         style={{
                           width: `${progressPct}%`,
-                          background: `linear-gradient(90deg, ${color}bb, ${color})`,
-                          boxShadow: progressPct > 0 ? `0 0 10px ${color}55` : 'none',
+                          background: tone.gradient,
+                          boxShadow: progressPct > 0 ? `0 0 12px ${tone.shadow}` : 'none',
                         }}
                       />
                     </div>
@@ -322,7 +328,7 @@ export function Drivers() {
                 <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-50">
                   <span>등록 {formatDate(driver.created_at)}</span>
                   <div
-                    style={{ background: `${color}12`, color, borderColor: `${color}25` }}
+                    style={{ background: tone.soft, color: tone.text, borderColor: tone.border }}
                     className="flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold"
                   >
                     <span

@@ -14,7 +14,7 @@ import {
   Zap,
 } from 'lucide-react'
 import api from '@/lib/api'
-import { getDriverColor } from '@/lib/driverColors'
+import { getDriverTone } from '@/lib/driverColors'
 
 interface Driver {
   id: number
@@ -203,21 +203,21 @@ function DriverSelectGrid({
       {drivers.map((driver, index) => {
         const selectedIndex = selectedDriverIds.indexOf(driver.id)
         const isSelected = selectedIndex >= 0
-        const color = getDriverColor(driver.id)
+        const tone = getDriverTone(driver.id)
         return (
           <button
             key={driver.id}
             onClick={() => onToggle(driver.id)}
             style={isSelected
-              ? { borderColor: color, backgroundColor: `${color}10`, boxShadow: `0 0 0 1px ${color}30` }
-              : {}
+              ? { borderColor: tone.border, background: tone.wash, boxShadow: `0 12px 28px ${tone.shadow}` }
+              : { background: 'linear-gradient(135deg, #fff, #f8fafc)' }
             }
-            className={`flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all duration-150 ${
-              isSelected ? '' : 'border-gray-100 hover:border-gray-200 bg-white hover:shadow-sm'
+            className={`flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all duration-150 hover:-translate-y-0.5 ${
+              isSelected ? '' : 'border-gray-100 hover:border-gray-200 hover:shadow-sm'
             }`}
           >
             <div
-              style={isSelected ? { background: `linear-gradient(135deg, ${color}cc, ${color})`, boxShadow: `0 2px 8px ${color}55` } : {}}
+              style={isSelected ? { background: tone.gradient, boxShadow: `0 2px 10px ${tone.shadow}` } : {}}
               className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 transition-all ${
                 isSelected ? 'text-white' : 'bg-gray-100 text-gray-400'
               }`}
@@ -230,7 +230,7 @@ function DriverSelectGrid({
             </div>
             {isSelected && (
               <div
-                style={{ background: `${color}15`, color, borderColor: `${color}30` }}
+                style={{ background: tone.soft, color: tone.text, borderColor: tone.border }}
                 className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-bold"
               >
                 #{selectedIndex + 1}
@@ -296,16 +296,16 @@ function ConfirmModal({
 
           <div className="rounded-xl space-y-1.5" style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.05)', padding: '12px 14px' }}>
             {selectedDriverIds.map((id, idx) => {
-              const color = getDriverColor(id)
+              const tone = getDriverTone(id)
               return (
                 <div key={id} className="flex items-center gap-2.5 text-sm">
                   <div
-                    style={{ background: `linear-gradient(135deg, ${color}cc, ${color})`, boxShadow: `0 2px 6px ${color}44` }}
+                    style={{ background: tone.gradient, boxShadow: `0 2px 8px ${tone.shadow}` }}
                     className="w-6 h-6 rounded-lg text-white text-xs font-bold flex items-center justify-center flex-shrink-0"
                   >
                     {idx + 1}
                   </div>
-                  <span style={{ color }} className="font-bold">
+                  <span style={{ color: tone.text }} className="font-bold">
                     {driverMap[id]?.name ?? `기사 #${id}`}
                   </span>
                 </div>
@@ -592,26 +592,31 @@ export function DeliveryDispatch() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {dispatchResult.groups.map((group) => {
               const driver = driverMap[group.driver_id]
-              const color = getDriverColor(group.driver_id)
+              const tone = getDriverTone(group.driver_id)
               return (
-                <div key={group.driver_id} className="card-elevated rounded-xl overflow-hidden">
+                <div
+                  key={group.driver_id}
+                  className="card-elevated rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5"
+                  style={{ borderColor: tone.border, boxShadow: `0 14px 32px ${tone.shadow}` }}
+                >
                   {/* 드라이버 컬러 상단 스트립 */}
                   <div
-                    style={{ background: `linear-gradient(90deg, ${color}, ${color}88)` }}
+                    style={{ background: tone.gradient }}
                     className="h-[5px] w-full"
                   />
-                  <div className="p-4">
+                  <div className="p-4" style={{ background: tone.wash }}>
                     {/* 헤더 */}
                     <div className="flex items-center justify-between gap-3 mb-3.5">
                       <div className="flex items-center gap-3">
                         <div
                           style={{
-                            background: `${color}15`,
-                            border: `2px solid ${color}30`,
+                            background: tone.gradient,
+                            border: '2px solid rgba(255,255,255,0.9)',
+                            boxShadow: `0 8px 18px ${tone.shadow}`,
                           }}
                           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                         >
-                          <Truck style={{ color }} className="w-4.5 h-4.5" />
+                          <Truck className="w-4.5 h-4.5 text-white" />
                         </div>
                         <div>
                           <div className="font-bold text-gray-900 text-[15px]">{driver?.name ?? `기사 #${group.driver_id}`}</div>
@@ -619,7 +624,7 @@ export function DeliveryDispatch() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[28px] font-black tabular-nums leading-none" style={{ color }}>{group.order_count}</div>
+                        <div className="text-[28px] font-black tabular-nums leading-none" style={{ color: tone.text }}>{group.order_count}</div>
                         <div className="text-[10px] text-gray-400 font-medium">건</div>
                       </div>
                     </div>
@@ -629,7 +634,7 @@ export function DeliveryDispatch() {
                       {group.orders.map((order) => (
                         <div key={order.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors">
                           <div
-                            style={{ background: color, boxShadow: `0 2px 6px ${color}44` }}
+                            style={{ background: tone.gradient, boxShadow: `0 2px 8px ${tone.shadow}` }}
                             className="w-6 h-6 rounded-lg text-white text-[11px] font-black flex items-center justify-center flex-shrink-0"
                           >
                             {order.sequence}
