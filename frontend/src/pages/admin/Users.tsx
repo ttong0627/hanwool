@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff,
+  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate, formatPhone } from '@/lib/utils'
@@ -126,6 +126,78 @@ function CreateStaffModal({ onClose, currentRole }: { onClose: () => void; curre
             className="flex-1 btn-primary disabled:opacity-40"
           >
             {createMutation.isPending ? '등록 중...' : '등록'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 사용자 수정 모달 ────────────────────────────────────────────
+function EditUserModal({ user, onClose, currentRole }: { user: StaffUser; onClose: () => void; currentRole: string }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState(user.name)
+  const [phone, setPhone] = useState(user.phone)
+
+  const updateMutation = useMutation({
+    mutationFn: () => api.put(`/users/${user.id}`, { name: name.trim(), phone }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-users'] })
+      onClose()
+    },
+  })
+
+  const changed = name.trim() !== user.name || phone !== user.phone
+  const valid = name.trim().length > 0 && phone.trim().length > 0
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b">
+          <h2 className="font-bold text-lg">계정 정보 수정</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="bg-gray-50 rounded-xl p-3 text-sm flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[user.role] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+              {ROLE_LABELS[user.role] ?? user.role}
+            </span>
+            <span className="text-gray-400 text-xs">역할 변경은 역할 변경 버튼 사용</span>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이름 <span className="text-red-500">*</span></label>
+            <input
+              className="input w-full"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="홍길동"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">전화번호 <span className="text-red-500">*</span></label>
+            <input
+              className="input w-full"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
+              placeholder="010-0000-0000"
+            />
+          </div>
+          {updateMutation.isError && (
+            <p className="text-red-500 text-sm">
+              {(updateMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                ?? '수정에 실패했습니다.'}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2 p-5 pt-0">
+          <button onClick={onClose} className="flex-1 btn-secondary">취소</button>
+          <button
+            onClick={() => updateMutation.mutate()}
+            disabled={!changed || !valid || updateMutation.isPending}
+            className="flex-1 btn-primary disabled:opacity-40"
+          >
+            {updateMutation.isPending ? '저장 중...' : '저장'}
           </button>
         </div>
       </div>
@@ -261,6 +333,7 @@ export function StaffUsers() {
   const qc = useQueryClient()
   const currentUser = useAuthStore((s) => s.user)
   const [showCreate, setShowCreate] = useState(false)
+  const [editTarget, setEditTarget] = useState<StaffUser | null>(null)
   const [resetTarget, setResetTarget] = useState<StaffUser | null>(null)
   const [roleTarget, setRoleTarget] = useState<StaffUser | null>(null)
   const [roleFilter, setRoleFilter] = useState('')
@@ -286,6 +359,9 @@ export function StaffUsers() {
       {showCreate && currentUser && (
         <CreateStaffModal currentRole={currentUser.role} onClose={() => setShowCreate(false)} />
       )}
+      {editTarget && currentUser && (
+        <EditUserModal user={editTarget} onClose={() => setEditTarget(null)} currentRole={currentUser.role} />
+      )}
       {resetTarget && (
         <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />
       )}
@@ -301,7 +377,7 @@ export function StaffUsers() {
             사용자 관리
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            스태프 계정 등록 · 비밀번호 관리 · 역할 설정
+            스태프 계정 등록 · 정보 수정 · 비밀번호 관리 · 역할 설정
           </p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
@@ -365,6 +441,15 @@ export function StaffUsers() {
                   <td className="py-3 pr-4 text-gray-400 text-xs tabular-nums">{formatDate(u.created_at)}</td>
                   <td className="py-3">
                     <div className="flex items-center gap-1">
+                      {/* 정보 수정 */}
+                      <button
+                        onClick={() => setEditTarget(u)}
+                        className="p-1.5 hover:bg-blue-50 rounded-lg text-gray-400 hover:text-blue-600 transition-colors"
+                        title="정보 수정"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
                       {/* 비밀번호 재설정 */}
                       <button
                         onClick={() => setResetTarget(u)}

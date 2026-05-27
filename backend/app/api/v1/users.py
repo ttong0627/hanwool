@@ -12,9 +12,9 @@ from app.api.v1.deps import (
     require_super_admin,
 )
 from app.core.database import get_db
-from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone
+from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone, verify_password
 from app.models.user import User, UserRole
-from app.schemas.user import PasswordResetRequest, RoleChangeRequest, UserCreate, UserOut, UserUpdate
+from app.schemas.user import PasswordChangeRequest, PasswordResetRequest, RoleChangeRequest, UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["사용자"])
 
@@ -117,6 +117,21 @@ async def list_users(
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_user)):
     return _to_out(current_user)
+
+
+@router.put("/me/password")
+async def change_my_password(
+    data: PasswordChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.password_hash:
+        raise HTTPException(status_code=400, detail="비밀번호가 설정되어 있지 않습니다.")
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다.")
+    current_user.password_hash = hash_password(data.new_password)
+    await db.flush()
+    return {"ok": True}
 
 
 @router.get("/search/phone", response_model=UserOut | None)

@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut, Shield, QrCode, UserCog, MapPin, Route } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut, Shield, QrCode, UserCog, MapPin, Route, UserCircle } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 import { HanwoolLogo } from './HanwoolLogo'
@@ -14,12 +14,14 @@ const adminNavs = [
   { to: '/admin/reports', icon: BarChart3, label: '통계·보고서' },
   { to: '/admin/privacy', icon: Shield, label: '개인정보' },
   { to: '/admin/users', icon: UserCog, label: '사용자 관리' },
+  { to: '/admin/my-account', icon: UserCircle, label: '내 계정' },
 ]
 
 const receiverNavs = [
   { to: '/receiver', icon: ClipboardList, label: '주문 접수' },
   { to: '/receiver/list', icon: LayoutDashboard, label: '오늘 명단' },
   { to: '/receiver/labels', icon: QrCode, label: '라벨 출력' },
+  { to: '/receiver/my-account', icon: UserCircle, label: '내 계정' },
 ]
 
 export function Layout({ children }: { children: React.ReactNode }) {

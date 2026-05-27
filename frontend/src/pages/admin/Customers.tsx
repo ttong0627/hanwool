@@ -3,11 +3,12 @@ import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tansta
 import {
   Users, Search, X, Edit2, ShieldCheck, Phone, MapPin,
   Package, CheckCircle, Calendar, ChevronLeft, ChevronRight,
-  Clock, Star, UserCheck, ArrowLeft,
+  Clock, Star, UserCheck, ArrowLeft, Truck,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { DONG_LIST, formatPhone } from '@/lib/utils'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
+import { useAuthStore } from '@/store/authStore'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -256,18 +257,32 @@ function CustomerDetailPanel({
   customerId,
   onEdit,
   onBack,
+  onPromotedToDriver,
 }: {
   customerId: number
   onEdit: (c: Customer) => void
   onBack: () => void
+  onPromotedToDriver?: () => void
 }) {
   const [orderPage, setOrderPage] = useState(1)
+  const [confirmDriver, setConfirmDriver] = useState(false)
+  const currentUser = useAuthStore((s) => s.user)
+  const qc = useQueryClient()
 
   const { data: detail, isLoading } = useQuery<CustomerDetail>({
     queryKey: ['customer-detail', customerId, orderPage],
     queryFn: () =>
       api.get(`/admin/customers/${customerId}`, { params: { order_page: orderPage } }).then((r) => r.data),
     placeholderData: keepPreviousData,
+  })
+
+  const assignDriverMutation = useMutation({
+    mutationFn: () => api.put(`/users/${customerId}/role`, { role: 'driver' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      setConfirmDriver(false)
+      onPromotedToDriver?.()
+    },
   })
 
   if (isLoading || !detail) {
@@ -324,14 +339,53 @@ function CustomerDetailPanel({
               </div>
             )}
           </div>
-          <button
-            onClick={() => onEdit(detail)}
-            className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
-            title="수정"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
+          <div className="flex flex-col gap-1.5 items-end">
+            <button
+              onClick={() => onEdit(detail)}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
+              title="수정"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            {currentUser?.role === 'super_admin' && (
+              <button
+                onClick={() => setConfirmDriver(true)}
+                className="flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs font-medium"
+                title="기사로 지정"
+              >
+                <Truck className="w-3.5 h-3.5" />
+                기사 지정
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* 기사 지정 확인 */}
+        {confirmDriver && (
+          <div className="mt-3 bg-white/10 rounded-xl p-3 text-sm">
+            <p className="font-medium mb-2">
+              <strong>{detail.name}</strong>님을 기사로 전환하시겠습니까?
+            </p>
+            <p className="text-xs opacity-80 mb-3">
+              고객 역할이 기사로 변경되며, 모바일 앱으로 로그인합니다.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDriver(false)}
+                className="flex-1 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => assignDriverMutation.mutate()}
+                disabled={assignDriverMutation.isPending}
+                className="flex-1 py-1.5 bg-white rounded-lg text-brand-700 text-xs font-semibold hover:bg-white/90 transition-colors disabled:opacity-50"
+              >
+                {assignDriverMutation.isPending ? '처리 중...' : '기사로 지정'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 통계 행 */}
         <div className="grid grid-cols-4 gap-3 mt-4">
@@ -555,6 +609,7 @@ export function Customers() {
                 customerId={selectedId}
                 onEdit={setEditing}
                 onBack={() => setSelectedId(null)}
+                onPromotedToDriver={() => setSelectedId(null)}
               />
             </div>
           ) : (

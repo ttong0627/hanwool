@@ -84,6 +84,18 @@ class PasswordResetRequest(BaseModel):
         return v
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("새 비밀번호는 최소 8자 이상이어야 합니다")
+        return v
+
+
 class RoleChangeRequest(BaseModel):
     role: str
 

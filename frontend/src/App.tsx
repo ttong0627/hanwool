@@ -11,6 +11,7 @@ import { Customers } from '@/pages/admin/Customers'
 import { Reports } from '@/pages/admin/Reports'
 import { Privacy } from '@/pages/admin/Privacy'
 import { StaffUsers } from '@/pages/admin/Users'
+import { MyAccount } from '@/pages/admin/MyAccount'
 import { OrderForm } from '@/pages/receiver/OrderForm'
 import { ReceiverOrderList } from '@/pages/receiver/OrderList'
 import { LabelPrint } from '@/pages/receiver/LabelPrint'
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="reports" element={<Reports />} />
               <Route path="privacy" element={<Privacy />} />
               <Route path="users" element={<StaffUsers />} />
+              <Route path="my-account" element={<MyAccount />} />
             </Routes>
           </Layout>
         </PrivateRoute>
@@ -66,6 +68,7 @@ export default function App() {
               <Route index element={<OrderForm />} />
               <Route path="list" element={<ReceiverOrderList />} />
               <Route path="labels" element={<LabelPrint />} />
+              <Route path="my-account" element={<MyAccount />} />
             </Routes>
           </Layout>
         </PrivateRoute>
