@@ -118,8 +118,12 @@ function MapView({
       const marker = new (window as any).kakao.maps.Marker({ position: pos, map: mapRef.current })
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
-        yAnchor: 1.35,
-        content: `<button style="border:0;border-radius:10px;padding:6px 8px;background:${isSelected ? '#f97316' : '#111827'};color:white;font-size:12px;font-weight:800;box-shadow:0 6px 14px rgba(0,0,0,.18);white-space:nowrap;">${order.sequence ?? index + 1}. ${order.customer_name} · ${order.quantity}개 · ${estimateMinutes(index + 1)}분</button>`,
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+        content: `<div style="pointer-events:none;display:flex;align-items:center;gap:3px;transform:translateY(-14px);">
+          <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:${isSelected ? '#f97316' : '#111827'};color:white;font-size:11px;font-weight:900;box-shadow:0 3px 8px rgba(0,0,0,.22);">${order.sequence ?? index + 1}</span>
+          <span style="max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:999px;background:rgba(17,24,39,.92);color:white;padding:3px 6px;font-size:10px;font-weight:800;box-shadow:0 3px 8px rgba(0,0,0,.16);">${order.customer_name} · ${order.quantity}개</span>
+        </div>`,
       })
       marker.setMap(mapRef.current)
       ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
@@ -291,40 +295,31 @@ export function DeliveryTracking() {
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <div className="border-b border-gray-100 px-4 py-3">
             <div className="font-bold text-gray-900">기사별 명단</div>
-            <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 좌표 {selectedOrders.filter(hasCoord).length}건</div>
+            <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 배송순번 정렬</div>
           </div>
           {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
           {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-          <div className="max-h-[470px] overflow-y-auto divide-y divide-gray-100">
+          <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-100">
             {selectedOrders.map((order, index) => (
               <button
                 key={order.id}
                 onClick={() => setSelectedOrderId(order.id)}
-                className={`w-full p-3 text-left transition-colors ${selectedOrderId === order.id ? 'bg-brand-50' : 'hover:bg-gray-50'}`}
+                className={`w-full px-3 py-2 text-left transition-colors ${selectedOrderId === order.id ? 'bg-brand-50' : 'hover:bg-gray-50'}`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-black text-white">{order.sequence ?? index + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900 truncate">{order.customer_name}</span>
+                <div className="grid grid-cols-[32px_1fr_42px] items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[11px] font-black text-white">{order.sequence ?? index + 1}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-gray-900">{order.customer_name}</span>
                       <StatusBadge status={order.status} />
                     </div>
-                    <div className="text-xs text-gray-500 truncate">{order.order_no} · {order.customer_phone}</div>
+                    <div className="truncate text-[11px] text-gray-500">{order.delivery_address}</div>
                   </div>
-                  <div className="text-right text-xs text-brand-700 font-semibold">{estimateMinutes(index + 1)}분</div>
+                  <div className="text-right text-[11px] font-bold text-brand-700">{estimateMinutes(index + 1)}분</div>
                 </div>
-                <div className="mt-2 flex items-start gap-1 text-xs text-gray-600">
-                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  <span className="line-clamp-2">{order.delivery_address}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
-                  <span>{order.items_desc || '물품'} · {order.quantity}개</span>
-                  <span className={hasCoord(order) ? 'text-green-600' : 'text-amber-600'}>
-                    {hasCoord(order) ? `${order.lat!.toFixed(5)}, ${order.lng!.toFixed(5)}` : '좌표 없음'}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  {order.driver_name ? `기사 ${order.driver_name}${order.driver_phone ? ` / ${order.driver_phone}` : ''}` : '기사 미배정'}
+                <div className="mt-1 flex items-center justify-between gap-2 pl-8 text-[11px] text-gray-500">
+                  <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
+                  <span className="shrink-0 truncate">{order.driver_name || '미배정'}</span>
                 </div>
               </button>
             ))}
