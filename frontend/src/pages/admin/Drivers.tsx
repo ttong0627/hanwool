@@ -187,7 +187,7 @@ export function Drivers() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 page-fade-in">
       {showCreate && <DriverModal onClose={() => setShowCreate(false)} />}
       {editing && <DriverModal driver={editing} onClose={() => setEditing(null)} />}
 

@@ -63,7 +63,7 @@ export function Privacy() {
   const canProceedStep3 = step === 2 && confirmText === CONFIRM_PHRASE
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className="p-6 space-y-6 max-w-2xl page-fade-in">
       {/* 헤더 */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">

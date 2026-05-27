@@ -448,7 +448,7 @@ export function Orders() {
   const activeTab = TABS.find((t) => t.key === tab)!
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-5xl page-fade-in">
       {/* 헤더 */}
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center">

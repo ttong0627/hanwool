@@ -55,7 +55,7 @@ export function MyAccount() {
     ?.response?.data?.detail
 
   return (
-    <div className="p-6 max-w-lg space-y-6">
+    <div className="p-6 max-w-lg space-y-6 page-fade-in">
       {/* 헤더 */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">

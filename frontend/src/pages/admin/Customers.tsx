@@ -6,6 +6,7 @@ import {
   Clock, Star, UserCheck, ArrowLeft, Truck,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { toast } from '@/store/toastStore'
 import { DONG_LIST, formatPhone } from '@/lib/utils'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
 import { useAuthStore } from '@/store/authStore'
@@ -111,8 +112,10 @@ function EditCustomerModal({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       qc.invalidateQueries({ queryKey: ['customer-detail', customer.id] })
+      toast.success('고객 정보가 수정되었습니다.')
       onClose()
     },
+    onError: () => toast.error('저장에 실패했습니다.'),
   })
 
   const birthYear = parseInt(form.birth_year)
@@ -120,8 +123,8 @@ function EditCustomerModal({
   const isElderly = age !== null && age >= 65
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+    <div className="modal-overlay">
+      <div className="modal-content max-w-md">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">고객 정보 수정</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
@@ -280,9 +283,11 @@ function CustomerDetailPanel({
     mutationFn: () => api.put(`/users/${customerId}/role`, { role: 'driver' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
+      toast.success('기사로 지정되었습니다.')
       setConfirmDriver(false)
       onPromotedToDriver?.()
     },
+    onError: () => toast.error('기사 지정에 실패했습니다.'),
   })
 
   if (isLoading || !detail) {

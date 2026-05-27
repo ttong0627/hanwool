@@ -327,7 +327,7 @@ export function Complaints() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 page-fade-in">
       {showNew && <NewComplaintModal onClose={() => setShowNew(false)} />}
       {resolving && <ResolveModal complaint={resolving} onClose={() => setResolving(null)} />}
 

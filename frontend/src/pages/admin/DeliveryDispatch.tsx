@@ -191,7 +191,7 @@ export function DeliveryDispatch() {
   }
 
   return (
-    <div className="p-6 max-w-6xl space-y-5">
+    <div className="p-6 max-w-6xl space-y-5 page-fade-in">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-lg bg-brand-500 flex items-center justify-center">
           <Route className="w-5 h-5 text-white" />

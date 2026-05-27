@@ -4,6 +4,7 @@ import {
   UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { toast } from '@/store/toastStore'
 import { formatDate, formatPhone } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 
@@ -46,15 +47,17 @@ function CreateStaffModal({ onClose, currentRole }: { onClose: () => void; curre
     mutationFn: () => api.post('/users', form),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-users'] })
+      toast.success(`${form.name} 계정이 등록되었습니다.`)
       onClose()
     },
+    onError: () => toast.error('계정 등록에 실패했습니다.'),
   })
 
   const valid = form.name.trim() && form.phone.trim() && form.password.trim()
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+    <div className="modal-overlay">
+      <div className="modal-content max-w-sm">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">신규 계정 등록</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
@@ -143,16 +146,18 @@ function EditUserModal({ user, onClose, currentRole }: { user: StaffUser; onClos
     mutationFn: () => api.put(`/users/${user.id}`, { name: name.trim(), phone }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-users'] })
+      toast.success('계정 정보가 수정되었습니다.')
       onClose()
     },
+    onError: () => toast.error('수정에 실패했습니다.'),
   })
 
   const changed = name.trim() !== user.name || phone !== user.phone
   const valid = name.trim().length > 0 && phone.trim().length > 0
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+    <div className="modal-overlay">
+      <div className="modal-content max-w-sm">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">계정 정보 수정</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
@@ -215,16 +220,18 @@ function ResetPasswordModal({ user, onClose }: { user: StaffUser; onClose: () =>
     mutationFn: () => api.put(`/users/${user.id}/password`, { password }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-users'] })
+      toast.success('비밀번호가 재설정되었습니다.')
       onClose()
     },
+    onError: () => toast.error('비밀번호 재설정에 실패했습니다.'),
   })
 
   const mismatch = confirm && password !== confirm
   const valid = password.length >= 8 && password === confirm
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+    <div className="modal-overlay">
+      <div className="modal-content max-w-sm">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">비밀번호 재설정</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
@@ -284,13 +291,15 @@ function ChangeRoleModal({ user, onClose }: { user: StaffUser; onClose: () => vo
     mutationFn: () => api.put(`/users/${user.id}/role`, { role }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-users'] })
+      toast.success('역할이 변경되었습니다.')
       onClose()
     },
+    onError: () => toast.error('역할 변경에 실패했습니다.'),
   })
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+    <div className="modal-overlay">
+      <div className="modal-content max-w-sm">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">역할 변경</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
@@ -349,13 +358,16 @@ export function StaffUsers() {
   const toggleMutation = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
       api.put(`/users/${id}`, { is_active }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-users'] }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['staff-users'] })
+      toast.success(vars.is_active ? '계정이 활성화되었습니다.' : '계정이 비활성화되었습니다.')
+    },
   })
 
   const filtered = roleFilter ? users.filter((u) => u.role === roleFilter) : users
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 page-fade-in">
       {showCreate && currentUser && (
         <CreateStaffModal currentRole={currentUser.role} onClose={() => setShowCreate(false)} />
       )}

@@ -636,7 +636,7 @@ export function Reports() {
   })
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl">
+    <div className="p-6 space-y-5 max-w-5xl page-fade-in">
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
