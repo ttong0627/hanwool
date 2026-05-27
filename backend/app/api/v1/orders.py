@@ -65,7 +65,7 @@ async def _get_today_orders_for_dispatch(db: AsyncSession) -> list[Order]:
         select(Order)
         .where(
             Order.created_at >= _today_start(),
-            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+            Order.status.in_([OrderStatus.pending, OrderStatus.assigned]),
         )
         .order_by(Order.created_at.asc())
     )
@@ -173,13 +173,18 @@ async def _dispatch_today_orders(
         for dispatch_item in group.orders:
             db_order = id_to_order.get(dispatch_item.id)
             if db_order:
+                previous_status = db_order.status
+                previous_driver_id = db_order.driver_id
                 db_order.driver_id = group.driver_id
                 db_order.sequence = dispatch_item.sequence
                 db_order.sequence_source = "auto"
                 if db_order.status == OrderStatus.pending:
-                    previous_status = db_order.status
                     db_order.status = OrderStatus.assigned
                     db_order.assigned_at = now
+                elif db_order.status == OrderStatus.assigned and previous_driver_id != group.driver_id:
+                    db_order.assigned_at = now
+                dispatch_item.status = db_order.status
+                if previous_status != db_order.status or previous_driver_id != group.driver_id:
                     await order_service.log_order_history(
                         db,
                         db_order,
@@ -189,7 +194,10 @@ async def _dispatch_today_orders(
                         actor_user_id=executed_by_id,
                         actor_role="system" if is_auto else None,
                         driver_id=group.driver_id,
-                        note="자동 배차" if is_auto else "관리자 배차",
+                        note=(
+                            ("자동 배차" if is_auto else "관리자 배차")
+                            + (f" / 기사 변경: {previous_driver_id} -> {group.driver_id}" if previous_driver_id and previous_driver_id != group.driver_id else "")
+                        ),
                     )
                 db.add(
                     DispatchRunItem(

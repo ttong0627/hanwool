@@ -145,12 +145,19 @@ export function DeliveryDispatch() {
   const driverMap = useMemo(() => Object.fromEntries(drivers.map((driver) => [driver.id, driver])), [drivers])
   const selectedRequest = requests.find((request) => request.id === activeRequestId) || requests[0]
 
+  const refreshDispatchViews = () => {
+    qc.invalidateQueries({ queryKey: ['orders'] })
+    qc.invalidateQueries({ queryKey: ['orders-today'] })
+    qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+    qc.invalidateQueries({ queryKey: ['delivery-tracking-orders'] })
+    qc.invalidateQueries({ queryKey: ['dispatch-requests', 'pending'] })
+  }
+
   const dispatchMutation = useMutation({
     mutationFn: (driver_ids: number[]) => api.post('/orders/dispatch', { driver_ids }).then((r) => r.data),
     onSuccess: (data: DispatchResult) => {
       setDispatchResult(data)
-      qc.invalidateQueries({ queryKey: ['orders-today'] })
-      qc.invalidateQueries({ queryKey: ['dispatch-requests', 'pending'] })
+      refreshDispatchViews()
     },
   })
 
@@ -160,8 +167,7 @@ export function DeliveryDispatch() {
     onSuccess: (data) => {
       setDispatchResult(data.dispatch)
       setActiveRequestId(null)
-      qc.invalidateQueries({ queryKey: ['dispatch-requests', 'pending'] })
-      qc.invalidateQueries({ queryKey: ['orders-today'] })
+      refreshDispatchViews()
     },
   })
 
