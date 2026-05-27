@@ -54,13 +54,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-[#f8f9fb]">
+    <div className="flex h-screen" style={{ background: 'var(--surface-base)' }}>
       <aside
         className={cn(
-          'bg-[#0f1729] flex flex-col shrink-0 transition-[width] duration-200',
+          'flex flex-col shrink-0 transition-[width] duration-200',
           sidebarCollapsed ? 'w-16' : 'w-60'
         )}
+        style={{
+          background: 'linear-gradient(180deg, #0e1628 0%, #111e35 60%, #0d1525 100%)',
+          borderRight: '1px solid rgba(255,255,255,0.04)',
+          boxShadow: '4px 0 24px rgba(0,0,0,0.18)',
+        }}
       >
+        {/* 로고 영역 */}
         <div className={cn('border-b border-white/5', sidebarCollapsed ? 'px-2 py-3' : 'px-4 py-4')}>
           <div className={cn('flex items-center gap-2', sidebarCollapsed ? 'flex-col justify-center' : 'justify-between')}>
             <HanwoolLogo
@@ -73,13 +79,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={toggleSidebar}
               title={sidebarCollapsed ? '메뉴 펼치기' : '메뉴 접기'}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-100"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/8 hover:text-slate-100"
             >
               {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </button>
           </div>
         </div>
 
+        {/* 네비게이션 */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {navs.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -89,16 +96,31 @@ export function Layout({ children }: { children: React.ReactNode }) {
               title={sidebarCollapsed ? label : undefined}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center rounded-lg text-sm font-medium transition-all duration-150 group',
+                  'relative flex items-center rounded-lg text-sm font-medium transition-all duration-150 group',
                   sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2',
                   isActive
-                    ? 'bg-brand-500/15 text-brand-300 shadow-[inset_0_0_0_1px_rgba(249,115,22,0.15)]'
+                    ? 'text-brand-300'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
                 )
+              }
+              style={({ isActive }) =>
+                isActive
+                  ? {
+                      background: 'linear-gradient(90deg, rgba(249,115,22,0.14) 0%, rgba(249,115,22,0.04) 100%)',
+                      boxShadow: 'inset 0 0 0 1px rgba(249,115,22,0.12)',
+                    }
+                  : {}
               }
             >
               {({ isActive }) => (
                 <>
+                  {/* 활성 상태 왼쪽 바 */}
+                  {isActive && !sidebarCollapsed && (
+                    <span
+                      className="absolute left-0 top-[18%] bottom-[18%] w-[3px] rounded-r-full"
+                      style={{ background: '#f97316' }}
+                    />
+                  )}
                   <Icon className={cn(
                     'w-4 h-4 shrink-0 transition-colors',
                     isActive ? 'text-brand-400' : 'text-slate-500 group-hover:text-slate-300'
@@ -110,11 +132,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-white/5">
+        {/* 사용자 섹션 */}
+        <div className="p-2.5 border-t border-white/5">
           {!sidebarCollapsed && (
-            <div className="bg-white/5 rounded-xl px-3 py-2.5 mb-2">
-              <div className="text-xs font-semibold text-slate-200 truncate">{user?.name}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{ROLE_LABELS[user?.role ?? ''] ?? user?.role}</div>
+            <div
+              className="rounded-xl px-3 py-2.5 mb-1.5"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)' }}
+                >
+                  {user?.name?.slice(0, 1) ?? '?'}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-200 truncate">{user?.name}</div>
+                  <div className="text-[10px] text-slate-500">{ROLE_LABELS[user?.role ?? ''] ?? user?.role}</div>
+                </div>
+              </div>
             </div>
           )}
           <button

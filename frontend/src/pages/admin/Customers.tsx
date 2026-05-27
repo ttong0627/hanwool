@@ -485,7 +485,7 @@ function CustomerDetailPanel({
       </div>
 
       {/* 주문 이력 타임라인 */}
-      <div className="card">
+      <div className="card-elevated rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-gray-800 flex items-center gap-2">
             <UserCheck className="w-4 h-4 text-brand-500" />
@@ -595,14 +595,14 @@ export function Customers() {
       {editing && <EditCustomerModal customer={editing} onClose={() => setEditing(null)} />}
 
       {/* 페이지 헤더 */}
-      <div className="px-6 py-4 border-b bg-white flex items-center gap-4">
+      <div className="px-6 py-4 border-b bg-white flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm shrink-0">
+          <Users className="w-4 h-4 text-white" />
+        </div>
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Users className="w-5 h-5 text-brand-500" />
-            고객 관리
-          </h1>
+          <h1 className="text-xl font-bold text-gray-900">고객 관리</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            전체 {total.toLocaleString()}명 · 주문 기록 기준 자동 업데이트
+            전체 <span className="font-bold text-gray-600">{total.toLocaleString()}명</span> · 주문 기록 기준 자동 업데이트
           </p>
         </div>
       </div>

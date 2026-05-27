@@ -11,6 +11,7 @@ import {
   X,
   ToggleLeft,
   ToggleRight,
+  Phone,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -37,13 +38,7 @@ interface DriverForm {
   password: string
 }
 
-function DriverModal({
-  driver,
-  onClose,
-}: {
-  driver?: Driver
-  onClose: () => void
-}) {
+function DriverModal({ driver, onClose }: { driver?: Driver; onClose: () => void }) {
   const qc = useQueryClient()
   const [form, setForm] = useState<DriverForm>({
     name: driver?.name ?? '',
@@ -54,10 +49,7 @@ function DriverModal({
   const mutation = useMutation({
     mutationFn: () => {
       if (driver) {
-        const payload: Partial<DriverForm> = {
-          name: form.name.trim(),
-          phone: form.phone.trim(),
-        }
+        const payload: Partial<DriverForm> = { name: form.name.trim(), phone: form.phone.trim() }
         if (form.password.trim()) payload.password = form.password.trim()
         return api.put(`/users/${driver.id}`, payload)
       }
@@ -77,64 +69,43 @@ function DriverModal({
     (!form.password.trim() || form.password.trim().length >= 8)
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" style={{ animation: 'slideUpModal 250ms cubic-bezier(0.16,1,0.3,1)' }}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="font-bold text-lg">{driver ? '기사 정보 수정' : '기사 등록'}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg" aria-label="닫기">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center">
+              <Truck className="w-4 h-4 text-brand-500" />
+            </div>
+            <h2 className="font-bold text-lg text-gray-900">{driver ? '기사 정보 수정' : '기사 등록'}</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors" aria-label="닫기">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-4">
           <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">이름</span>
-            <input
-              className="input w-full"
-              value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="홍길동"
-            />
+            <span className="label">이름</span>
+            <input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="홍길동" />
           </label>
-
           <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">전화번호</span>
-            <input
-              className="input w-full"
-              value={form.phone}
-              onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
-              placeholder="010-0000-0000"
-            />
+            <span className="label">전화번호</span>
+            <input className="input" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="010-0000-0000" />
           </label>
-
           <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">
-              {driver ? '새 비밀번호' : '비밀번호'}
-            </span>
-            <input
-              className="input w-full"
-              type="password"
-              value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder={driver ? '변경할 때만 입력' : '8자 이상'}
-            />
+            <span className="label">{driver ? '새 비밀번호' : '비밀번호'}</span>
+            <input className="input" type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder={driver ? '변경할 때만 입력' : '8자 이상'} />
           </label>
-
           {mutation.isError && (
-            <p className="text-sm text-red-600">
-              {(mutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-                '저장 중 문제가 발생했습니다.'}
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {(mutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '저장 중 문제가 발생했습니다.'}
             </p>
           )}
         </div>
 
         <div className="flex gap-2 p-5 pt-0">
           <button onClick={onClose} className="flex-1 btn-secondary">취소</button>
-          <button
-            onClick={() => mutation.mutate()}
-            disabled={!valid || mutation.isPending}
-            className="flex-1 btn-primary disabled:opacity-40 flex items-center justify-center gap-2"
-          >
+          <button onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className="flex-1 btn-primary disabled:opacity-40 flex items-center justify-center gap-2">
             {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {driver ? '수정 완료' : '등록'}
           </button>
@@ -161,8 +132,7 @@ export function Drivers() {
   })
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
-      api.put(`/users/${id}`, { is_active }),
+    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => api.put(`/users/${id}`, { is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
   })
 
@@ -179,28 +149,30 @@ export function Drivers() {
     return acc
   }, {})
 
-  const activeCount = drivers.filter((driver) => driver.is_active).length
+  const activeCount = drivers.filter((d) => d.is_active).length
+
   const confirmDelete = (driver: Driver) => {
-    if (window.confirm(`${driver.name} 기사를 삭제할까요? 삭제된 기사는 배정 목록에 표시되지 않습니다.`)) {
-      deleteMutation.mutate(driver.id)
-    }
+    if (window.confirm(`${driver.name} 기사를 삭제할까요?`)) deleteMutation.mutate(driver.id)
   }
 
   return (
-    <div className="p-6 space-y-4 page-fade-in">
+    <div className="p-6 space-y-5 page-fade-in">
       {showCreate && <DriverModal onClose={() => setShowCreate(false)} />}
       {editing && <DriverModal driver={editing} onClose={() => setEditing(null)} />}
 
+      {/* 헤더 */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Truck className="w-6 h-6 text-brand-500" />
+          <h1 className="text-2xl font-bold flex items-center gap-2.5 text-gray-900">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm">
+              <Truck className="w-4.5 h-4.5 text-white" />
+            </div>
             기사 관리
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            전체 {drivers.length}명 · 활성 {activeCount}명
+          <p className="text-sm text-gray-500 mt-1 ml-0.5">
+            전체 <span className="font-bold text-gray-700">{drivers.length}명</span> · 활성{' '}
+            <span className="font-bold text-green-600">{activeCount}명</span>
           </p>
-          <p className="text-xs text-purple-600 mt-0.5">관리자는 별도 등록 없이 기사 겸직 가능</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
           <UserPlus className="w-4 h-4" />
@@ -208,109 +180,170 @@ export function Drivers() {
         </button>
       </div>
 
-      {isLoading && <div className="text-center text-gray-400 py-12">기사 목록을 불러오는 중입니다.</div>}
+      {isLoading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[1,2,3].map((i) => (
+            <div key={i} className="card-elevated rounded-xl overflow-hidden">
+              <div className="skeleton h-1.5 w-full" />
+              <div className="p-4 space-y-3">
+                <div className="skeleton h-10 w-10 rounded-2xl" />
+                <div className="skeleton h-4 w-32 rounded" />
+                <div className="skeleton h-3 w-24 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {drivers.map((driver) => {
           const stats = statsMap[driver.id] || { total: 0, delivered: 0 }
           const progressPct = stats.total > 0 ? Math.round((stats.delivered / stats.total) * 100) : 0
           const color = getDriverColor(driver.id)
+          const isActive = driver.is_active
 
           return (
-            <div
-              key={driver.id}
-              className="card border-l-4"
-              style={{ borderLeftColor: driver.is_active ? color : '#e5e7eb' }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    style={driver.is_active ? { background: `${color}20` } : {}}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${!driver.is_active ? 'bg-gray-100' : ''}`}
-                  >
-                    <Truck
-                      style={driver.is_active ? { color } : {}}
-                      className={`w-5 h-5 ${!driver.is_active ? 'text-gray-400' : ''}`}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <div className="font-semibold text-gray-900 truncate">{driver.name}</div>
-                    </div>
-                    <div className="text-xs text-gray-500 truncate">{driver.phone}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setEditing(driver)}
-                    className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600"
-                    title="수정"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => toggleMutation.mutate({ id: driver.id, is_active: !driver.is_active })}
-                    className={`p-1.5 rounded-lg transition-colors ${driver.is_active ? 'text-green-500 hover:bg-green-50' : 'text-gray-300 hover:bg-gray-100'}`}
-                    title={driver.is_active ? '비활성화' : '활성화'}
-                  >
-                    {driver.is_active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                  </button>
-                  <button
-                    onClick={() => confirmDelete(driver)}
-                    className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600"
-                    title="삭제"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+            <div key={driver.id} className="card-elevated rounded-xl overflow-hidden">
+              {/* 컬러 그래디언트 상단 바 */}
+              <div
+                style={{ background: isActive ? `linear-gradient(90deg, ${color}, ${color}88)` : '#e5e7eb' }}
+                className="h-[6px] w-full"
+              />
 
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                  <div className="flex items-center justify-center gap-1 mb-0.5">
-                    <Clock className="w-3.5 h-3.5 text-brand-400" />
-                    <span className="text-xs text-gray-500">오늘 배정</span>
-                  </div>
-                  <div className="text-xl font-bold text-brand-600">{stats.total}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                  <div className="flex items-center justify-center gap-1 mb-0.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                    <span className="text-xs text-gray-500">완료</span>
-                  </div>
-                  <div className="text-xl font-bold text-green-600">{stats.delivered}</div>
-                </div>
-              </div>
-
-              {stats.total > 0 && (
-                <div>
-                  <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>진행률</span>
-                    <span>{progressPct}%</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="p-4">
+                {/* 헤더: 아바타 + 이름 + 액션 */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    {/* 프리미엄 아바타 */}
                     <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${progressPct}%`, background: color }}
-                    />
+                      style={{
+                        background: isActive ? `${color}18` : '#f3f4f6',
+                        border: `2px solid ${isActive ? color + '35' : '#e5e7eb'}`,
+                      }}
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all"
+                    >
+                      <Truck style={{ color: isActive ? color : '#9ca3af' }} className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-gray-900 text-[15px] leading-tight">{driver.name}</span>
+                        <span
+                          style={isActive ? { background: `${color}15`, color, borderColor: `${color}30` } : {}}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            isActive ? '' : 'bg-gray-100 text-gray-400 border-gray-200'
+                          }`}
+                        >
+                          {isActive ? '활성' : '비활성'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500">
+                        <Phone className="w-3 h-3" />
+                        {driver.phone}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 액션 버튼들 */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => setEditing(driver)}
+                      className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                      title="수정"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => toggleMutation.mutate({ id: driver.id, is_active: !driver.is_active })}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        isActive ? 'text-green-500 hover:bg-green-50' : 'text-gray-300 hover:bg-gray-100'
+                      }`}
+                      title={isActive ? '비활성화' : '활성화'}
+                    >
+                      {isActive ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                    </button>
+                    <button
+                      onClick={() => confirmDelete(driver)}
+                      className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                      title="삭제"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-              )}
 
-              <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
-                <span>등록일 {formatDate(driver.created_at)}</span>
-                <span className={driver.is_active ? 'text-green-600' : 'text-gray-400'}>
-                  {driver.is_active ? '활성' : '비활성'}
-                </span>
+                {/* 통계 */}
+                <div className="grid grid-cols-2 gap-2.5 mb-3.5">
+                  <div
+                    style={{ background: isActive ? `${color}0a` : '#f9fafb' }}
+                    className="rounded-xl p-3 border border-gray-50"
+                  >
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Clock className="w-3.5 h-3.5" style={{ color: isActive ? color : '#9ca3af' }} />
+                      <span className="text-[11px] text-gray-500 font-medium">오늘 배정</span>
+                    </div>
+                    <div className="text-[22px] font-black tabular-nums leading-none" style={{ color: isActive ? color : '#9ca3af' }}>
+                      {stats.total}
+                    </div>
+                  </div>
+                  <div className="rounded-xl p-3 bg-emerald-50 border border-emerald-50">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-[11px] text-gray-500 font-medium">완료</span>
+                    </div>
+                    <div className="text-[22px] font-black tabular-nums leading-none text-emerald-600">
+                      {stats.delivered}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 진행바 */}
+                {stats.total > 0 ? (
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center text-[11px] mb-1.5">
+                      <span className="text-gray-500">배송 진행률</span>
+                      <span className="font-bold tabular-nums" style={{ color }}>{progressPct}%</span>
+                    </div>
+                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${progressPct}%`,
+                          background: `linear-gradient(90deg, ${color}bb, ${color})`,
+                          boxShadow: progressPct > 0 ? `0 0 10px ${color}55` : 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3 h-2.5 bg-gray-100 rounded-full" />
+                )}
+
+                {/* 푸터 */}
+                <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-50">
+                  <span>등록 {formatDate(driver.created_at)}</span>
+                  <div
+                    style={{ background: `${color}12`, color, borderColor: `${color}25` }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                  >
+                    <span
+                      style={{ background: isActive ? color : '#9ca3af' }}
+                      className="w-1.5 h-1.5 rounded-full"
+                    />
+                    기사 #{driver.id}
+                  </div>
+                </div>
               </div>
             </div>
           )
         })}
 
         {!isLoading && drivers.length === 0 && (
-          <div className="col-span-full text-center text-gray-400 py-16">
-            <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>등록된 기사가 없습니다.</p>
+          <div className="col-span-full text-center py-20 text-gray-400">
+            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+              <Truck className="w-8 h-8 opacity-30" />
+            </div>
+            <p className="font-medium">등록된 기사가 없습니다.</p>
+            <p className="text-sm mt-1">기사 등록 버튼으로 추가해 주세요.</p>
           </div>
         )}
       </div>

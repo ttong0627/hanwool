@@ -275,37 +275,49 @@ function MapView({
   const noCoordCount = orders.length - coordCount
 
   return (
-    <div className="relative h-[calc(100vh-320px)] min-h-[480px] overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+    <div className="map-premium relative" style={{ height: 'calc(100vh - 320px)', minHeight: '480px' }}>
       <div ref={mapEl} className="h-full w-full" />
+
+      {/* 지도 로드 실패 / 좌표 없음 */}
       {(!KAKAO_MAP_KEY || mapError || coordCount === 0) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 p-6 text-center">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90 backdrop-blur-sm p-6 text-center">
           <div>
-            <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+              <MapPin className="h-7 w-7 text-gray-300" />
+            </div>
             <div className="text-sm font-semibold text-gray-700">
               {!KAKAO_MAP_KEY ? '지도 키가 설정되지 않았습니다.' : mapError || '좌표가 저장된 주문이 없습니다.'}
             </div>
-            <div className="mt-1 text-xs text-gray-500">주문관리에서 저장된 좌표가 있으면 이 화면에 표시됩니다.</div>
+            <div className="mt-1 text-xs text-gray-400">주문관리에서 저장된 좌표가 있으면 표시됩니다.</div>
           </div>
         </div>
       )}
-      <div className="absolute bottom-3 left-3 flex flex-col gap-1.5 rounded bg-white/95 px-3 py-2 text-[11px] shadow">
-        <div className="flex items-center gap-3 text-gray-600">
-          <span>좌표 {coordCount}/{orders.length}건</span>
-          {noCoordCount > 0 && <span className="font-semibold text-orange-600">미설정 {noCoordCount}건</span>}
+
+      {/* 글래스모피즘 범례 패널 */}
+      <div className="glass-panel absolute bottom-3 left-3 rounded-xl px-3.5 py-2.5 text-[11px]">
+        <div className="flex items-center gap-2.5 text-gray-600 mb-1.5">
+          <span className="font-semibold text-gray-700">좌표</span>
+          <span className="tabular-nums font-bold text-gray-900">{coordCount}</span>
+          <span className="text-gray-400">/</span>
+          <span className="tabular-nums text-gray-600">{orders.length}건</span>
+          {noCoordCount > 0 && (
+            <span className="font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-md">
+              미설정 {noCoordCount}건
+            </span>
+          )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="flex items-center gap-1">
-            <span style={{ background: '#f59e0b' }} className="inline-block h-2.5 w-2.5 rounded-full" />
-            <span className="text-gray-600">경안시장(출발)</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1.5">
+            <span style={{ background: '#f59e0b', boxShadow: '0 0 0 2px #fef3c7' }} className="inline-block h-2.5 w-2.5 rounded-full" />
+            <span className="text-gray-600">경안시장</span>
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1.5">
             <span style={{ background: '#9ca3af' }} className="inline-block h-2.5 w-2.5 rounded-full" />
-            <span className="text-gray-600">미배정</span>
+            <span className="text-gray-500">미배정</span>
           </span>
-          <span className="flex items-center gap-1 text-gray-500">핀 색상 = 기사 색상</span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded-full border border-red-400 border-dashed bg-transparent" />
-            <span className="text-red-600">지연</span>
+          <span className="flex items-center gap-1.5 text-gray-500">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" style={{ border: '1.5px dashed #ef4444' }} />
+            <span className="text-red-500">지연</span>
           </span>
         </div>
       </div>
@@ -530,26 +542,37 @@ export function DeliveryTracking() {
         </div>
       )}
 
-      {/* 필터 바 */}
-      <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-        {/* 기사 필터 — 고유 색상 카드 */}
+      {/* 필터 바 — 프리미엄 글래스 카드 */}
+      <div className="card-elevated rounded-xl p-4 space-y-3">
+        {/* 기사 필터 */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-gray-500">기사</span>
+          <span className="text-xs font-bold text-gray-400 tracking-wide uppercase">기사</span>
+          {/* 전체 */}
           <button
             onClick={() => { setSelectedDriverId('all'); setSelectedOrderId(undefined) }}
-            className={`rounded-lg border px-3 py-1.5 text-sm ${selectedDriverId === 'all' ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700' : 'border-gray-200 text-gray-600'}`}
+            className={`driver-chip transition-all ${
+              selectedDriverId === 'all'
+                ? 'driver-chip-active border-brand-400 bg-brand-50 text-brand-700 shadow-[0_0_0_3px_rgba(249,115,22,0.10)]'
+                : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+            }`}
           >
-            전체
+            전체 · {visibleOrders.length}건
           </button>
+          {/* 미배정 */}
           {unassignedCount > 0 && (
             <button
               onClick={() => { setSelectedDriverId('unassigned'); setSelectedOrderId(undefined) }}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm ${selectedDriverId === 'unassigned' ? 'border-gray-400 bg-gray-100 font-semibold text-gray-800' : 'border-gray-200 text-gray-600'}`}
+              className={`driver-chip transition-all ${
+                selectedDriverId === 'unassigned'
+                  ? 'driver-chip-active border-gray-400 bg-gray-100 text-gray-800'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
             >
-              <span className="h-3 w-3 rounded-full bg-gray-400" />
+              <span className="h-2.5 w-2.5 rounded-full bg-gray-400 shrink-0" />
               미배정 · {unassignedCount}건
             </button>
           )}
+          {/* 기사별 */}
           {driverGroups.map((driver) => {
             const color = driverColorMap.get(driver.id) ?? '#9ca3af'
             const isActive = selectedDriverId === driver.id
@@ -557,25 +580,31 @@ export function DeliveryTracking() {
               <button
                 key={driver.id}
                 onClick={() => { setSelectedDriverId(driver.id); setSelectedOrderId(undefined) }}
-                style={isActive ? { borderColor: color, backgroundColor: `${color}18` } : {}}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${isActive ? 'font-semibold' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                style={isActive
+                  ? { borderColor: color, background: `${color}12`, boxShadow: `0 0 0 3px ${color}18` }
+                  : {}
+                }
+                className={`driver-chip ${isActive ? 'driver-chip-active' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'}`}
               >
-                {/* 기사 고유 색상 dot */}
                 <span
-                  style={{ background: color }}
-                  className="inline-block h-3 w-3 shrink-0 rounded-full shadow-sm"
+                  style={{ background: color, boxShadow: isActive ? `0 0 0 2px ${color}35` : 'none' }}
+                  className="h-2.5 w-2.5 rounded-full shrink-0 transition-all"
                 />
                 <span style={isActive ? { color } : {}}>{driver.name}</span>
-                <span className={`text-xs ${isActive ? 'font-bold' : 'text-gray-400'}`} style={isActive ? { color } : {}}>
-                  {driver.count}건
+                <span
+                  style={isActive ? { background: `${color}18`, color } : {}}
+                  className={`text-[11px] px-1.5 py-0.5 rounded-full tabular-nums font-bold ${!isActive ? 'text-gray-400' : ''}`}
+                >
+                  {driver.count}
                 </span>
               </button>
             )
           })}
         </div>
+
         {/* 상태 필터 + 검색 */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-gray-500">상태</span>
+          <span className="text-xs font-bold text-gray-400 tracking-wide uppercase">상태</span>
           {([
             { key: 'all', label: '전체' },
             { key: 'in_transit', label: '진행중' },
@@ -585,17 +614,19 @@ export function DeliveryTracking() {
             <button
               key={key}
               onClick={() => { setStatusFilter(key); setSelectedOrderId(undefined) }}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${
+              className={`driver-chip transition-all ${
                 statusFilter === key
                   ? key === 'delayed'
-                    ? 'border-red-400 bg-red-50 font-semibold text-red-700'
-                    : 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
-                  : 'border-gray-200 text-gray-600'
+                    ? 'driver-chip-active border-red-400 bg-red-50 text-red-700 shadow-[0_0_0_3px_rgba(239,68,68,0.10)]'
+                    : 'driver-chip-active border-brand-400 bg-brand-50 text-brand-700 shadow-[0_0_0_3px_rgba(249,115,22,0.10)]'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
               }`}
             >
               {label}
               {key === 'delayed' && delayedCount > 0 && (
-                <span className="ml-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{delayedCount}</span>
+                <span className="ml-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-black text-white leading-none">
+                  {delayedCount}
+                </span>
               )}
             </button>
           ))}
@@ -604,8 +635,8 @@ export function DeliveryTracking() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="리스트 검색"
-              className="input w-64 pl-8"
+              placeholder="이름·주소·기사 검색"
+              className="input w-64 pl-8 rounded-xl"
             />
           </div>
         </div>
@@ -622,60 +653,98 @@ export function DeliveryTracking() {
           viewportKey={viewportKey}
         />
 
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div className="border-b border-gray-100 px-4 py-3">
-            <div className="font-bold text-gray-900">배송 명단</div>
-            <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 배송순번 정렬</div>
+        {/* 프리미엄 배송 명단 패널 */}
+        <div className="card-elevated rounded-xl overflow-hidden flex flex-col">
+          {/* 패널 헤더 */}
+          <div
+            className="px-4 py-3 border-b border-gray-50"
+            style={{ background: 'linear-gradient(90deg, #f8fafc, #ffffff)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold text-gray-900 flex items-center gap-2">
+                  <ListOrdered className="h-4 w-4 text-brand-500" />
+                  배송 명단
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  <span className="font-semibold tabular-nums text-gray-700">{selectedOrders.length}</span>건 · 배송순번 정렬
+                </div>
+              </div>
+              {delayedCount > 0 && (
+                <span className="flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-bold text-white">
+                  <AlertTriangle className="h-3 w-3" />
+                  지연 {delayedCount}
+                </span>
+              )}
+            </div>
           </div>
-          {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
-          {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-          <div ref={listRef} className="max-h-[calc(100vh-400px)] min-h-[300px] divide-y divide-gray-100 overflow-y-auto">
+
+          {isLoading && (
+            <div className="flex-1 flex items-center justify-center py-16">
+              <div className="text-center text-sm text-gray-400">
+                <div className="skeleton w-8 h-8 rounded-full mx-auto mb-3" />
+                불러오는 중...
+              </div>
+            </div>
+          )}
+          {!isLoading && selectedOrders.length === 0 && (
+            <div className="flex-1 flex items-center justify-center py-16 text-center">
+              <div>
+                <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                  <Truck className="h-6 w-6 text-gray-300" />
+                </div>
+                <div className="text-sm font-medium text-gray-500">표시할 주문이 없습니다.</div>
+              </div>
+            </div>
+          )}
+
+          <div ref={listRef} className="max-h-[calc(100vh-400px)] min-h-[300px] divide-y divide-gray-50/80 overflow-y-auto">
             {selectedOrders.map((order, index) => {
               const isDelayed = order.status === 'delayed'
               const isDelivered = order.status === 'delivered'
+              const isSelected = selectedOrderId === order.id
               const driverColor = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
               return (
                 <button
                   key={order.id}
                   ref={(el) => { rowRefs.current[order.id] = el }}
                   onClick={() => setSelectedOrderId(order.id)}
-                  className={`w-full px-3 py-2.5 text-left transition-colors ${
-                    selectedOrderId === order.id
-                      ? 'bg-brand-50 ring-1 ring-inset ring-brand-300'
+                  style={isSelected ? { background: `${driverColor}0c`, boxShadow: `inset 2px 0 0 ${driverColor}` } : {}}
+                  className={`w-full px-3 py-2.5 text-left transition-all duration-100 ${
+                    isSelected
+                      ? ''
                       : isDelayed
-                      ? 'bg-red-50 hover:bg-red-100'
-                      : 'hover:bg-gray-50'
-                  } ${isDelayed ? 'border-l-2 border-l-red-500' : ''}`}
+                      ? 'bg-red-50/70 hover:bg-red-50 border-l-2 border-l-red-400'
+                      : 'hover:bg-gray-50/80'
+                  }`}
                 >
-                  <div className="grid grid-cols-[32px_1fr] items-center gap-2">
-                    <span
-                      style={{ background: driverColor }}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
+                  <div className="grid grid-cols-[28px_1fr] items-start gap-2.5">
+                    {/* 순번 원 */}
+                    <div
+                      style={{ background: driverColor, boxShadow: isSelected ? `0 0 0 3px ${driverColor}30` : 'none' }}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white mt-0.5 transition-all"
                     >
                       {order.sequence ?? index + 1}
-                    </span>
+                    </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`truncate text-sm font-semibold ${isDelivered ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-sm font-semibold leading-tight ${isDelivered ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                           {order.customer_name}
                         </span>
                         <StatusBadge status={order.status} />
                         {isDelayed && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />}
                       </div>
-                      <div className="truncate text-[11px] text-gray-500">{order.delivery_address}</div>
+                      <div className="truncate text-[11px] text-gray-500 mt-0.5">{order.delivery_address}</div>
+                      <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-gray-400">
+                        <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          {order.driver_id && (
+                            <span style={{ background: driverColor }} className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" />
+                          )}
+                          <span className="truncate max-w-[72px]">{order.driver_name || '미배정'}</span>
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2 pl-8 text-[11px] text-gray-500">
-                    <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
-                    <span className="flex shrink-0 items-center gap-1 truncate">
-                      {order.driver_id && (
-                        <span
-                          style={{ background: driverColor }}
-                          className="inline-block h-2 w-2 shrink-0 rounded-full"
-                        />
-                      )}
-                      {order.driver_name || '미배정'}
-                    </span>
                   </div>
                 </button>
               )

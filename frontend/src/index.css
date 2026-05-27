@@ -199,4 +199,88 @@
 
   /* 섹션 구분선 */
   .section-divider { @apply border-t border-gray-50 my-2; }
+
+  /* ── 프리미엄 카드 (엘리베이션 + hover 부상) ── */
+  .card-elevated {
+    background: #ffffff;
+    border-radius: var(--radius-lg);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.04),
+      0 4px 16px rgba(0,0,0,0.06),
+      0 0 0 1px rgba(0,0,0,0.03);
+    transition: box-shadow var(--transition-base), transform var(--transition-base);
+  }
+  .card-elevated:hover {
+    box-shadow:
+      0 4px 12px rgba(0,0,0,0.07),
+      0 16px 40px rgba(0,0,0,0.09),
+      0 0 0 1px rgba(0,0,0,0.04);
+    transform: translateY(-2px);
+  }
+
+  /* ── 글래스모피즘 패널 (지도 오버레이, 모달 서브 등) ── */
+  .glass-panel {
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.75);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .glass-panel-dark {
+    background: rgba(15,23,41,0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.32);
+  }
+
+  /* ── 지도 프리미엄 컨테이너 ── */
+  .map-premium {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.06),
+      0 4px 20px rgba(0,0,0,0.10),
+      0 12px 48px rgba(0,0,0,0.08);
+  }
+
+  /* ── 기사 컬러 드라이버 칩 ── */
+  .driver-chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium
+           border transition-all duration-150 cursor-pointer;
+  }
+  .driver-chip-active {
+    @apply font-semibold shadow-sm;
+  }
+
+  /* ── 상태 뱃지 (StatusBadge 외 인라인 용도) ── */
+  .status-dot-online  { @apply inline-block w-2 h-2 rounded-full bg-green-400 shadow-[0_0_0_3px_rgba(74,222,128,0.25)]; }
+  .status-dot-offline { @apply inline-block w-2 h-2 rounded-full bg-gray-300; }
+  .status-dot-busy    { @apply inline-block w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.25)]; }
+
+  /* ── 사이드바 nav 활성 바 ── */
+  .nav-active-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 3px;
+    background: var(--brand);
+    border-radius: 0 3px 3px 0;
+  }
+
+  /* ── 섹션 타이틀 ── */
+  .section-title {
+    @apply flex items-center gap-2 text-sm font-bold text-gray-800 mb-3;
+  }
+
+  /* ── 프리미엄 인풋 ── */
+  .input-premium {
+    @apply w-full border rounded-xl px-3.5 py-2.5 text-sm bg-white
+           focus:outline-none focus:ring-2 focus:ring-brand-400/30 focus:border-brand-400
+           placeholder:text-gray-400 transition-all;
+    border-color: var(--border-default);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
 }

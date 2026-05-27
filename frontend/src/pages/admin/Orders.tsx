@@ -892,7 +892,7 @@ export function Orders() {
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-5xl mx-auto px-6 py-2.5 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm">
               <ClipboardList className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-black text-gray-900 text-sm">주문 관리</span>
@@ -916,9 +916,11 @@ export function Orders() {
       <div className="max-w-5xl mx-auto px-6 py-4">
         {tab === 'list' && <OrderListTab />}
         {tab === 'qr' && (
-          <div className="card">
+          <div className="card-elevated rounded-xl p-5">
             <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100">
-              <QrCode className="w-5 h-5 text-brand-500" />
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm">
+                <QrCode className="w-4 h-4 text-white" />
+              </div>
               <div>
                 <h2 className="font-bold text-gray-800">QR 촬영</h2>
                 <p className="text-xs text-gray-400">카메라로 QR 스캔 입력</p>
@@ -928,9 +930,11 @@ export function Orders() {
           </div>
         )}
         {tab === 'manual' && (
-          <div className="card">
+          <div className="card-elevated rounded-xl p-5">
             <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100">
-              <TableProperties className="w-5 h-5 text-brand-500" />
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center shadow-sm">
+                <TableProperties className="w-4 h-4 text-white" />
+              </div>
               <div>
                 <h2 className="font-bold text-gray-800">직접 입력</h2>
                 <p className="text-xs text-gray-400">스프레드시트 방식 입력</p>
