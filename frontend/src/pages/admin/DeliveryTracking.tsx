@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Clock3, ListOrdered, MapPin, RefreshCw, Route, Search, Truck } from 'lucide-react'
 import api from '@/lib/api'
@@ -51,16 +51,20 @@ function MapView({
   orders,
   selectedId,
   onSelect,
+  viewportKey,
 }: {
   orders: Order[]
   selectedId?: number
   onSelect: (order: Order) => void
+  viewportKey: string
 }) {
   const mapEl = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<KakaoAny | null>(null)
   const markersRef = useRef<KakaoAny[]>([])
   const overlaysRef = useRef<KakaoAny[]>([])
   const lineRef = useRef<KakaoAny | null>(null)
+  const lastFitKeyRef = useRef('')
+  const lastCenteredOrderIdRef = useRef<number | undefined>()
   const [ready, setReady] = useState(false)
   const [mapError, setMapError] = useState('')
 
@@ -103,8 +107,12 @@ function MapView({
     lineRef.current = null
 
     const coordOrders = orders.filter(hasCoord)
+    const shouldFitBounds = lastFitKeyRef.current !== viewportKey
     if (coordOrders.length === 0) {
-      mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(MARKET_LAT, MARKET_LNG))
+      if (shouldFitBounds) {
+        lastFitKeyRef.current = viewportKey
+        mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(MARKET_LAT, MARKET_LNG))
+      }
       return
     }
 
@@ -143,12 +151,21 @@ function MapView({
       routeLine.setMap(mapRef.current)
       lineRef.current = routeLine
     }
-    mapRef.current.setBounds(bounds)
-  }, [onSelect, orders, ready, selectedId])
+    if (shouldFitBounds) {
+      mapRef.current.setBounds(bounds)
+      lastFitKeyRef.current = viewportKey
+    }
+  }, [orders, ready, selectedId, viewportKey])
 
   useEffect(() => {
+    if (!selectedId) {
+      lastCenteredOrderIdRef.current = undefined
+      return
+    }
+    if (lastCenteredOrderIdRef.current === selectedId) return
     const selected = orders.find((order) => order.id === selectedId)
     if (!ready || !mapRef.current || !selected || !hasCoord(selected) || !(window as any).kakao?.maps) return
+    lastCenteredOrderIdRef.current = selectedId
     mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(selected.lat, selected.lng))
   }, [orders, ready, selectedId])
 
@@ -236,6 +253,8 @@ export function DeliveryTracking() {
   }, [search, selectedDriverId, visibleOrders])
 
   const selectedOrder = selectedOrders.find((order) => order.id === selectedOrderId)
+  const handleMapSelect = useCallback((order: Order) => setSelectedOrderId(order.id), [])
+  const viewportKey = String(selectedDriverId)
 
   return (
     <div className="p-6 space-y-4 page-fade-in">
@@ -290,7 +309,7 @@ export function DeliveryTracking() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_420px]">
-        <MapView orders={selectedOrders} selectedId={selectedOrderId} onSelect={(order) => setSelectedOrderId(order.id)} />
+        <MapView orders={selectedOrders} selectedId={selectedOrderId} onSelect={handleMapSelect} viewportKey={viewportKey} />
 
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <div className="border-b border-gray-100 px-4 py-3">
