@@ -12,13 +12,13 @@ import re
 import sys
 import os
 import gzip
+from collections import Counter
 from pathlib import Path
 from typing import Iterator, Optional
 
 
 TARGET_SIDO = "경기도"
 TARGET_SIGUNGU = "광주시"
-VERSION_ID = "202604"
 
 BATCH = 500  # INSERT 배치 크기
 
@@ -43,7 +43,7 @@ def normalize_key(value: str) -> str:
 
 def int_or_none(value: str) -> Optional[int]:
     try:
-        t = value.strip()
+        t = str(value).strip()
         return int(t) if t and t.isdigit() else None
     except Exception:
         return None
@@ -80,17 +80,21 @@ def read_txt(path: Path) -> Iterator[list]:
 
 
 def esc(value) -> str:
-    """SQL 문자열 이스케이프 (작은따옴표 처리)"""
+    """SQL 문자열 이스케이프"""
     if value is None:
         return "NULL"
     s = str(value).replace("'", "''")
     return f"'{s}'"
 
 
+# ──────────────────────────────────────────────
+# 파싱 함수들
+# ──────────────────────────────────────────────
+
 def parse_road_codes(data_dir: Path) -> dict:
     """
     개선_도로명코드_전체분.txt 에서 광주시 road_codes 파싱
-    col[0]=road_code, col[1]=road_name, col[4]=sido, col[6]=sigungu, col[8]=emd
+    col[0]=road_code, col[1]=road_name, col[4]=sido, col[6]=sigungu, col[8]=emd(행정동)
     """
     fpath = data_dir / "202604_주소DB_전체분" / "개선_도로명코드_전체분.txt"
     if not fpath.exists():
@@ -98,7 +102,6 @@ def parse_road_codes(data_dir: Path) -> dict:
         return {}
 
     codes: dict = {}
-    count = 0
     for cols in read_txt(fpath):
         if len(cols) < 9:
             continue
@@ -106,22 +109,23 @@ def parse_road_codes(data_dir: Path) -> dict:
         road_name = clean_text(cols[1])
         sido = clean_text(cols[4])
         sigungu = clean_text(cols[6])
-        emd = clean_text(cols[8])
+        emd = clean_text(cols[8])  # 행정 읍면동
         if not road_code or not road_name:
             continue
         if sido == TARGET_SIDO and sigungu == TARGET_SIGUNGU:
             codes[road_code] = {"road_name": road_name, "sigungu": sigungu, "emd": emd}
-            count += 1
 
-    print(f"[road_codes] 광주시 {count}개", file=sys.stderr)
+    print(f"[road_codes] 광주시 {len(codes)}개", file=sys.stderr)
     return codes
 
 
 def parse_addresses(data_dir: Path, road_codes: dict) -> list:
     """
     jibun_rnaddrkor_gyunggi.txt 에서 광주시 addresses 파싱
-    col[0]=addr_mgt_no, col[2]=sido, col[3]=sigungu, col[4]=legal_emd,
-    col[9]=road_code, col[10]=underground_yn, col[11]=main_no, col[12]=sub_no, col[13]=building_name
+    col[0]=addr_mgt_no, col[2]=sido, col[3]=sigungu, col[4]=legal_emd(법정동),
+    col[6]=jibun_san_yn, col[7]=jibun_main_no, col[8]=jibun_sub_no,
+    col[9]=road_code, col[10]=underground_yn, col[11]=bldg_main_no, col[12]=bldg_sub_no,
+    col[13]=building_name
     """
     fpath = data_dir / "202604_도로명주소 한글_전체분" / "jibun_rnaddrkor_gyunggi.txt"
     if not fpath.exists():
@@ -144,19 +148,24 @@ def parse_addresses(data_dir: Path, road_codes: dict) -> list:
         seen.add(addr_mgt_no)
 
         road_code = clean_text(cols[9])
-        main_no = int_or_none(cols[11])
-        if main_no is None:
+        bldg_main_no = int_or_none(cols[11])
+        if bldg_main_no is None:
             continue
 
-        sub_no = int_or_none(cols[12]) or 0
+        bldg_sub_no = int_or_none(cols[12]) or 0
         legal_emd = clean_text(cols[4])
         underground_yn = clean_text(cols[10]) or "0"
         building_name = clean_text(cols[13])
 
+        # 지번 정보
+        jibun_san_yn = clean_text(cols[6]) or "0"
+        jibun_main_no = int_or_none(cols[7])
+        jibun_sub_no = int_or_none(cols[8]) or 0
+
         # 도로명은 road_codes에서 가져옴
         road_name = road_codes.get(road_code, {}).get("road_name", "")
         road_addr = road_address_text(
-            sido, sigungu, "", road_name, underground_yn, main_no, sub_no
+            sido, sigungu, "", road_name, underground_yn, bldg_main_no, bldg_sub_no
         )
         road_key = normalize_key(road_addr)
         full_key = normalize_key(f"{road_addr} {building_name} {legal_emd}")
@@ -169,9 +178,13 @@ def parse_addresses(data_dir: Path, road_codes: dict) -> list:
             "full_key": full_key,
             "building_name": building_name or None,
             "legal_emd": legal_emd or None,
-            "building_main_no": main_no,
-            "building_sub_no": sub_no,
+            "building_main_no": bldg_main_no,
+            "building_sub_no": bldg_sub_no,
             "underground_yn": underground_yn,
+            # 지번 정보 (jibun_addresses 생성용)
+            "_jibun_san_yn": jibun_san_yn,
+            "_jibun_main_no": jibun_main_no,
+            "_jibun_sub_no": jibun_sub_no,
         })
 
     print(f"[addresses] 광주시 {len(rows)}개", file=sys.stderr)
@@ -244,6 +257,67 @@ def parse_buildings(data_dir: Path, road_codes: dict) -> list:
     return rows
 
 
+def build_jibun_rows(addresses: list) -> list:
+    """addresses 리스트에서 jibun_addresses 행 추출 (중복 제거)"""
+    seen = set()
+    rows = []
+    for a in addresses:
+        legal_emd = a.get("legal_emd")
+        jibun_main_no = a.get("_jibun_main_no")
+        jibun_sub_no = a.get("_jibun_sub_no", 0)
+        jibun_san_yn = a.get("_jibun_san_yn", "0")
+        if not legal_emd or jibun_main_no is None:
+            continue
+        key = (legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "legal_emd": legal_emd,
+            "jibun_san_yn": jibun_san_yn,
+            "jibun_main_no": jibun_main_no,
+            "jibun_sub_no": jibun_sub_no,
+            "road_address": a.get("road_address"),
+        })
+    print(f"[jibun_addresses] {len(rows)}개", file=sys.stderr)
+    return rows
+
+
+def build_admin_dong_map(road_codes: dict, addresses: list) -> dict:
+    """
+    행정동(road_codes.emd) → 법정동(addresses.legal_emd) 최빈값 매핑
+    """
+    # road_code → Counter(legal_emd)
+    rc_legal: dict[str, Counter] = {}
+    for a in addresses:
+        rc = a.get("road_code")
+        legal = a.get("legal_emd")
+        if rc and legal:
+            rc_legal.setdefault(rc, Counter())[legal] += 1
+
+    # admin_emd → Counter(legal_emd) (road_code 경유)
+    admin_legal: dict[str, Counter] = {}
+    for road_code, rc_info in road_codes.items():
+        admin_emd = rc_info.get("emd", "")
+        if not admin_emd:
+            continue
+        if road_code in rc_legal:
+            best_legal = rc_legal[road_code].most_common(1)[0][0]
+            admin_legal.setdefault(admin_emd, Counter())[best_legal] += 1
+
+    # 최종 매핑
+    result = {
+        admin: counter.most_common(1)[0][0]
+        for admin, counter in admin_legal.items()
+    }
+    print(f"[admin_dong_map] 행정동→법정동 {len(result)}쌍", file=sys.stderr)
+    return result
+
+
+# ──────────────────────────────────────────────
+# SQL 출력 함수들
+# ──────────────────────────────────────────────
+
 def write_road_codes(out, road_codes: dict):
     items = list(road_codes.items())
     for i in range(0, len(items), BATCH):
@@ -302,6 +376,41 @@ def write_buildings(out, rows: list):
         )
 
 
+def write_jibun_addresses(out, rows: list):
+    for i in range(0, len(rows), BATCH):
+        batch = rows[i : i + BATCH]
+        vals = ", ".join(
+            f"({esc(r['legal_emd'])}, {esc(r['jibun_san_yn'])}, "
+            f"{r['jibun_main_no']}, {r['jibun_sub_no']}, {esc(r['road_address'])})"
+            for r in batch
+        )
+        out.write(
+            f"INSERT INTO nexus_address.jibun_addresses "
+            f"(legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no, road_address) "
+            f"VALUES {vals} "
+            f"ON CONFLICT (legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no) DO NOTHING;\n"
+        )
+
+
+def write_admin_dong_map(out, mapping: dict):
+    items = list(mapping.items())
+    for i in range(0, len(items), BATCH):
+        batch = items[i : i + BATCH]
+        vals = ", ".join(
+            f"({esc(admin)}, {esc(legal)})"
+            for admin, legal in batch
+        )
+        out.write(
+            f"INSERT INTO nexus_address.admin_dong_map (admin_emd, legal_emd) "
+            f"VALUES {vals} "
+            f"ON CONFLICT (admin_emd) DO UPDATE SET legal_emd = EXCLUDED.legal_emd;\n"
+        )
+
+
+# ──────────────────────────────────────────────
+# 진입점
+# ──────────────────────────────────────────────
+
 def main():
     parser = argparse.ArgumentParser(description="광주시 주소 DB SQL 생성")
     parser.add_argument("--data-dir", default="I:/Projects/nexus-pipeline",
@@ -315,14 +424,20 @@ def main():
         print(f"[ERROR] data-dir not found: {data_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print("[1/3] 도로명코드 파싱...", file=sys.stderr)
+    print("[1/5] 도로명코드 파싱...", file=sys.stderr)
     road_codes = parse_road_codes(data_dir)
 
-    print("[2/3] 주소 파싱...", file=sys.stderr)
+    print("[2/5] 주소 파싱...", file=sys.stderr)
     addresses = parse_addresses(data_dir, road_codes)
 
-    print("[3/3] 건물 파싱...", file=sys.stderr)
+    print("[3/5] 건물 파싱...", file=sys.stderr)
     buildings = parse_buildings(data_dir, road_codes)
+
+    print("[4/5] 지번 주소 추출...", file=sys.stderr)
+    jibun_rows = build_jibun_rows(addresses)
+
+    print("[5/5] 행정동→법정동 매핑 계산...", file=sys.stderr)
+    admin_dong_map = build_admin_dong_map(road_codes, addresses)
 
     print(f"[SQL 생성] 출력: {args.out}", file=sys.stderr)
 
@@ -337,8 +452,10 @@ def main():
 
         out.write("-- 기존 데이터 초기화\n")
         out.write("TRUNCATE nexus_address.buildings;\n")
+        out.write("TRUNCATE nexus_address.jibun_addresses;\n")
         out.write("TRUNCATE nexus_address.addresses;\n")
-        out.write("DELETE FROM nexus_address.road_codes;\n\n")
+        out.write("DELETE FROM nexus_address.road_codes;\n")
+        out.write("DELETE FROM nexus_address.admin_dong_map;\n\n")
 
         out.write(f"-- road_codes ({len(road_codes)}개)\n")
         write_road_codes(out, road_codes)
@@ -352,20 +469,35 @@ def main():
         write_buildings(out, buildings)
         out.write("\n")
 
+        out.write(f"-- jibun_addresses ({len(jibun_rows)}개)\n")
+        write_jibun_addresses(out, jibun_rows)
+        out.write("\n")
+
+        out.write(f"-- admin_dong_map ({len(admin_dong_map)}쌍)\n")
+        write_admin_dong_map(out, admin_dong_map)
+        out.write("\n")
+
         out.write("-- 통계\n")
-        out.write(f"SELECT 'road_codes' AS tbl, count(*) FROM nexus_address.road_codes\n")
-        out.write("UNION ALL\n")
-        out.write(f"SELECT 'addresses', count(*) FROM nexus_address.addresses\n")
-        out.write("UNION ALL\n")
-        out.write(f"SELECT 'buildings', count(*) FROM nexus_address.buildings;\n")
+        out.write(
+            "SELECT tbl, cnt FROM (\n"
+            "  SELECT 'road_codes' tbl, count(*) cnt FROM nexus_address.road_codes UNION ALL\n"
+            "  SELECT 'addresses', count(*) FROM nexus_address.addresses UNION ALL\n"
+            "  SELECT 'buildings', count(*) FROM nexus_address.buildings UNION ALL\n"
+            "  SELECT 'jibun_addresses', count(*) FROM nexus_address.jibun_addresses UNION ALL\n"
+            "  SELECT 'admin_dong_map', count(*) FROM nexus_address.admin_dong_map\n"
+            ") t ORDER BY tbl;\n"
+        )
 
     size_mb = os.path.getsize(args.out) / 1024 / 1024
     print(f"[완료] {args.out} ({size_mb:.1f}MB)", file=sys.stderr)
     print(
         f"\n서버 임포트 명령:\n"
-        f"  gcloud compute scp {args.out} hanwool-server:/tmp/ --project=hanwool-delivery-2026 --zone=asia-northeast3-a\n"
-        f"  gcloud compute ssh hanwool-server --project=hanwool-delivery-2026 --zone=asia-northeast3-a "
-        f"--command=\"sudo docker exec -i hanwool-db-1 psql -U hanwool hanwool_db < /tmp/{os.path.basename(args.out)}\"",
+        f"  gcloud compute scp {args.out} hanwool-server:/tmp/ "
+        f"--project=hanwool-delivery-2026 --zone=asia-northeast3-a\n"
+        f"  gcloud compute ssh hanwool-server --project=hanwool-delivery-2026 "
+        f"--zone=asia-northeast3-a "
+        f"--command=\"sudo docker exec -i hanwool-db-1 psql -U hanwool hanwool_db "
+        f"< /tmp/{os.path.basename(args.out)}\"",
         file=sys.stderr,
     )
 
