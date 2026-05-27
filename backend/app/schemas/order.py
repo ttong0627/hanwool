@@ -24,6 +24,7 @@ class SingleOrderCreate(BaseModel):
     customer_name: str
     customer_phone: str
     delivery_address: str
+    detail_address: Optional[str] = None
     dong: str
     items_desc: Optional[str] = None
     item_code: Optional[str] = None

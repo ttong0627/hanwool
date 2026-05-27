@@ -40,6 +40,7 @@ const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInp
   customer_name:    { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
   customer_phone:   { lang: 'en', inputMode: 'tel',     hint: '전화', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
   delivery_address: { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
+  detail_address:   { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
   items_desc:       { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
   item_code:        { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
   quantity:         { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
@@ -51,6 +52,8 @@ export function ManualTab() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
 
   const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
   const cellRefs = useRef<CellRef[][]>([])
   const [kakaoRow, setKakaoRow] = useState<number | null>(null)
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null)
@@ -102,7 +105,7 @@ export function ManualTab() {
 
   // ── 자동저장 ──────────────────────────────────────────────────────────────
   const autoSaveRow = useCallback(async (rowIdx: number) => {
-    const row = rows[rowIdx]
+    const row = rowsRef.current[rowIdx]
     if (!row) return
     if (row.savedOrderId) return
     if (!row.customer_name || !row.customer_phone || !row.delivery_address || !row.dong) return
@@ -115,6 +118,7 @@ export function ManualTab() {
         customer_name: row.customer_name,
         customer_phone: row.customer_phone,
         delivery_address: row.addrRefined ?? row.delivery_address,
+        detail_address: row.detail_address || undefined,
         dong: row.dong,
         items_desc: row.items_desc || undefined,
         item_code: row.item_code || undefined,
@@ -133,7 +137,7 @@ export function ManualTab() {
         i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
       ))
     }
-  }, [rows])
+  }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
   useEffect(() => {
     rows.forEach((row, rowIdx) => {
@@ -151,7 +155,7 @@ export function ManualTab() {
   // ── 주소 변경 ─────────────────────────────────────────────────────────────
   const handleAddressChange = useCallback((rowIdx: number, value: string) => {
     const detected = detectDong(value)
-    const rowId = rows[rowIdx]?._id ?? String(rowIdx)
+    const rowId = rowsRef.current[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
     if (!value || value.length < 5) {
       setRows(prev => prev.map((r, i) => i === rowIdx ? {
@@ -212,7 +216,7 @@ export function ManualTab() {
         } : r))
       }
     }, 600)
-  }, [rows])
+  }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
   const handleAddressSelect = useCallback(async (rowIdx: number, result: AddressResult) => {
     const addr = result.road_address || result.address_name
@@ -238,7 +242,7 @@ export function ManualTab() {
       // 검색 결과 자체는 유지하고 자동 저장 검증에서 다시 확인한다.
     }
     const detectedDong = serviceDong ? DONG_LIST.find((d) => serviceDong === d) ?? null : null
-    const dong = detectedDong ?? detectDong(refinedAddress) ?? rows[rowIdx].dong ?? ''
+    const dong = detectedDong ?? detectDong(refinedAddress) ?? rowsRef.current[rowIdx]?.dong ?? ''
     const dongStatus: DongStatus = dong && VALID_DONGS.has(dong) ? 'valid' : 'out-of-zone'
     setRows(prev => prev.map((r, i) =>
       i === rowIdx ? {
@@ -263,7 +267,7 @@ export function ManualTab() {
     setKakaoRow(null)
     const colIdx = COL_KEYS.indexOf('delivery_address')
     setTimeout(() => focusCell(rowIdx, colIdx + 1), 50)
-  }, [rows, focusCell])
+  }, [focusCell]) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
   const DONG_COL = COL_KEYS.indexOf('dong')
   const nextCol = (cur: number, dir: 1 | -1) => {
@@ -275,7 +279,7 @@ export function ManualTab() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
-      const maxRow = rows.length - 1
+      const maxRow = rowsRef.current.length - 1
       switch (e.key) {
         case 'Enter': {
           e.preventDefault()
@@ -328,13 +332,13 @@ export function ManualTab() {
           break
       }
     },
-    [rows, addRow, focusCell, deleteRow]
+    [addRow, focusCell, deleteRow]
   )
 
   const applyTsvPaste = useCallback((text: string, startRow: number, startCol: number) => {
     if (!text.trim()) return
     const pastedRows = text.trim().split('\n').map((line) => line.split('\t'))
-    const newRows = [...rows]
+    const newRows = [...rowsRef.current]
     pastedRows.forEach((cells, ri) => {
       const rowIdx = startRow + ri
       if (rowIdx >= newRows.length) newRows.push(EMPTY_ROW())
@@ -364,7 +368,7 @@ export function ManualTab() {
       })
     })
     setRows(newRows)
-  }, [rows])
+  }, [])
 
   const handlePaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
     const text = e.clipboardData.getData('text')
@@ -552,6 +556,7 @@ export function ManualTab() {
 
                   {COL_KEYS.map((key, colIdx) => {
                     const isAddr = key === 'delivery_address'
+                    const isDetail = key === 'detail_address'
                     const isDong = key === 'dong'
                     const isQty = key === 'quantity'
                     const isPhone = key === 'customer_phone'
@@ -638,6 +643,25 @@ export function ManualTab() {
                               </span>
                             )}
                           </div>
+                        ) : isDetail ? (
+                          <input
+                            ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            lang="ko"
+                            autoComplete="off"
+                            className={cellCls}
+                            value={row.detail_address}
+                            onCompositionStart={() => { composingRef.current[cellKey] = true }}
+                            onCompositionEnd={() => { composingRef.current[cellKey] = false }}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                            onBlur={() => setFocusedCell(null)}
+                            onChange={(e) => {
+                              checkKoreanIME(e.target.value, rowIdx, colIdx, 'detail_address')
+                              updateCell(rowIdx, 'detail_address', e.target.value)
+                            }}
+                            onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
+                            onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
+                            placeholder="동·호·층"
+                          />
                         ) : isDong ? (
                           <div className="flex flex-col items-center justify-center px-1 py-1 gap-0.5 min-h-[36px]">
                             {!row.delivery_address ? (

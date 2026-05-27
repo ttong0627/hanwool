@@ -6,6 +6,7 @@ export const COL_KEYS = [
   'customer_phone',
   'dong',
   'delivery_address',
+  'detail_address',
   'items_desc',
   'item_code',
   'quantity',
@@ -19,6 +20,7 @@ export const COL_LABELS: Record<ColKey, string> = {
   customer_phone: '전화번호 *',
   dong: '배송동 *',
   delivery_address: '주소 *',
+  detail_address: '상세주소',
   items_desc: '물품내역',
   item_code: '코드',
   quantity: '수량',
@@ -30,6 +32,7 @@ export const COL_WIDTHS: Record<ColKey, string | undefined> = {
   customer_phone: '112px',
   dong: '84px',
   delivery_address: undefined,  // auto — 남은 공간 전부
+  detail_address: '110px',
   items_desc: '88px',
   item_code: '50px',
   quantity: '46px',
@@ -45,6 +48,7 @@ export interface StagingRow {
   customer_phone: string
   dong: string
   delivery_address: string
+  detail_address: string
   items_desc: string
   item_code: string
   quantity: number
@@ -72,6 +76,7 @@ export const EMPTY_ROW = (): StagingRow => ({
   customer_phone: '',
   dong: '경안동',
   delivery_address: '',
+  detail_address: '',
   items_desc: '',
   item_code: '',
   quantity: 1,
@@ -85,6 +90,7 @@ export const EXCEL_FIELD_OPTIONS: { value: ColKey | ''; label: string }[] = [
   { value: 'customer_phone', label: '전화번호' },
   { value: 'dong', label: '배송동' },
   { value: 'delivery_address', label: '주소' },
+  { value: 'detail_address', label: '상세주소' },
   { value: 'items_desc', label: '물품내역' },
   { value: 'item_code', label: '코드' },
   { value: 'quantity', label: '수량' },

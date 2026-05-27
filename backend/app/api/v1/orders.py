@@ -231,6 +231,8 @@ async def create_single_order(
         order.lat = lat
         order.lng = lng
     order.dong_override = data.dong_override
+    if data.detail_address:
+        order.detail_address = data.detail_address
     await db.flush()
 
     result = order_service.decrypt_order(order)
