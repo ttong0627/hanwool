@@ -6,7 +6,7 @@ import os
 import uuid
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from app.api.v1.deps import (
     require_driver_or_above,
     require_receiver_or_above,
 )
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.models.address_resolution_log import AddressResolutionLog
 from app.models.complaint import Complaint
 from app.models.delivery import Delivery
@@ -818,6 +818,83 @@ async def geocode_address_endpoint(
     if not result:
         raise HTTPException(status_code=404, detail="주소를 찾을 수 없습니다.")
     return result
+
+
+# ── 좌표 재매칭 (Kakao API) ──────────────────────────────────────────────────
+
+async def _geocode_orders_background(order_ids: list[int]) -> None:
+    """백그라운드 좌표 재매칭: 자체 세션으로 처리 (요청 세션과 독립)"""
+    from app.core.security import decrypt_field
+    async with AsyncSessionLocal() as db:
+        for order_id in order_ids:
+            try:
+                result = await db.execute(select(Order).where(Order.id == order_id))
+                order = result.scalar_one_or_none()
+                if not order:
+                    continue
+                address = decrypt_field(order.delivery_address_enc)
+                resolution = await resolve_address(address, db)
+                apply_resolution_to_order(order, resolution, fallback_dong=order.dong)
+                await log_address_resolution(db, resolution, order_id=order.id)
+            except Exception:
+                pass
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+
+@router.post("/{order_id}/regeocode")
+async def regeocode_single_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """단건 좌표 재매칭 — Kakao API로 lat/lng 재취득 후 match_status 갱신"""
+    from app.core.security import decrypt_field
+
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    address = decrypt_field(order.delivery_address_enc)
+    resolution = await resolve_address(address, db)
+    apply_resolution_to_order(order, resolution, fallback_dong=order.dong)
+    await log_address_resolution(db, resolution, order_id=order.id)
+    await db.flush()
+
+    return {
+        "matched": resolution.match_status == "matched",
+        "lat": order.lat,
+        "lng": order.lng,
+        "match_status": order.match_status,
+        "service_dong": order.service_dong,
+        "standard_road_address": order.standard_road_address,
+    }
+
+
+@router.post("/regeocode-unresolved")
+async def regeocode_unresolved_orders(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """오늘 좌표 미확인 주문 전체를 백그라운드에서 재매칭 — 즉시 반환"""
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    result = await db.execute(
+        select(Order.id).where(
+            Order.created_at >= today_start,
+            or_(
+                Order.lat.is_(None),
+                Order.match_status.in_(["needs_review", "not_found"]),
+            ),
+        )
+    )
+    order_ids = [row[0] for row in result.all()]
+    if order_ids:
+        background_tasks.add_task(_geocode_orders_background, order_ids)
+    return {"queued": len(order_ids)}
 
 
 @router.post("/batch", status_code=201)

@@ -131,11 +131,18 @@ export function ManualTab() {
         lng: row.lng,
         dong_override: row.dongOverride ?? false,
       })
+      const savedId: number = res.data.id
       setRows(prev => prev.map((r, i) =>
-        i === rowIdx ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined } : r
+        i === rowIdx ? { ...r, savedOrderId: savedId, submitStatus: 'success', submitError: undefined } : r
       ))
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['customers'] })
+      // 좌표가 없으면 백그라운드에서 Kakao API로 자동 재매칭
+      if (!res.data.lat || !res.data.lng) {
+        api.post(`/orders/${savedId}/regeocode`)
+          .then(() => qc.invalidateQueries({ queryKey: ['orders'] }))
+          .catch(() => {})
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
       setRows(prev => prev.map((r, i) =>

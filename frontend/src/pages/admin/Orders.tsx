@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, Download, X, Truck, Pencil, Trash2,
   ChevronLeft, ChevronRight, QrCode, FileSpreadsheet,
   TableProperties, ClipboardList, AlertTriangle, MapPin,
-  CheckCircle2, ChevronDown, ChevronUp,
+  CheckCircle2, ChevronDown, ChevronUp, RefreshCw,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
@@ -312,6 +312,9 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
   const [saving, setSaving] = useState(false)
   const [editTarget, setEditTarget] = useState<Order | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [geocodingIds, setGeocodingIds] = useState<Set<number>>(new Set())
+  const [batchGeocoding, setBatchGeocoding] = useState(false)
+  const autoTriggered = useRef(false)
 
   const editMutation = useMutation({
     mutationFn: ({ orderId, data }: { orderId: number; data: object }) =>
@@ -345,6 +348,46 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
     (o: Order) => o.match_status === 'needs_review' || o.match_status === 'not_found'
   )
 
+  // 패널 최초 로드 시 자동 재매칭 트리거
+  useEffect(() => {
+    if (autoTriggered.current || flagged.length === 0) return
+    autoTriggered.current = true
+    api.post('/orders/regeocode-unresolved').then(() => {
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ['orders'] })
+        qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+      }, 7000)
+    }).catch(() => {})
+  }, [flagged.length, qc])
+
+  const handleGeocode = async (order: Order) => {
+    setGeocodingIds((prev) => new Set(prev).add(order.id))
+    try {
+      await api.post(`/orders/${order.id}/regeocode`)
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+      onFixed()
+    } catch {
+      // silent
+    } finally {
+      setGeocodingIds((prev) => { const s = new Set(prev); s.delete(order.id); return s })
+    }
+  }
+
+  const handleBatchGeocode = async () => {
+    setBatchGeocoding(true)
+    try {
+      await api.post('/orders/regeocode-unresolved')
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ['orders'] })
+        qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+        setBatchGeocoding(false)
+      }, 7000)
+    } catch {
+      setBatchGeocoding(false)
+    }
+  }
+
   const toggle = (id: number) =>
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -377,17 +420,25 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
   return (
     <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 overflow-hidden mb-4">
       {/* 헤더 */}
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-100/60 transition-colors"
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-4 py-3">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-2 text-left flex-1"
+        >
           <AlertTriangle className="w-4 h-4 text-amber-600" />
           <span className="font-bold text-amber-800 text-sm">배송동 검토 필요 — {flagged.length}건</span>
           <span className="text-xs text-amber-600">주소 자동 매칭 실패 또는 좌표 미확인</span>
-        </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-amber-600" /> : <ChevronDown className="w-4 h-4 text-amber-600" />}
-      </button>
+          {expanded ? <ChevronUp className="w-4 h-4 text-amber-600 ml-1" /> : <ChevronDown className="w-4 h-4 text-amber-600 ml-1" />}
+        </button>
+        <button
+          onClick={handleBatchGeocode}
+          disabled={batchGeocoding}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-60 transition-colors shrink-0"
+        >
+          <RefreshCw className={`w-3 h-3 ${batchGeocoding ? 'animate-spin' : ''}`} />
+          {batchGeocoding ? '매칭 중…' : '전체 자동 매칭'}
+        </button>
+      </div>
 
       {/* 수정 / 삭제 모달 */}
       {editTarget && (
@@ -470,14 +521,24 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{order.standard_road_address ?? order.delivery_address}</p>
                 </div>
-                {/* 수정 / 삭제 버튼 */}
+                {/* 좌표 매칭 / 수정 / 삭제 버튼 */}
                 {(() => {
                   const role = user?.role ?? ''
                   const stagingCanEdit = order.status === 'pending' || (order.status === 'picked_up' && role === 'super_admin')
                   const stagingCanDelete = ['pending', 'assigned'].includes(order.status) ||
                     (order.status === 'picked_up' && role === 'super_admin')
+                  const isGeocoding = geocodingIds.has(order.id)
                   return (
                     <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleGeocode(order)}
+                        disabled={isGeocoding}
+                        title="Kakao API로 좌표 재매칭"
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-60 transition-colors"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isGeocoding ? 'animate-spin' : ''}`} />
+                        {isGeocoding ? '매칭 중' : '좌표 매칭'}
+                      </button>
                       {stagingCanEdit && (
                         <button
                           onClick={() => setEditTarget(order)}
@@ -557,6 +618,21 @@ function OrderListTab() {
   const items: Order[] = (data?.items ?? []).filter((o: Order) =>
     !search || o.customer_name.includes(search) || o.order_no.includes(search)
   )
+
+  // 목록 로드 시 좌표 미확인 주문 자동 백그라운드 매칭 (세션 1회)
+  const autoGeoRef = useRef(false)
+  useEffect(() => {
+    if (autoGeoRef.current || !data?.items?.length) return
+    const hasUnresolved = data.items.some(
+      (o: Order) => !o.match_status || o.match_status !== 'matched'
+    )
+    if (!hasUnresolved) return
+    autoGeoRef.current = true
+    api.post('/orders/regeocode-unresolved').then(() => {
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['orders'] }), 8000)
+    }).catch(() => {})
+  }, [data, qc])
+
   const resetFilters = () => { setDong(''); setStatus(''); setSearch(''); setDateFrom(today); setDateTo(today); setPage(1) }
   const hasFilter = !!(dong || status || search || dateFrom !== today || dateTo !== today)
 
