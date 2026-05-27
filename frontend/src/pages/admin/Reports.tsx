@@ -671,7 +671,7 @@ export function Reports() {
           }`}
         >
           <Building2 className="w-4 h-4" />
-          공무원 보고서
+          지자체용
         </button>
         <button
           onClick={() => setTab('market')}
@@ -680,7 +680,7 @@ export function Reports() {
           }`}
         >
           <Store className="w-4 h-4" />
-          시장 보고서
+          시장용
         </button>
       </div>
 
