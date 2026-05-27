@@ -4,7 +4,7 @@ import {
   ClipboardPaste, MapPin, AlertTriangle, Save, X,
 } from 'lucide-react'
 import api from '@/lib/api'
-import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
+import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
@@ -199,11 +199,15 @@ export function ManualTab() {
     }, 600)
   }, [rows, setRows])
 
-  // 카카오 주소 검색 결과
-  const handleAddressSelect = useCallback((rowIdx: number, addr: string) => {
-    const dong = detectDong(addr) ?? rows[rowIdx].dong
-    const dongStatus: DongStatus = detectDong(addr) ? 'valid' : 'out-of-zone'
-    setRows(rows.map((r, i) =>
+  // 주소 검색 결과 선택 — AddressResult로 동 자동 설정
+  const handleAddressSelect = useCallback((rowIdx: number, result: AddressResult) => {
+    const addr = result.road_address || result.address_name
+    const detectedDong = result.dong_name
+      ? DONG_LIST.find((d) => result.dong_name === d) ?? null
+      : null
+    const dong = detectedDong ?? detectDong(addr) ?? rows[rowIdx].dong ?? ''
+    const dongStatus: DongStatus = dong && VALID_DONGS.has(dong) ? 'valid' : 'out-of-zone'
+    setRows((prev) => prev.map((r, i) =>
       i === rowIdx
         ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined }
         : r
@@ -364,22 +368,29 @@ export function ManualTab() {
 
   return (
     <div className="space-y-3">
-      {/* 카카오 주소 검색 모달 */}
+      {/* 주소 검색 모달 */}
       {kakaoRow !== null && (
         <div className="modal-overlay">
-          <div className="modal-content max-w-md p-5">
+          <div className="modal-content max-w-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-brand-500" />
                 주소 검색
+                <span className="text-xs text-gray-400 font-normal">{kakaoRow + 1}행</span>
               </h3>
               <button onClick={() => setKakaoRow(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <KakaoAddressSearch
               value={rows[kakaoRow]?.delivery_address ?? ''}
-              onChange={(addr) => handleAddressSelect(kakaoRow, addr)}
-              placeholder="주소 검색"
+              onChange={(addr) => {
+                setRows((prev) => prev.map((r, i) => i === kakaoRow ? { ...r, delivery_address: addr } : r))
+              }}
+              onSelect={(result) => handleAddressSelect(kakaoRow, result)}
+              placeholder="도로명·지번·건물명 입력 후 목록에서 선택"
             />
+            <p className="mt-3 text-xs text-gray-400">
+              주소를 입력하면 표준 주소 목록이 나타납니다. 클릭하면 배송 동이 자동 설정됩니다.
+            </p>
           </div>
         </div>
       )}

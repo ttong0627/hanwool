@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, ChevronDown, X, AlertTriangle, Lock, Store } from 'lucide-react'
 import api from '@/lib/api'
 import { DONG_LIST, formatPhone, detectDong } from '@/lib/utils'
-import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
+import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 
 interface FormData {
   customer_name: string
@@ -113,6 +113,18 @@ export function OrderForm() {
     setValue('delivery_address', addr)
     const dong = detectDong(addr)
     if (dong) setValue('dong', dong)
+  }
+
+  const handleAddressSelect = (result: AddressResult) => {
+    const addr = result.road_address || result.address_name
+    setAddressValue(addr)
+    setValue('delivery_address', addr)
+    if (result.dong_name) {
+      const matched = DONG_LIST.find(d =>
+        result.dong_name === d || result.dong_name?.includes(d) || d.includes(result.dong_name ?? '')
+      )
+      if (matched) setValue('dong', matched)
+    }
   }
 
   const handlePhoneInput = (raw: string) => {
@@ -315,7 +327,8 @@ export function OrderForm() {
               <KakaoAddressSearch
                 value={addressValue}
                 onChange={handleAddressChange}
-                placeholder="주소 검색 버튼으로 입력"
+                onSelect={handleAddressSelect}
+                placeholder="도로명·지번·건물명 입력 후 선택"
               />
             </div>
           </div>

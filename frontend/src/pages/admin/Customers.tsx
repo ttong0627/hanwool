@@ -8,7 +8,7 @@ import {
 import api from '@/lib/api'
 import { toast } from '@/store/toastStore'
 import { DONG_LIST, formatPhone } from '@/lib/utils'
-import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
+import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 import { useAuthStore } from '@/store/authStore'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -181,7 +181,18 @@ function EditCustomerModal({
             <KakaoAddressSearch
               value={form.address}
               onChange={(addr) => setForm((f) => ({ ...f, address: addr }))}
-              placeholder="주소 검색"
+              onSelect={(result: AddressResult) => {
+                const addr = result.road_address || result.address_name
+                const matchedDong = result.dong_name
+                  ? DONG_LIST.find((d) => result.dong_name === d) ?? undefined
+                  : undefined
+                setForm((f) => ({
+                  ...f,
+                  address: addr,
+                  ...(matchedDong ? { dong: matchedDong } : {}),
+                }))
+              }}
+              placeholder="도로명·지번·건물명 입력 후 선택"
             />
           </div>
         </div>
