@@ -226,7 +226,7 @@ async def create_single_order(
         request=data.request,
         dong_override=data.dong_override,
     )
-    order = await order_service.create_order(db, order_data, current_user.id)
+    order = await order_service.create_order(db, order_data, current_user.id, _pre_resolved=address_resolution)
     if lat and lng:
         order.lat = lat
         order.lng = lng

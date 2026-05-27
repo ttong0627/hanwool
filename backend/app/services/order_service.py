@@ -24,7 +24,13 @@ async def _next_sequence(db: AsyncSession) -> int:
     return (result.scalar() or 0) + 1
 
 
-async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) -> Order:
+async def create_order(
+    db: AsyncSession,
+    data: OrderCreate,
+    receiver_id: int,
+    *,
+    _pre_resolved=None,
+) -> Order:
     from app.services.customer_service import upsert_customer
     from app.services.address_resolver import (
         apply_resolution_to_order,
@@ -32,7 +38,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         resolve_address,
     )
 
-    address_resolution = await resolve_address(data.delivery_address or "", db)
+    address_resolution = _pre_resolved or await resolve_address(data.delivery_address or "", db)
     resolved_dong = address_resolution.service_dong or data.dong
 
     # 전화번호가 있으면 고객 upsert (신규 생성 or 정보 업데이트)
