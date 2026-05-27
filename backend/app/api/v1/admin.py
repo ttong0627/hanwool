@@ -1,14 +1,18 @@
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin, require_super_admin
+from app.api.v1.deps import require_admin, require_receiver_or_above, require_super_admin
 from app.core.database import get_db
 from app.models.complaint import Complaint
+from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 from app.models.order import Order, OrderStatus
 from app.models.user import User
+from app.api.v1.orders import _dispatch_today_orders
+from app.services.customer_service import customer_stats, get_customer_detail, list_customers
 from app.services.privacy_service import destroy_personal_data
 from app.utils.market_day import market_day_status
 
@@ -57,6 +61,69 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(re
         "pending": pending,
         "open_complaints": open_complaints,
     }
+
+
+@router.get("/dispatch-requests")
+async def list_dispatch_requests(
+    status_filter: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    from app.core.security import decrypt_field
+
+    q = select(DispatchRequest, User).join(
+        User, DispatchRequest.requested_by_driver_id == User.id
+    )
+    if status_filter:
+        q = q.where(DispatchRequest.status == status_filter)
+    q = q.order_by(DispatchRequest.created_at.desc()).limit(50)
+    result = await db.execute(q)
+    items = []
+    for request, driver in result.all():
+        items.append({
+            "id": request.id,
+            "request_date": request.request_date.isoformat(),
+            "requested_by_driver_id": request.requested_by_driver_id,
+            "requested_by_driver_name": decrypt_field(driver.name_enc),
+            "requested_by_driver_phone": decrypt_field(driver.phone_enc),
+            "total_orders": request.total_orders,
+            "pending_orders": request.pending_orders,
+            "recommended_driver_count": request.recommended_driver_count,
+            "status": request.status,
+            "message": request.message,
+            "resolved_by_admin_id": request.resolved_by_admin_id,
+            "resolved_driver_ids": request.resolved_driver_ids,
+            "resolved_at": request.resolved_at.isoformat() if request.resolved_at else None,
+            "created_at": request.created_at.isoformat() if request.created_at else None,
+        })
+    return items
+
+
+@router.post("/dispatch-requests/{request_id}/resolve")
+async def resolve_dispatch_request(
+    request_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin),
+):
+    driver_ids = body.get("driver_ids", [])
+    if not isinstance(driver_ids, list) or not driver_ids:
+        raise HTTPException(status_code=400, detail="driver_ids가 필요합니다.")
+
+    result = await db.execute(select(DispatchRequest).where(DispatchRequest.id == request_id))
+    request = result.scalar_one_or_none()
+    if not request:
+        raise HTTPException(status_code=404, detail="배정 요청을 찾을 수 없습니다.")
+    if request.status != DispatchRequestStatus.pending:
+        raise HTTPException(status_code=400, detail="이미 처리된 배정 요청입니다.")
+
+    dispatch_result = await _dispatch_today_orders(db, [int(driver_id) for driver_id in driver_ids])
+    request.status = DispatchRequestStatus.approved
+    request.resolved_by_admin_id = current_user.id
+    request.resolved_driver_ids = ",".join(str(driver_id) for driver_id in driver_ids)
+    request.resolved_at = datetime.now(timezone.utc)
+    await db.flush()
+    return {"request_id": request.id, "dispatch": dispatch_result}
 
 
 @router.get("/stats/daily")
@@ -165,4 +232,35 @@ async def stats_by_market_date(
 @router.post("/privacy/destroy")
 async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_super_admin)):
     result = await destroy_personal_data(db, current_user.id)
+    return result
+
+
+@router.get("/customers/stats")
+async def get_customer_stats(db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
+    return await customer_stats(db)
+
+
+@router.get("/customers")
+async def list_customers_endpoint(
+    search: str = "",
+    dong: str = "",
+    elderly_only: bool = False,
+    page: int = 1,
+    page_size: int = 30,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin),
+):
+    return await list_customers(db, search, dong, elderly_only, page, page_size)
+
+
+@router.get("/customers/{customer_id}")
+async def get_customer_detail_endpoint(
+    customer_id: int,
+    order_page: int = 1,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin),
+):
+    result = await get_customer_detail(db, customer_id, order_page)
+    if not result:
+        raise HTTPException(status_code=404, detail="고객을 찾을 수 없습니다.")
     return result

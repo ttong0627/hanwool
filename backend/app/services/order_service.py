@@ -25,11 +25,26 @@ async def _next_sequence(db: AsyncSession) -> int:
 
 
 async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) -> Order:
+    from app.services.customer_service import upsert_customer
+
+    # 전화번호가 있으면 고객 upsert (신규 생성 or 정보 업데이트)
+    customer_id = data.customer_id
+    if data.customer_phone:
+        customer = await upsert_customer(
+            db,
+            name=data.customer_name or "",
+            phone=data.customer_phone,
+            dong=data.dong or "경안동",
+            address=data.delivery_address or "",
+        )
+        if customer and not customer_id:
+            customer_id = customer.id
+
     seq = await _next_sequence(db)
     today = date.today()
     order = Order(
         order_no=_generate_order_no(seq),
-        customer_id=data.customer_id,
+        customer_id=customer_id,
         customer_name_enc=encrypt_field(data.customer_name),
         customer_phone_enc=encrypt_field(data.customer_phone),
         receiver_id=receiver_id,

@@ -4,7 +4,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { BarChart3, Package, CheckCircle, TrendingUp, MapPin, Truck, CalendarDays } from 'lucide-react'
+import {
+  BarChart3, Package, CheckCircle, MapPin, Truck, CalendarDays,
+  Users, UserCheck, RefreshCw, Activity, Star,
+} from 'lucide-react'
 import api from '@/lib/api'
 
 const DONG_COLORS = ['#f97316', '#fb923c', '#fdba74', '#fed7aa', '#fde68a']
@@ -24,6 +27,16 @@ interface MarketDateStat {
   delivered: number
   delivery_rate: number
   driver_count: number
+}
+interface TopCustomer { id: number; name: string; dong: string; order_count: number }
+interface CustomerStats {
+  total: number
+  new_this_month: number
+  returning: number
+  returning_rate: number
+  active_30d: number
+  top_customers: TopCustomer[]
+  by_dong: { dong: string; count: number }[]
 }
 
 function SummaryCard({
@@ -52,6 +65,12 @@ const formatDay = (day: string) => {
 
 export function Reports() {
   const [days, setDays] = useState(30)
+
+  const { data: customerStats } = useQuery<CustomerStats>({
+    queryKey: ['customer-stats'],
+    queryFn: () => api.get('/admin/customers/stats').then((r) => r.data),
+    staleTime: 60_000,
+  })
 
   const { data: daily = [] } = useQuery<DailyStat[]>({
     queryKey: ['stats-daily', days],
@@ -349,6 +368,132 @@ export function Reports() {
             </table>
           </div>
         </details>
+      )}
+
+      {/* ─── 고객 통계 섹션 ─── */}
+      {customerStats && (
+        <>
+          <div className="flex items-center gap-2 pt-2">
+            <Users className="w-5 h-5 text-brand-500" />
+            <h2 className="text-lg font-bold text-gray-800">고객 현황</h2>
+          </div>
+
+          {/* 고객 요약 카드 4개 */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <SummaryCard
+              label="전체 고객"
+              value={customerStats.total.toLocaleString()}
+              sub="누적 등록"
+              icon={Users}
+              color="bg-brand-500"
+            />
+            <SummaryCard
+              label="이달 신규"
+              value={customerStats.new_this_month.toLocaleString()}
+              sub="이번 달 등록"
+              icon={UserCheck}
+              color="bg-blue-500"
+            />
+            <SummaryCard
+              label="재방문 고객"
+              value={`${customerStats.returning_rate}%`}
+              sub={`${customerStats.returning.toLocaleString()}명 (2건↑)`}
+              icon={RefreshCw}
+              color="bg-green-500"
+            />
+            <SummaryCard
+              label="활성 고객"
+              value={customerStats.active_30d.toLocaleString()}
+              sub="최근 30일 주문"
+              icon={Activity}
+              color="bg-yellow-500"
+            />
+          </div>
+
+          {/* Top 5 고객 + 동별 분포 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 최다 이용 고객 */}
+            <div className="card">
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <Star className="w-4 h-4 text-brand-500" />
+                최다 이용 고객 Top 5
+              </h3>
+              {customerStats.top_customers.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm">데이터 없음</div>
+              ) : (
+                <div className="space-y-3">
+                  {customerStats.top_customers.map((c, i) => (
+                    <div key={c.id} className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black text-white shrink-0 ${
+                        i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-600' : 'bg-gray-200'
+                      }`}>
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-gray-900 truncate">{c.name}</div>
+                        <div className="text-xs text-gray-400">{c.dong}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-lg font-black text-brand-600">{c.order_count}</div>
+                        <div className="text-xs text-gray-400">건</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 동별 고객 분포 */}
+            <div className="card">
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-brand-500" />
+                동별 고객 분포
+              </h3>
+              {customerStats.by_dong.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm">데이터 없음</div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <PieChart>
+                      <Pie
+                        data={customerStats.by_dong}
+                        dataKey="count"
+                        nameKey="dong"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        innerRadius={30}
+                        paddingAngle={3}
+                        label={({ dong, percent }) => `${dong} ${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {customerStats.by_dong.map((_, i) => (
+                          <Cell key={i} fill={DONG_COLORS[i % DONG_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => [`${value}명`]}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {customerStats.by_dong.map((item, i) => {
+                      const pct = customerStats.total > 0 ? Math.round((item.count / customerStats.total) * 100) : 0
+                      return (
+                        <div key={item.dong} className="flex items-center gap-2 text-sm">
+                          <div className="w-3 h-3 rounded-full shrink-0" style={{ background: DONG_COLORS[i % DONG_COLORS.length] }} />
+                          <span className="font-medium">{item.dong}</span>
+                          <span className="text-gray-400 ml-auto tabular-nums">{item.count}명 ({pct}%)</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
