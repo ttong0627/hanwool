@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import encrypt_field, decrypt_field
+from app.core.security import encrypt_field, decrypt_field, hash_phone
 from app.models.order import Order, OrderStatus
 from app.schemas.order import OrderCreate
 from app.utils.market_day import is_market_day
@@ -61,6 +61,7 @@ async def create_order(
         customer_id=customer_id,
         customer_name_enc=encrypt_field(data.customer_name),
         customer_phone_enc=encrypt_field(data.customer_phone),
+        customer_phone_hash=hash_phone(data.customer_phone) if data.customer_phone else None,
         receiver_id=receiver_id,
         sequence=seq,
         delivery_address_enc=encrypt_field(data.delivery_address),

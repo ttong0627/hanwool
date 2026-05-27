@@ -25,6 +25,7 @@ class Order(Base):
     customer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     customer_name_enc: Mapped[str] = mapped_column(String(512))
     customer_phone_enc: Mapped[str] = mapped_column(String(512))
+    customer_phone_hash: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
     receiver_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     driver_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.pending, index=True)

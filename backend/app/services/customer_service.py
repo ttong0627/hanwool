@@ -1,38 +1,47 @@
-"""
-고객 서비스 — 전화번호 기반 upsert + 배송 이력 집계
-
-설계 원칙:
-  - 고객 식별자: phone_hash (SHA-256, 역방향 조회 불가)
-  - 주문 접수 시마다 고객 정보 자동 upsert
-  - 통계는 ORDER JOIN 서브쿼리 (N+1 없음)
-"""
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decrypt_field, encrypt_field
+from app.core.security import decrypt_field, encrypt_field, hash_phone, hash_phone_legacy
 from app.models.order import Order, OrderStatus
 from app.models.user import User, UserRole
 
 
 def normalize_phone(phone: str) -> str:
-    return re.sub(r"\D", "", phone)
+    return re.sub(r"\D", "", phone or "")
 
 
 def compute_phone_hash(phone: str) -> str:
-    return hashlib.sha256(normalize_phone(phone).encode()).hexdigest()
+    return hash_phone(phone)
 
 
 def _calc_age(birth_year: int | None) -> int | None:
     if not birth_year:
         return None
     return date.today().year - birth_year
+
+
+def _order_identity_expr():
+    return func.coalesce(Order.customer_phone_hash, cast(Order.customer_id, String))
+
+
+def _customer_scope(order_agg):
+    return or_(
+        User.role == UserRole.customer,
+        order_agg.c.customer_phone_hash.isnot(None),
+    )
+
+
+def _order_identity_filter(customer: User, customer_id: int):
+    return or_(
+        Order.customer_phone_hash == customer.phone_hash,
+        Order.customer_id == customer_id,
+    )
 
 
 async def upsert_customer(
@@ -43,18 +52,20 @@ async def upsert_customer(
     address: str = "",
     birth_year: int | None = None,
 ) -> Optional[User]:
-    """전화번호 기준으로 고객을 생성하거나 정보를 업데이트합니다."""
+    """Create or update the person record used by order history aggregation."""
     if not phone or not normalize_phone(phone):
         return None
 
-    ph = compute_phone_hash(phone)
-    # phone_hash는 전체 user에 unique → role 필터 없이 조회해야 중복 INSERT 방지
-    result = await db.execute(select(User).where(User.phone_hash == ph))
-    existing = result.scalar_one_or_none()
+    phone_hash = compute_phone_hash(phone)
+    possible_hashes = {phone_hash, hash_phone_legacy(phone)}
+    result = await db.execute(select(User).where(User.phone_hash.in_(possible_hashes)))
+    matches = list(result.scalars().all())
+    existing = next((user for user in matches if user.phone_hash == phone_hash), None)
+    existing = existing or next((user for user in matches if user.role == UserRole.customer), None)
+    existing = existing or (matches[0] if matches else None)
 
     if existing:
         if existing.role == UserRole.customer:
-            # 기존 고객 정보 업데이트
             if name:
                 existing.name_enc = encrypt_field(name)
             if dong:
@@ -63,15 +74,15 @@ async def upsert_customer(
                 existing.address_enc = encrypt_field(address)
             if birth_year:
                 existing.birth_year_enc = encrypt_field(str(birth_year))
+            if existing.phone_hash != phone_hash:
+                existing.phone_hash = phone_hash
             await db.flush()
-        # admin/receiver 등 다른 역할이면 삽입 없이 그대로 반환
         return existing
 
-    # 신규 고객 생성
     customer = User(
         name_enc=encrypt_field(name or ""),
         phone_enc=encrypt_field(phone),
-        phone_hash=ph,
+        phone_hash=phone_hash,
         role=UserRole.customer,
         dong=dong or "경안동",
         address_enc=encrypt_field(address) if address else None,
@@ -94,6 +105,7 @@ def _decrypt_customer(c: User, order_count: int = 0, last_order_at: datetime | N
     age = _calc_age(birth_year)
     return {
         "id": c.id,
+        "role": c.role,
         "name": decrypt_field(c.name_enc) if c.name_enc else "",
         "phone": decrypt_field(c.phone_enc) if c.phone_enc else "",
         "dong": c.dong,
@@ -108,6 +120,39 @@ def _decrypt_customer(c: User, order_count: int = 0, last_order_at: datetime | N
     }
 
 
+async def _latest_order_for_customer(db: AsyncSession, customer: User) -> Order | None:
+    result = await db.execute(
+        select(Order)
+        .where(_order_identity_filter(customer, customer.id))
+        .order_by(Order.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _apply_latest_order_snapshot(data: dict, order: Order | None) -> dict:
+    if not order:
+        return data
+    data["name"] = decrypt_field(order.customer_name_enc) if order.customer_name_enc else data["name"]
+    data["phone"] = decrypt_field(order.customer_phone_enc) if order.customer_phone_enc else data["phone"]
+    data["dong"] = order.dong or data["dong"]
+    data["address"] = decrypt_field(order.delivery_address_enc) if order.delivery_address_enc else data["address"]
+    return data
+
+
+def _order_aggregate_subquery():
+    return (
+        select(
+            Order.customer_phone_hash,
+            func.count().label("order_count"),
+            func.max(Order.created_at).label("last_order_at"),
+        )
+        .where(Order.customer_phone_hash.isnot(None))
+        .group_by(Order.customer_phone_hash)
+        .subquery()
+    )
+
+
 async def list_customers(
     db: AsyncSession,
     search: str = "",
@@ -116,53 +161,43 @@ async def list_customers(
     page: int = 1,
     page_size: int = 30,
 ) -> dict:
-    """고객 목록 + 주문 수·마지막 주문일 집계 (서브쿼리 JOIN)"""
-    # 주문 수 / 마지막 주문일 서브쿼리
-    order_agg = (
-        select(
-            Order.customer_id,
-            func.count().label("order_count"),
-            func.max(Order.created_at).label("last_order_at"),
-        )
-        .where(Order.customer_id.isnot(None))
-        .group_by(Order.customer_id)
-        .subquery()
-    )
-
-    q = (
-        select(User, order_agg.c.order_count, order_agg.c.last_order_at)
-        .outerjoin(order_agg, User.id == order_agg.c.customer_id)
-        .where(User.role == UserRole.customer, User.deleted_at.is_(None))
-    )
-
+    """List customer identities by normalized phone, not by role-only user id."""
+    order_agg = _order_aggregate_subquery()
+    base_filter = [User.deleted_at.is_(None), _customer_scope(order_agg)]
     if dong:
-        q = q.where(User.dong == dong)
+        base_filter.append(User.dong == dong)
 
     total_q = select(func.count()).select_from(
-        select(User).where(User.role == UserRole.customer, User.deleted_at.is_(None)).subquery()
+        select(User.id)
+        .outerjoin(order_agg, User.phone_hash == order_agg.c.customer_phone_hash)
+        .where(*base_filter)
+        .subquery()
     )
     total = (await db.execute(total_q)).scalar() or 0
 
-    q = q.order_by(order_agg.c.last_order_at.desc().nullslast(), User.created_at.desc())
-    q = q.offset((page - 1) * page_size).limit(page_size)
+    q = (
+        select(User, order_agg.c.order_count, order_agg.c.last_order_at)
+        .outerjoin(order_agg, User.phone_hash == order_agg.c.customer_phone_hash)
+        .where(*base_filter)
+        .order_by(order_agg.c.last_order_at.desc().nullslast(), User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     rows = (await db.execute(q)).all()
 
     customers = []
+    normalized_search = normalize_phone(search)
     for row in rows:
-        c: User = row[0]
-        count: int = row[1] or 0
-        last_at: datetime | None = row[2]
-
-        # 클라이언트 사이드 검색 (이름/전화번호 — 복호화 필요)
-        data = _decrypt_customer(c, count, last_at)
+        user = row[0]
+        data = _decrypt_customer(user, row[1] or 0, row[2])
+        data = _apply_latest_order_snapshot(data, await _latest_order_for_customer(db, user))
         if search:
-            if search not in data["name"] and search.replace("-", "") not in data["phone"].replace("-", ""):
+            phone_hit = normalized_search and normalized_search in normalize_phone(data["phone"])
+            name_hit = search in data["name"]
+            if not phone_hit and not name_hit:
                 continue
-
-        # 65세 필터
         if elderly_only and not data.get("is_elderly"):
             continue
-
         customers.append(data)
 
     return {
@@ -180,149 +215,144 @@ async def get_customer_detail(
     order_page: int = 1,
     order_page_size: int = 20,
 ) -> dict | None:
-    """고객 상세 + 배송 이력 (페이지네이션)"""
-    result = await db.execute(
-        select(User).where(User.id == customer_id, User.role == UserRole.customer)
-    )
-    c = result.scalar_one_or_none()
-    if not c:
+    result = await db.execute(select(User).where(User.id == customer_id, User.deleted_at.is_(None)))
+    customer = result.scalar_one_or_none()
+    if not customer:
         return None
 
-    # 배송 이력
-    order_q = (
-        select(Order)
-        .where(Order.customer_id == customer_id)
-        .order_by(Order.created_at.desc())
-    )
-    order_total_q = select(func.count()).select_from(
-        select(Order).where(Order.customer_id == customer_id).subquery()
-    )
-    order_total = (await db.execute(order_total_q)).scalar() or 0
+    order_filter = _order_identity_filter(customer, customer_id)
+    order_total = (await db.execute(
+        select(func.count()).select_from(select(Order).where(order_filter).subquery())
+    )).scalar() or 0
+
     order_result = await db.execute(
-        order_q.offset((order_page - 1) * order_page_size).limit(order_page_size)
+        select(Order)
+        .where(order_filter)
+        .order_by(Order.created_at.desc())
+        .offset((order_page - 1) * order_page_size)
+        .limit(order_page_size)
     )
     orders_raw = order_result.scalars().all()
 
     delivered_count = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.customer_id == customer_id,
+            order_filter,
             Order.status == OrderStatus.delivered,
         )
     )).scalar() or 0
 
     this_year_count = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.customer_id == customer_id,
+            order_filter,
             Order.created_at >= datetime(datetime.now(timezone.utc).year, 1, 1),
         )
     )).scalar() or 0
 
-    last_order_at = (await db.execute(
-        select(func.max(Order.created_at)).where(Order.customer_id == customer_id)
-    )).scalar()
+    last_order_at = (await db.execute(select(func.max(Order.created_at)).where(order_filter))).scalar()
 
-    base = _decrypt_customer(c, order_total, last_order_at)
+    base = _decrypt_customer(customer, order_total, last_order_at)
+    latest_order = orders_raw[0] if orders_raw else await _latest_order_for_customer(db, customer)
+    base = _apply_latest_order_snapshot(base, latest_order)
     base["delivered_count"] = delivered_count
     base["this_year_count"] = this_year_count
     base["orders"] = [
         {
-            "id": o.id,
-            "order_no": o.order_no,
-            "status": o.status,
-            "dong": o.dong,
-            "delivery_address": decrypt_field(o.delivery_address_enc),
-            "items_desc": o.items_desc,
-            "quantity": o.quantity,
-            "market_date": str(o.market_date) if o.market_date else None,
-            "created_at": o.created_at.isoformat() if o.created_at else None,
-            "delivered_at": o.delivered_at.isoformat() if o.delivered_at else None,
+            "id": order.id,
+            "order_no": order.order_no,
+            "status": order.status,
+            "dong": order.dong,
+            "delivery_address": decrypt_field(order.delivery_address_enc),
+            "items_desc": order.items_desc,
+            "quantity": order.quantity,
+            "market_date": str(order.market_date) if order.market_date else None,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
         }
-        for o in orders_raw
+        for order in orders_raw
     ]
     base["order_total"] = order_total
     base["order_page"] = order_page
-
     return base
 
 
 async def customer_stats(db: AsyncSession) -> dict:
-    """Reports 페이지용 고객 통계 집계"""
     from datetime import timedelta
+
     now = datetime.now(timezone.utc)
     this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     last_30_days = now - timedelta(days=30)
+    order_agg = _order_aggregate_subquery()
 
-    total = (await db.execute(
-        select(func.count()).where(User.role == UserRole.customer, User.deleted_at.is_(None))
-    )).scalar() or 0
+    scoped_users = (
+        select(User.id)
+        .outerjoin(order_agg, User.phone_hash == order_agg.c.customer_phone_hash)
+        .where(User.deleted_at.is_(None), _customer_scope(order_agg))
+        .subquery()
+    )
 
+    total = (await db.execute(select(func.count()).select_from(scoped_users))).scalar() or 0
     new_this_month = (await db.execute(
         select(func.count()).where(
-            User.role == UserRole.customer,
-            User.deleted_at.is_(None),
+            User.id.in_(select(scoped_users.c.id)),
             User.created_at >= this_month_start,
         )
     )).scalar() or 0
 
-    # 재방문 고객: 2건 이상 주문한 고객 수
     returning = (await db.execute(
         select(func.count()).select_from(
-            select(Order.customer_id)
-            .where(Order.customer_id.isnot(None))
-            .group_by(Order.customer_id)
+            select(_order_identity_expr().label("customer_key"))
+            .where(_order_identity_expr().isnot(None))
+            .group_by(_order_identity_expr())
             .having(func.count() >= 2)
             .subquery()
         )
     )).scalar() or 0
 
-    # 최다 이용 고객 top 5
     top_result = await db.execute(
-        select(Order.customer_id, func.count().label("cnt"))
-        .where(Order.customer_id.isnot(None))
-        .group_by(Order.customer_id)
+        select(Order.customer_phone_hash, func.count().label("cnt"))
+        .where(Order.customer_phone_hash.isnot(None))
+        .group_by(Order.customer_phone_hash)
         .order_by(func.count().desc())
         .limit(5)
     )
     top_customers = []
     for row in top_result.all():
-        c_result = await db.execute(select(User).where(User.id == row.customer_id))
-        c = c_result.scalar_one_or_none()
-        if c:
+        user_result = await db.execute(
+            select(User).where(User.phone_hash == row.customer_phone_hash, User.deleted_at.is_(None))
+        )
+        customer = user_result.scalar_one_or_none()
+        if customer:
             top_customers.append({
-                "id": c.id,
-                "name": decrypt_field(c.name_enc) if c.name_enc else "",
-                "dong": c.dong,
+                "id": customer.id,
+                "name": decrypt_field(customer.name_enc) if customer.name_enc else "",
+                "dong": customer.dong,
                 "order_count": row.cnt,
             })
 
-    # 동별 고객 분포
     dong_result = await db.execute(
         select(User.dong, func.count().label("cnt"))
-        .where(User.role == UserRole.customer, User.deleted_at.is_(None))
+        .where(User.id.in_(select(scoped_users.c.id)))
         .group_by(User.dong)
         .order_by(func.count().desc())
     )
-    by_dong = [{"dong": r.dong, "count": r.cnt} for r in dong_result.all()]
+    by_dong = [{"dong": row.dong, "count": row.cnt} for row in dong_result.all()]
 
-    # 활성 고객 (최근 30일 이내 주문)
-    active_ids = (await db.execute(
-        select(Order.customer_id)
-        .where(Order.customer_id.isnot(None), Order.created_at >= last_30_days)
-        .group_by(Order.customer_id)
-    )).scalars().all()
-    active_count = len(active_ids)
+    active_count = len((await db.execute(
+        select(_order_identity_expr().label("customer_key"))
+        .where(_order_identity_expr().isnot(None), Order.created_at >= last_30_days)
+        .group_by(_order_identity_expr())
+    )).scalars().all())
 
-    # 65세 이상 수혜 대상 (birth_year_enc 기반 — 복호화 없이 birth_year 필드로 계산)
     current_year = datetime.now(timezone.utc).year
     all_customers = (await db.execute(
-        select(User).where(User.role == UserRole.customer, User.deleted_at.is_(None))
+        select(User).where(User.id.in_(select(scoped_users.c.id)))
     )).scalars().all()
     elderly_count = 0
-    for c in all_customers:
-        if c.birth_year_enc:
+    for customer in all_customers:
+        if customer.birth_year_enc:
             try:
-                by = int(decrypt_field(c.birth_year_enc))
-                if current_year - by >= 65:
+                birth_year = int(decrypt_field(customer.birth_year_enc))
+                if current_year - birth_year >= 65:
                     elderly_count += 1
             except Exception:
                 pass

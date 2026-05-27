@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/authStore'
 
 interface Customer {
   id: number
+  role?: string
   name: string
   phone: string
   dong?: string
@@ -313,6 +314,7 @@ function CustomerDetailPanel({
   }
 
   const orderTotalPages = Math.max(1, Math.ceil(detail.order_total / 20))
+  const editableCustomer = !detail.role || detail.role === 'customer'
 
   return (
     <div className="h-full overflow-y-auto">
@@ -356,6 +358,7 @@ function CustomerDetailPanel({
             )}
           </div>
           <div className="flex flex-col gap-1.5 items-end">
+            {editableCustomer && (
             <button
               onClick={() => onEdit(detail)}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
@@ -363,7 +366,8 @@ function CustomerDetailPanel({
             >
               <Edit2 className="w-4 h-4" />
             </button>
-            {currentUser?.role === 'super_admin' && (
+            )}
+            {editableCustomer && currentUser?.role === 'super_admin' && (
               <button
                 onClick={() => setConfirmDriver(true)}
                 className="flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs font-medium"
