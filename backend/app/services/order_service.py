@@ -20,7 +20,7 @@ async def _next_sequence(db: AsyncSession) -> int:
     await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 2026052401})
     today_start = datetime.combine(date.today(), datetime.min.time())
     result = await db.execute(
-        select(func.count()).select_from(Order).where(Order.created_at >= today_start)
+        select(func.max(Order.sequence)).select_from(Order).where(Order.created_at >= today_start)
     )
     return (result.scalar() or 0) + 1
 
