@@ -3,6 +3,7 @@ import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
   ClipboardPaste, MapPin, AlertTriangle, Save, X, Keyboard,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 import { useAuthStore } from '@/store/authStore'
@@ -50,6 +51,7 @@ const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInp
 export function ManualTab() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const qc = useQueryClient()
 
   const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
   const rowsRef = useRef(rows)
@@ -131,6 +133,7 @@ export function ManualTab() {
       setRows(prev => prev.map((r, i) =>
         i === rowIdx ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined } : r
       ))
+      qc.invalidateQueries({ queryKey: ['orders'] })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
       setRows(prev => prev.map((r, i) =>
