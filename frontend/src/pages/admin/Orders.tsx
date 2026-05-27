@@ -9,6 +9,18 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
+
+async function downloadPdf(url: string, filename: string) {
+  const token = localStorage.getItem('access_token')
+  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!res.ok) { alert('다운로드 실패: ' + res.status); return }
+  const blob = await res.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
 import { StatusBadge } from '@/components/StatusBadge'
 import { DONG_LIST, STATUS_FILTER_OPTIONS, formatDate } from '@/lib/utils'
 import { QrTab } from './orders/QrTab'
@@ -802,10 +814,10 @@ function OrderListTab() {
           )}
           <div className="ml-auto flex items-center gap-2">
             {data && <span className="text-xs text-gray-400 whitespace-nowrap">총 {data.total}건</span>}
-            <button onClick={() => window.open('/api/v1/documents/delivery-list.pdf')} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
+            <button onClick={() => downloadPdf('/api/v1/documents/delivery-list.pdf', `배송명단_${dateFrom}.pdf`)} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
               <Download className="w-3 h-3" />배송명단
             </button>
-            <button onClick={() => window.open('/api/v1/documents/labels.pdf')} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
+            <button onClick={() => downloadPdf('/api/v1/documents/labels.pdf', `QR라벨_${dateFrom}.pdf`)} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
               <Download className="w-3 h-3" />QR라벨
             </button>
           </div>

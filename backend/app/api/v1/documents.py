@@ -1,5 +1,5 @@
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -7,12 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_receiver_or_above, require_super_admin
-from app.api.v1.deps import get_current_user
 from app.core.database import get_db
 from app.core.security import decrypt_field
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.services.order_service import attach_driver_info, decrypt_order, get_orders_today
+from app.utils.market_day import today_kst
 from app.services.pdf_service import (generate_complaint_report_pdf,
                                        generate_delivery_list_pdf,
                                        generate_delivery_receipts_pdf,
@@ -29,12 +29,12 @@ async def download_delivery_list(
     _=Depends(require_receiver_or_above),
 ):
     orders = await get_orders_today(db)
-    today = date.today().strftime("%Y년 %m월 %d일")
+    today = today_kst().strftime("%Y년 %m월 %d일")
     pdf_bytes = generate_delivery_list_pdf(orders, today)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=delivery_list_{date.today().strftime('%Y%m%d')}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=delivery_list_{today_kst().strftime('%Y%m%d')}.pdf"},
     )
 
 
@@ -87,12 +87,12 @@ async def download_delivery_receipts_pdf(
     _=Depends(require_receiver_or_above),
 ):
     orders = await list_delivery_receipts(date_from, date_to, db, _)
-    date_label = date_from or date.today().isoformat()
+    date_label = date_from or today_kst().isoformat()
     pdf_bytes = generate_delivery_receipts_pdf(orders, date_label)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=delivery_receipts_{date.today().strftime('%Y%m%d')}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=delivery_receipts_{today_kst().strftime('%Y%m%d')}.pdf"},
     )
 
 
@@ -145,7 +145,7 @@ async def download_labels(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=labels_{date.today().strftime('%Y%m%d')}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=labels_{today_kst().strftime('%Y%m%d')}.pdf"},
     )
 
 
@@ -166,5 +166,5 @@ async def download_privacy_destruction_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=privacy_destruction_{date.today().strftime('%Y%m%d')}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=privacy_destruction_{today_kst().strftime('%Y%m%d')}.pdf"},
     )

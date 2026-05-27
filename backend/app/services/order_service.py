@@ -1,8 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, func, text
+from sqlalchemy import and_, or_, select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_KST = ZoneInfo("Asia/Seoul")
 
 from app.core.security import encrypt_field, decrypt_field, hash_phone
 from app.models.order import Order, OrderStatus
@@ -165,8 +168,19 @@ async def attach_driver_info(db: AsyncSession, orders: list[dict]) -> list[dict]
 
 
 async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) -> list:
-    today_start = datetime.combine(today_kst(), datetime.min.time())
-    q = select(Order).where(Order.created_at >= today_start)
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    q = select(Order).where(
+        or_(
+            Order.market_date == today,
+            and_(
+                Order.market_date.is_(None),
+                Order.created_at >= today_start_utc,
+                Order.created_at < today_end_utc,
+            ),
+        )
+    )
     if driver_id:
         q = q.where(Order.driver_id == driver_id)
     q = q.order_by(Order.sequence, Order.created_at)
