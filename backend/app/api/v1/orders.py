@@ -511,10 +511,17 @@ async def get_today_dispatch_status(
     _: User = Depends(require_admin_or_above),
 ):
     today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
 
+    # market_date 기준 + null market_date는 created_at KST 범위로 폴백
+    _order_today_cond = or_(
+        Order.market_date == today,
+        and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+    )
     status_rows = await db.execute(
         select(Order.status, func.count().label("cnt"))
-        .where(Order.market_date == today, Order.status != OrderStatus.cancelled)
+        .where(_order_today_cond, Order.status != OrderStatus.cancelled)
         .group_by(Order.status)
     )
     by_status = {row.status: row.cnt for row in status_rows}
@@ -522,7 +529,7 @@ async def get_today_dispatch_status(
     dong_rows = await db.execute(
         select(Order.dong, func.count().label("cnt"))
         .where(
-            Order.market_date == today,
+            _order_today_cond,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
         .group_by(Order.dong)
@@ -601,12 +608,22 @@ async def list_orders(
     if driver_id:
         q = q.where(Order.driver_id == driver_id)
     if date_from:
-        q = q.where(Order.created_at >= datetime.fromisoformat(date_from))
+        from datetime import date as _date
+        d_from = _date.fromisoformat(date_from[:10])
+        # market_date 우선 필터 (KST 기준 장날), null인 경우 created_at 폴백
+        kst_from_utc = datetime.combine(d_from, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+        q = q.where(or_(
+            Order.market_date >= d_from,
+            and_(Order.market_date.is_(None), Order.created_at >= kst_from_utc),
+        ))
     if date_to:
-        dt_to = datetime.fromisoformat(date_to)
-        if len(date_to) == 10:  # YYYY-MM-DD 날짜만 전달된 경우 → 해당일 23:59:59까지 포함
-            dt_to = dt_to.replace(hour=23, minute=59, second=59, microsecond=999999)
-        q = q.where(Order.created_at <= dt_to)
+        from datetime import date as _date
+        d_to = _date.fromisoformat(date_to[:10])
+        kst_to_utc = datetime.combine(d_to + timedelta(days=1), datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+        q = q.where(or_(
+            Order.market_date <= d_to,
+            and_(Order.market_date.is_(None), Order.created_at < kst_to_utc),
+        ))
 
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar()
