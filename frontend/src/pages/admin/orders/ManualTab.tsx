@@ -95,7 +95,11 @@ export function ManualTab() {
   }, [])
 
   const updateCell = useCallback((rowIdx: number, key: ColKey, value: string | number) => {
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r))
+    setRows(prev => prev.map((r, i) => i === rowIdx ? {
+      ...r, [key]: value,
+      // 저장 실패 상태에서 편집하면 재시도 가능하도록 초기화
+      ...(r.submitStatus === 'error' && !r.savedOrderId ? { submitStatus: undefined } : {}),
+    } : r))
   }, [])
 
   const deleteRow = useCallback((rowIdx: number) => {
@@ -147,7 +151,7 @@ export function ManualTab() {
         row.customer_name && row.customer_phone && row.delivery_address && row.dong &&
         row.addrStatus === 'valid' && (row.dongStatus !== 'out-of-zone' || row.dongOverride)
       if (!isReady) return
-      if (row.submitStatus === 'pending' || row.submitStatus === 'success') return
+      if (row.submitStatus === 'pending' || row.submitStatus === 'success' || row.submitStatus === 'error') return
       clearTimeout(saveTimers[row._id])
       saveTimers[row._id] = setTimeout(() => autoSaveRow(rowIdx), 1200)
     })
