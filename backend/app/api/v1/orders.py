@@ -240,7 +240,7 @@ async def create_single_order(
     return result
 
 
-@router.post("/", response_model=dict, status_code=201)
+@router.post("", response_model=dict, status_code=201)
 async def create_order(
     data: OrderCreate,
     db: AsyncSession = Depends(get_db),
@@ -401,7 +401,7 @@ async def dispatch_orders_priority(
     )
 
 
-@router.get("/")
+@router.get("")
 async def list_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),

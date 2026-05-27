@@ -32,7 +32,7 @@ def _decrypt_complaint(c: Complaint) -> dict:
     }
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 async def create_complaint(
     data: ComplaintCreate,
     db: AsyncSession = Depends(get_db),
@@ -54,7 +54,7 @@ async def create_complaint(
     return result
 
 
-@router.get("/")
+@router.get("")
 async def list_complaints(status: Optional[str] = None, db: AsyncSession = Depends(get_db), _=Depends(require_receiver_or_above)):
     q = select(Complaint).order_by(Complaint.created_at.desc())
     if status:
