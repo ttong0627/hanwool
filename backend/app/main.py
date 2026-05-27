@@ -76,9 +76,11 @@ async def _delay_detection_loop() -> None:
         await asyncio.sleep(300)   # 5분 간격
 
 
+os.makedirs("photos", exist_ok=True)  # StaticFiles 마운트 전 반드시 존재해야 함
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    os.makedirs("photos", exist_ok=True)
     task = asyncio.create_task(_delay_detection_loop())
     logger.info("delay_detection_loop started")
     yield
