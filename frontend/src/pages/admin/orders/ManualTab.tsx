@@ -129,7 +129,7 @@ export function ManualTab() {
     clearTimeout(addrTimers[rowId])
 
     if (!value || value.length < 5) {
-      setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined } : r))
+      setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined, dong: '경안동' } : r))
       return
     }
 
@@ -159,7 +159,7 @@ export function ManualTab() {
           )
         )
       } catch {
-        setRows(rows.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'invalid' as AddrStatus } : r))
+        setRows(rows.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'invalid' as AddrStatus, dongStatus: 'out-of-zone' } : r))
       }
     }, 600)
   }, [rows, setRows])
@@ -178,18 +178,33 @@ export function ManualTab() {
     setTimeout(() => focusCell(rowIdx, colIdx + 1), 50)
   }, [rows, setRows, focusCell])
 
-  // 키보드 내비게이션
+  // 배송동(index 2)은 자동감지 표시 전용 — 포커스 건너뜀
+  const DONG_COL = COL_KEYS.indexOf('dong')
+  const nextCol = (cur: number, dir: 1 | -1) => {
+    let n = cur + dir
+    if (n === DONG_COL) n += dir
+    return Math.max(0, Math.min(COL_KEYS.length - 1, n))
+  }
+  const LAST_COL = COL_KEYS.length - 1
+
+  // 키보드 내비게이션: 엔터 → 오른쪽, 마지막 셀 엔터 → 다음 행 첫 셀
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
       const maxRow = rows.length - 1
-      const maxCol = COL_KEYS.length - 1
 
       switch (e.key) {
-        case 'Enter':
+        case 'Enter': {
           e.preventDefault()
-          if (rowIdx === maxRow) addRow()
-          setTimeout(() => focusCell(rowIdx + 1, colIdx), 20)
+          if (colIdx === LAST_COL) {
+            // 요청사항 → 다음 행 첫 셀
+            if (rowIdx === maxRow) addRow()
+            setTimeout(() => focusCell(rowIdx + 1, 0), 20)
+          } else {
+            // 나머지 → 오른쪽 셀 (dong 건너뜀)
+            focusCell(rowIdx, nextCol(colIdx, 1))
+          }
           break
+        }
         case 'ArrowDown':
           e.preventDefault()
           if (rowIdx < maxRow) focusCell(rowIdx + 1, colIdx)
@@ -199,26 +214,34 @@ export function ManualTab() {
           if (rowIdx > 0) focusCell(rowIdx - 1, colIdx)
           break
         case 'Tab':
+          e.preventDefault()
           if (!e.shiftKey) {
-            if (colIdx === maxCol) {
-              e.preventDefault()
+            if (colIdx === LAST_COL) {
               if (rowIdx === maxRow) addRow()
               setTimeout(() => focusCell(rowIdx + 1, 0), 20)
+            } else {
+              focusCell(rowIdx, nextCol(colIdx, 1))
             }
           } else {
-            if (colIdx === 0 && rowIdx > 0) { e.preventDefault(); focusCell(rowIdx - 1, maxCol) }
+            if (colIdx === 0 && rowIdx > 0) {
+              focusCell(rowIdx - 1, LAST_COL)
+            } else if (colIdx > 0) {
+              focusCell(rowIdx, nextCol(colIdx, -1))
+            }
           }
           break
         case 'ArrowRight':
           if ((e.target as HTMLInputElement).selectionStart === (e.target as HTMLInputElement).value?.length) {
             e.preventDefault()
-            if (colIdx < maxCol) focusCell(rowIdx, colIdx + 1)
+            const n = nextCol(colIdx, 1)
+            if (n > colIdx) focusCell(rowIdx, n)
           }
           break
         case 'ArrowLeft':
           if ((e.target as HTMLInputElement).selectionStart === 0) {
             e.preventDefault()
-            if (colIdx > 0) focusCell(rowIdx, colIdx - 1)
+            const n = nextCol(colIdx, -1)
+            if (n < colIdx) focusCell(rowIdx, n)
           }
           break
         case 'Delete':
@@ -357,7 +380,7 @@ export function ManualTab() {
                   key={row._id}
                   className={`border-b border-gray-100 ${
                     row.savedOrderId ? 'bg-green-50' :
-                    isOutOfZone ? 'bg-amber-50/40' :
+                    isOutOfZone ? 'bg-red-50 border-l-4 border-l-red-400' :
                     row.submitStatus === 'error' ? 'bg-red-50' : 'hover:bg-brand-50/30'
                   }`}
                 >
@@ -375,14 +398,12 @@ export function ManualTab() {
                     const isQty = key === 'quantity'
                     const isPhone = key === 'customer_phone'
                     const isCode = key === 'item_code'
-                    const dongWarn = isDong && row.dongStatus === 'out-of-zone'
 
                     const cellCls = `
                       w-full h-full px-1.5 py-1 text-sm bg-transparent outline-none
                       focus:ring-2 focus:ring-brand-400 focus:ring-inset
                       ${isAddr && row.addrStatus === 'valid' ? 'text-green-700' : ''}
                       ${isAddr && row.addrStatus === 'invalid' ? 'text-red-600' : ''}
-                      ${dongWarn ? 'ring-1 ring-amber-400 ring-inset' : ''}
                     `
 
                     return (
@@ -411,25 +432,37 @@ export function ManualTab() {
                             <AddrIcon status={row.addrStatus} />
                           </div>
                         ) : isDong ? (
-                          <div className="relative">
-                            <select
-                              ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                              className={cellCls + (dongWarn ? ' pr-5' : '')}
-                              value={row.dong}
-                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                              onChange={(e) => {
-                                const newDong = e.target.value
-                                const dongStatus = VALID_DONGS.has(newDong) ? 'valid' : 'out-of-zone'
-                                setRows(rows.map((r, i) =>
-                                  i === rowIdx ? { ...r, dong: newDong, dongStatus, savedOrderId: undefined, submitStatus: undefined } : r
-                                ))
-                              }}
-                              onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
-                            >
-                              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
-                            </select>
-                            {dongWarn && (
-                              <AlertTriangle className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-500 pointer-events-none" />
+                          <div className="flex flex-col items-center justify-center px-1 py-1 gap-0.5 min-h-[36px]">
+                            {!row.delivery_address ? (
+                              <span className="text-[9px] text-gray-300 text-center leading-tight">주소<br/>입력 후</span>
+                            ) : row.addrStatus === 'validating' ? (
+                              <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />
+                            ) : row.dongStatus === 'out-of-zone' ? (
+                              <>
+                                <span className="text-[10px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full flex items-center gap-0.5 whitespace-nowrap">
+                                  <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />지역 외
+                                </span>
+                                {isAdmin && !row.dongOverride && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRows(rows.map((r, i) =>
+                                      i === rowIdx ? { ...r, dongOverride: true, submitStatus: undefined, savedOrderId: undefined } : r
+                                    ))}
+                                    className="text-[9px] text-amber-700 underline hover:text-amber-900 leading-none"
+                                  >
+                                    강제등록
+                                  </button>
+                                )}
+                                {row.dongOverride && (
+                                  <span className="text-[9px] text-amber-600 font-semibold leading-none">{row.dong} ✓</span>
+                                )}
+                              </>
+                            ) : row.dong ? (
+                              <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                {row.dong}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-300">—</span>
                             )}
                           </div>
                         ) : isQty ? (
@@ -480,22 +513,6 @@ export function ManualTab() {
                           />
                         )}
 
-                        {/* 동 경고 — 관리자 강제 등록 체크박스 */}
-                        {isDong && row.dongStatus === 'out-of-zone' && isAdmin && (
-                          <div className="absolute left-0 top-full z-20 bg-amber-50 border border-amber-300 rounded-b-lg px-2 py-1 text-xs shadow-md whitespace-nowrap">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-amber-800">
-                              <input
-                                type="checkbox"
-                                checked={row.dongOverride ?? false}
-                                onChange={(e) => setRows(rows.map((r, i) =>
-                                  i === rowIdx ? { ...r, dongOverride: e.target.checked, submitStatus: undefined, savedOrderId: undefined } : r
-                                ))}
-                                className="w-3 h-3 accent-amber-500"
-                              />
-                              강제 등록 (관리자)
-                            </label>
-                          </div>
-                        )}
                       </td>
                     )
                   })}
