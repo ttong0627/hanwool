@@ -1,15 +1,21 @@
 """
 주소 검색 API — nexus_address 로컬 DB → address_cache → Kakao API 순서
 
-검색 전략 (순서):
-  1a. addresses: road_name + building_main_no 정확 매칭
-  1b. buildings: road_name + building_main_no 정확 매칭
-  2.  addresses: road_name ILIKE (같은 도로 주소 제안)
-  3.  buildings: 건물명 ILIKE or road_name ILIKE
-  4.  jibun_addresses: 지번 주소 패턴 매칭
-  5.  pg_trgm: road_key 유사도 폴백
-  6.  address_cache: 이전 Kakao 검색 결과 캐시
-  Kakao API: 캐시에도 없을 때만 — 결과는 캐시에 저장
+## 검색 전략 (속도 순)
+
+1a. road_codes → buildings btree JOIN  (road_code+main_no 복합 인덱스, 최고속)
+1b. road_codes → addresses btree JOIN  (동일 전략, addresses 보완)
+2.  buildings full_key GIN 트라이그램  (공백 제거 후 ILIKE, 인덱스 사용)
+3.  buildings building_name_key GIN    (건물명 직접 검색)
+4.  jibun_addresses 지번 패턴 매칭
+5.  address_cache  (이전 Kakao 검색 결과)
+    Kakao API → 결과를 address_cache에 upsert
+
+## 행안부 도로명주소 규격
+- road_key   : 공백 제거 전체 주소 소문자  ex) 경기도광주시중앙로145번길22
+- full_key   : road_key + 건물명 + 법정동   ex) 경기도광주시중앙로145번길22신원플러스타운경안동
+- road_code  : 12자리 행정구역 코드          ex) 416104433419
+- building_main_no / building_sub_no : 건물번호 정수
 """
 import re
 from typing import Optional
@@ -25,11 +31,50 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/addresses", tags=["주소"])
 
-_PREFIX = "경기도 광주시 "
 _GWANGJU_RECT = "127.10,37.30,127.60,37.65"
+_PREFIX = "경기도 광주시 "
+
+# 4개 배송 동 road_code prefix (경기도 광주시 행정동)
+_DELIVERY_DONG_EMD = {"경안동", "송정동", "쌍령동", "탄벌동"}
 
 
-def _row_to_result(
+# ─────────────────────────────────────────────────────────────────────────────
+# 유틸
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _normalize(q: str) -> str:
+    """공백·특수문자 제거 후 소문자 — full_key/road_key 검색용"""
+    return re.sub(r"[\s\-–]", "", q.lower())
+
+
+def _strip_prefix(q: str) -> str:
+    """'경기도 광주시' 접두 제거"""
+    q = q.strip()
+    for pfx in ("경기도 광주시 ", "경기도 광주시", "경기도 ", "경기도", "경기 ", "경기"):
+        if q.startswith(pfx):
+            q = q[len(pfx):].strip()
+    return q
+
+
+def _parse_road_address(query: str) -> Optional[dict]:
+    """
+    도로명주소 파싱 → road_name + building_main_no
+
+    "중앙로145번길 22"   → {road: "중앙로145번길", main: 22, sub: None}
+    "중앙로145번길 3-14" → {road: "중앙로145번길", main:  3, sub: 14}
+    "중앙로145번길"      → None  (건물번호 없음 → 도로 전체 조회)
+    """
+    m = re.match(r'^(.+?)\s+(\d+)(?:-(\d+))?$', query.strip())
+    if not m:
+        return None
+    return {
+        "road": m.group(1).strip(),
+        "main": int(m.group(2)),
+        "sub":  int(m.group(3)) if m.group(3) else None,
+    }
+
+
+def _make_result(
     road_address: str,
     legal_emd: Optional[str],
     building_name: Optional[str] = None,
@@ -37,166 +82,148 @@ def _row_to_result(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
 ) -> dict:
-    """DB 행 → 응답 딕셔너리"""
-    display = road_address
-    if building_name:
-        display = f"{road_address} ({building_name})"
+    display = f"{road_address} ({building_name})" if building_name else road_address
     return {
-        "address_name": display,
-        "road_address": display,
+        "address_name":  display,
+        "road_address":  display,
         "jibun_address": jibun_address,
-        "dong_name": legal_emd,
-        "lat": lat,
-        "lng": lng,
+        "dong_name":     legal_emd,
+        "lat":           lat,
+        "lng":           lng,
     }
 
 
-def _parse_road_address(query: str) -> Optional[dict]:
-    """
-    도로명주소를 도로명 + 건물번호로 파싱.
-    "중앙로145번길 22"    → {road: "중앙로145번길", main: 22, sub: None}
-    "중앙로145번길 3-14"  → {road: "중앙로145번길", main: 3,  sub: 14}
-    "중앙로145번길"       → None (건물번호 없음)
-    """
-    m = re.match(r'^(.+?)\s+(\d+)(?:-(\d+))?$', query.strip())
-    if not m:
-        return None
-    road = m.group(1).strip()
-    main_no = int(m.group(2))
-    sub_no = int(m.group(3)) if m.group(3) else None
-    return {"road": road, "main": main_no, "sub": sub_no}
-
+# ─────────────────────────────────────────────────────────────────────────────
+# 로컬 DB 검색
+# ─────────────────────────────────────────────────────────────────────────────
 
 async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
     results: list[dict] = []
     seen: set[str] = set()
 
-    def add(row: dict) -> None:
-        key = row["address_name"]
-        if key and key not in seen:
-            seen.add(key)
-            results.append(row)
+    def add(r: dict) -> None:
+        k = r["address_name"]
+        if k and k not in seen:
+            seen.add(k)
+            results.append(r)
 
-    q = query.strip()
-    q_clean = q.replace("경기도 광주시", "").replace("경기도", "").replace("경기", "").strip()
-    search_q = q_clean if q_clean else q
+    clean = _strip_prefix(query)
+    parsed = _parse_road_address(clean)
+    norm = _normalize(clean)          # 공백 제거 — GIN full_key 검색용
 
-    parsed = _parse_road_address(search_q)
-    road_q = parsed["road"] if parsed else search_q
-
-    # ── 1a. addresses: road_name + building_main_no 정확 매칭 ─────────────────
+    # ── 1a. road_codes JOIN buildings (btree, 최고속) ─────────────────────────
     if parsed:
+        sub_clause = "AND b.building_sub_no = :sub " if parsed["sub"] is not None else ""
+        params: dict = {
+            "road": parsed["road"],
+            "main": parsed["main"],
+            "lim":  limit * 2,
+        }
+        if parsed["sub"] is not None:
+            params["sub"] = parsed["sub"]
         try:
-            sub_clause = "AND building_sub_no = :sub " if parsed["sub"] is not None else ""
             rows = await db.execute(
                 text(
-                    "SELECT road_address, legal_emd, building_name "
-                    "FROM nexus_address.addresses "
-                    "WHERE road_name ILIKE :road "
-                    "  AND building_main_no = :main "
+                    "SELECT b.road_address, b.legal_emd, b.building_name "
+                    "FROM nexus_address.buildings b "
+                    "JOIN nexus_address.road_codes r ON b.road_code = r.road_code "
+                    "WHERE r.road_name = :road "
+                    "  AND b.building_main_no = :main "
                     f"  {sub_clause}"
-                    "  AND road_address != '' "
-                    "ORDER BY building_sub_no "
-                    "LIMIT :lim"
+                    "ORDER BY b.building_sub_no LIMIT :lim"
                 ),
-                {
-                    "road": f"%{parsed['road']}%",
-                    "main": parsed["main"],
-                    **({"sub": parsed["sub"]} if parsed["sub"] is not None else {}),
-                    "lim": limit * 2,
-                },
+                params,
             )
             for r in rows.all():
-                add(_row_to_result(r[0], r[1], r[2]))
+                add(_make_result(r[0], r[1], r[2]))
         except Exception:
             pass
 
     if len(results) >= limit:
         return results[:limit]
 
-    # ── 1b. buildings: road_name + building_main_no 정확 매칭 ────────────────
+    # ── 1b. road_codes JOIN addresses (보완, 동일 전략) ───────────────────────
     if parsed:
-        remaining = limit - len(results)
+        sub_clause = "AND a.building_sub_no = :sub " if parsed["sub"] is not None else ""
+        params = {
+            "road": parsed["road"],
+            "main": parsed["main"],
+            "lim":  (limit - len(results)) * 2,
+        }
+        if parsed["sub"] is not None:
+            params["sub"] = parsed["sub"]
         try:
-            sub_clause = "AND building_sub_no = :sub " if parsed["sub"] is not None else ""
             rows = await db.execute(
                 text(
-                    "SELECT road_address, legal_emd, building_name "
-                    "FROM nexus_address.buildings "
-                    "WHERE road_name ILIKE :road "
-                    "  AND building_main_no = :main "
+                    "SELECT a.road_address, a.legal_emd, a.building_name "
+                    "FROM nexus_address.addresses a "
+                    "JOIN nexus_address.road_codes r ON a.road_code = r.road_code "
+                    "WHERE r.road_name = :road "
+                    "  AND a.building_main_no = :main "
                     f"  {sub_clause}"
-                    "  AND road_address != '' "
-                    "ORDER BY building_sub_no "
-                    "LIMIT :lim"
+                    "  AND a.road_address != '' "
+                    "ORDER BY a.building_sub_no LIMIT :lim"
                 ),
-                {
-                    "road": f"%{parsed['road']}%",
-                    "main": parsed["main"],
-                    **({"sub": parsed["sub"]} if parsed["sub"] is not None else {}),
-                    "lim": remaining * 2,
-                },
+                params,
             )
             for r in rows.all():
-                add(_row_to_result(r[0], r[1], r[2]))
+                add(_make_result(r[0], r[1], r[2]))
         except Exception:
             pass
 
     if len(results) >= limit:
         return results[:limit]
 
-    # ── 2. addresses: road_name ILIKE (같은 도로의 주소 제안) ─────────────────
-    remaining = limit - len(results)
-    try:
-        rows = await db.execute(
-            text(
-                "SELECT road_address, legal_emd, building_name "
-                "FROM nexus_address.addresses "
-                "WHERE road_name ILIKE :road "
-                "  AND road_address != '' "
-                "ORDER BY building_main_no, building_sub_no "
-                "LIMIT :lim"
-            ),
-            {"road": f"%{road_q}%", "lim": remaining * 2},
-        )
-        for r in rows.all():
-            add(_row_to_result(r[0], r[1], r[2]))
-    except Exception:
-        pass
-
-    if len(results) >= limit:
-        return results[:limit]
-
-    # ── 3. buildings: 건물명 ILIKE 또는 road_name ILIKE ───────────────────────
-    remaining = limit - len(results)
+    # ── 2. buildings full_key GIN 트라이그램 ─────────────────────────────────
+    # full_key = "경기도광주시중앙로145번길22신원플러스타운경안동" (공백 없음)
+    # GIN trigram 인덱스 활용 → ILIKE '%norm%' 가능
     try:
         rows = await db.execute(
             text(
                 "SELECT road_address, legal_emd, building_name "
                 "FROM nexus_address.buildings "
-                "WHERE (building_name ILIKE :name_pat OR road_name ILIKE :road) "
-                "  AND road_address != '' "
+                "WHERE full_key ILIKE :pat "
                 "ORDER BY "
-                "  CASE WHEN building_name ILIKE :name_pat THEN 0 ELSE 1 END, "
+                "  word_similarity(:norm, full_key) DESC, "
                 "  building_main_no, building_sub_no "
                 "LIMIT :lim"
             ),
-            {"name_pat": f"%{search_q}%", "road": f"%{road_q}%", "lim": remaining * 2},
+            {"pat": f"%{norm}%", "norm": norm, "lim": (limit - len(results)) * 3},
         )
         for r in rows.all():
-            add(_row_to_result(r[0], r[1], r[2]))
+            add(_make_result(r[0], r[1], r[2]))
     except Exception:
         pass
 
     if len(results) >= limit:
         return results[:limit]
 
-    # ── 4. jibun_addresses: 지번 주소 패턴 매칭 ─────────────────────────────
-    remaining = limit - len(results)
-    m_jibun = re.search(r"([가-힣]+[동면읍리])\s*(산\s*)?(\d+)(?:[-–](\d+))?", search_q)
+    # ── 3. buildings building_name_key GIN ───────────────────────────────────
+    name_norm = _normalize(clean)
+    try:
+        rows = await db.execute(
+            text(
+                "SELECT road_address, legal_emd, building_name "
+                "FROM nexus_address.buildings "
+                "WHERE building_name_key ILIKE :pat "
+                "ORDER BY building_main_no, building_sub_no "
+                "LIMIT :lim"
+            ),
+            {"pat": f"%{name_norm}%", "lim": (limit - len(results)) * 2},
+        )
+        for r in rows.all():
+            add(_make_result(r[0], r[1], r[2]))
+    except Exception:
+        pass
+
+    if len(results) >= limit:
+        return results[:limit]
+
+    # ── 4. jibun_addresses 지번 패턴 매칭 ────────────────────────────────────
+    m_jibun = re.search(r"([가-힣]+[동면읍리])\s*(산\s*)?(\d+)(?:[-–](\d+))?", clean)
     if m_jibun:
-        dong = m_jibun.group(1)
-        san = "1" if m_jibun.group(2) else "0"
+        dong    = m_jibun.group(1)
+        san     = "1" if m_jibun.group(2) else "0"
         main_no = int(m_jibun.group(3))
         try:
             rows = await db.execute(
@@ -205,102 +232,83 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "FROM nexus_address.jibun_addresses "
                     "WHERE legal_emd LIKE :dpat "
                     "  AND jibun_main_no = :main "
-                    "  AND jibun_san_yn = :san "
-                    "ORDER BY jibun_sub_no "
-                    "LIMIT :lim"
+                    "  AND jibun_san_yn  = :san "
+                    "ORDER BY jibun_sub_no LIMIT :lim"
                 ),
-                {"dpat": f"%{dong}%", "main": main_no, "san": san, "lim": remaining},
+                {"dpat": f"%{dong}%", "main": main_no, "san": san,
+                 "lim": limit - len(results)},
             )
             for r in rows.all():
-                legal_emd, san_yn, main, sub, road_addr = r
+                emd, san_yn, main, sub, road_addr = r
                 san_str = "산" if san_yn == "1" else ""
                 sub_str = f"-{sub}" if sub > 0 else ""
-                jibun = f"{_PREFIX}{legal_emd} {san_str}{main}{sub_str}"
-                road = road_addr or ""
-                add(_row_to_result(road or jibun, legal_emd, None, jibun if road else None))
-        except Exception:
-            pass
-
-    if len(results) >= limit:
-        return results[:limit]
-
-    # ── 5. pg_trgm 유사도 폴백 (road_key) ────────────────────────────────────
-    remaining = limit - len(results)
-    if remaining > 0:
-        norm = re.sub(r"\s+", "", search_q.lower())
-        try:
-            rows = await db.execute(
-                text(
-                    "SELECT road_address, legal_emd, building_name "
-                    "FROM nexus_address.addresses "
-                    "WHERE word_similarity(:k, road_key) > 0.3 "
-                    "  AND road_address != '' "
-                    "ORDER BY word_similarity(:k, road_key) DESC "
-                    "LIMIT :lim"
-                ),
-                {"k": norm, "lim": remaining},
-            )
-            for r in rows.all():
-                add(_row_to_result(r[0], r[1], r[2]))
+                jibun = f"{_PREFIX}{emd} {san_str}{main}{sub_str}"
+                road  = road_addr or ""
+                add(_make_result(road or jibun, emd, None, jibun if road else None))
         except Exception:
             pass
 
     return results[:limit]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# address_cache 검색 (이전 Kakao 결과)
+# ─────────────────────────────────────────────────────────────────────────────
+
 async def _search_cache(query: str, db: AsyncSession, limit: int) -> list[dict]:
-    """address_cache 테이블에서 이전 Kakao 검색 결과 조회"""
     results: list[dict] = []
     seen: set[str] = set()
-    q = query.strip()
-    pat = f"%{q}%"
+    norm = _normalize(query.strip())
+    pat  = f"%{norm}%"
     try:
         rows = await db.execute(
             text(
                 "SELECT road_address, jibun_address, building_name, dong_name, lat, lng "
                 "FROM address_cache "
-                "WHERE road_address ILIKE :pat "
-                "   OR building_name ILIKE :pat "
-                "   OR jibun_address ILIKE :pat "
+                "WHERE replace(lower(road_address),' ','') ILIKE :pat "
+                "   OR replace(lower(building_name),' ','') ILIKE :pat "
+                "   OR replace(lower(jibun_address),' ','') ILIKE :pat "
                 "ORDER BY "
-                "  CASE WHEN road_address ILIKE :exact THEN 0 ELSE 1 END, "
+                "  CASE WHEN replace(lower(road_address),' ','') ILIKE :exact THEN 0 ELSE 1 END, "
                 "  road_address "
                 "LIMIT :lim"
             ),
-            {"pat": pat, "exact": q, "lim": limit},
+            {"pat": pat, "exact": norm, "lim": limit},
         )
         for r in rows.all():
             road, jibun, bname, dong, lat, lng = r
             display = f"{road} ({bname})" if bname else road
-            key = display
-            if key and key not in seen:
-                seen.add(key)
+            if display and display not in seen:
+                seen.add(display)
                 results.append({
-                    "address_name": display,
-                    "road_address": display,
+                    "address_name":  display,
+                    "road_address":  display,
                     "jibun_address": jibun,
-                    "dong_name": dong,
-                    "lat": lat,
-                    "lng": lng,
+                    "dong_name":     dong,
+                    "lat":           lat,
+                    "lng":           lng,
                 })
     except Exception:
         pass
     return results
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Kakao API + 캐시 저장
+# ─────────────────────────────────────────────────────────────────────────────
+
 async def _save_to_cache(results: list[dict], db: AsyncSession) -> None:
-    """Kakao 검색 결과를 address_cache에 저장 (road_address 기준 upsert)"""
+    """Kakao 결과를 address_cache에 upsert (road_address 기준)"""
     for r in results:
-        road = r.get("road_address") or r.get("address_name")
-        if not road:
-            continue
-        # building_name 추출 (display에서 괄호 제거)
-        bname = None
+        road = r.get("road_address") or r.get("address_name") or ""
+        # display에서 건물명 괄호 분리
+        bname: Optional[str] = None
         m = re.search(r'\(([^)]+)\)$', road)
         if m:
             bname = m.group(1)
-            road = road[:m.start()].strip()
-
+            road  = road[:m.start()].strip()
+        if not road:
+            continue
         try:
             await db.execute(
                 text(
@@ -317,7 +325,7 @@ async def _save_to_cache(results: list[dict], db: AsyncSession) -> None:
                 {
                     "road":  road,
                     "jibun": r.get("jibun_address"),
-                    "bname": bname or None,
+                    "bname": bname,
                     "dong":  r.get("dong_name"),
                     "lat":   r.get("lat"),
                     "lng":   r.get("lng"),
@@ -328,7 +336,7 @@ async def _save_to_cache(results: list[dict], db: AsyncSession) -> None:
 
 
 async def _search_kakao(query: str, limit: int) -> list[dict]:
-    """카카오 폴백 — 로컬 DB + 캐시에 결과 없을 때만 사용"""
+    """Kakao API — 로컬 DB + 캐시에 없을 때만 호출"""
     if not settings.KAKAO_REST_API_KEY:
         return []
     headers = {"Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}"}
@@ -348,22 +356,25 @@ async def _search_kakao(query: str, limit: int) -> list[dict]:
                 for d in resp.json().get("documents", []):
                     addr_obj = d.get("address") or {}
                     road_obj = d.get("road_address") or {}
-                    sg = addr_obj.get("region_2depth_name", "") or road_obj.get("region_2depth_name", "")
+                    sg = (
+                        addr_obj.get("region_2depth_name", "")
+                        or road_obj.get("region_2depth_name", "")
+                    )
                     if sg and "광주" not in sg:
                         continue
-                    dong = road_obj.get("region_3depth_name") or addr_obj.get("region_3depth_name")
-                    road = road_obj.get("address_name")
+                    dong  = road_obj.get("region_3depth_name") or addr_obj.get("region_3depth_name")
+                    road  = road_obj.get("address_name")
                     jibun = addr_obj.get("address_name")
-                    name = road or jibun or d.get("address_name", "")
+                    name  = road or jibun or d.get("address_name", "")
                     if name and name not in seen:
                         seen.add(name)
                         results.append({
-                            "address_name": name,
-                            "road_address": road,
+                            "address_name":  name,
+                            "road_address":  road,
                             "jibun_address": jibun,
-                            "dong_name": dong,
-                            "lat": float(d["y"]) if d.get("y") else None,
-                            "lng": float(d["x"]) if d.get("x") else None,
+                            "dong_name":     dong,
+                            "lat":           float(d["y"]) if d.get("y") else None,
+                            "lng":           float(d["x"]) if d.get("x") else None,
                         })
                 if results:
                     break
@@ -374,32 +385,40 @@ async def _search_kakao(query: str, limit: int) -> list[dict]:
             try:
                 resp = await client.get(
                     "https://dapi.kakao.com/v2/local/search/keyword.json",
-                    params={"query": f"경기 광주 {query}", "rect": _GWANGJU_RECT, "size": limit},
+                    params={
+                        "query": f"경기 광주 {query}",
+                        "rect":  _GWANGJU_RECT,
+                        "size":  limit,
+                    },
                     headers=headers,
                 )
                 if resp.status_code == 200:
                     for d in resp.json().get("documents", []):
-                        road = d.get("road_address_name") or ""
+                        road  = d.get("road_address_name") or ""
                         jibun = d.get("address_name") or ""
-                        name = road or jibun
+                        name  = road or jibun
                         if not name or name in seen:
                             continue
                         m = re.search(r"([가-힣]+[동면읍리])", jibun)
                         dong = m.group(1) if m else None
                         seen.add(name)
                         results.append({
-                            "address_name": name,
-                            "road_address": road or None,
+                            "address_name":  name,
+                            "road_address":  road or None,
                             "jibun_address": jibun or None,
-                            "dong_name": dong,
-                            "lat": float(d["y"]) if d.get("y") else None,
-                            "lng": float(d["x"]) if d.get("x") else None,
+                            "dong_name":     dong,
+                            "lat":           float(d["y"]) if d.get("y") else None,
+                            "lng":           float(d["x"]) if d.get("x") else None,
                         })
             except Exception:
                 pass
 
     return results[:limit]
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 엔드포인트
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/search")
 async def search_addresses(
@@ -409,20 +428,19 @@ async def search_addresses(
     _=Depends(get_current_user),
 ):
     """
-    주소 검색 — 로컬 DB → address_cache → Kakao API 순서.
-    Kakao 결과는 address_cache에 자동 저장.
+    주소 검색
+    1. nexus_address 로컬 DB (행안부 전국 주소)
+    2. address_cache (누적 Kakao 결과)
+    3. Kakao API → 결과 캐시 저장
     """
-    # 1. 로컬 nexus_address DB
     results = await _search_local(query, db, limit)
     if results:
         return results[:limit]
 
-    # 2. 이전 Kakao 검색 캐시
     results = await _search_cache(query, db, limit)
     if results:
         return results[:limit]
 
-    # 3. Kakao API (결과 캐시 저장)
     results = await _search_kakao(query, limit)
     if results:
         await _save_to_cache(results, db)
