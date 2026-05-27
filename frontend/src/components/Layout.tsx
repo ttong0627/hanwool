@@ -25,6 +25,7 @@ const receiverNavs = [
   { to: '/receiver',              icon: ClipboardList, label: '주문 접수' },
   { to: '/receiver/list',         icon: LayoutDashboard, label: '오늘 명단' },
   { to: '/receiver/labels',       icon: QrCode,        label: '라벨 출력' },
+  { to: '/receiver/delivery-receipts', icon: FileCheck2, label: '배송 수령증' },
   { to: '/receiver/my-account',   icon: UserCircle,    label: '내 계정' },
 ]
 

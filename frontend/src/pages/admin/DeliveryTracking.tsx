@@ -7,9 +7,9 @@ import { StatusBadge } from '@/components/StatusBadge'
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 const MARKET_LAT = 37.4069688196691
 const MARKET_LNG = 127.248444387416
-const ACTIVE_STATUSES = ['assigned', 'picked_up', 'in_transit', 'delayed']
 
 type KakaoAny = any
+type DriverFilter = number | 'all' | 'unassigned'
 
 interface Order {
   id: number
@@ -22,7 +22,7 @@ interface Order {
   items_desc?: string
   quantity: number
   sequence?: number
-  driver_id?: number
+  driver_id?: number | null
   driver_name?: string | null
   driver_phone?: string | null
   request?: string | null
@@ -43,6 +43,10 @@ function estimateMinutes(index: number) {
   return Math.max(8, index * 7 + 5)
 }
 
+function hasCoord(order: Order) {
+  return typeof order.lat === 'number' && typeof order.lng === 'number'
+}
+
 function MapView({
   orders,
   selectedId,
@@ -58,26 +62,31 @@ function MapView({
   const overlaysRef = useRef<KakaoAny[]>([])
   const lineRef = useRef<KakaoAny | null>(null)
   const [ready, setReady] = useState(false)
+  const [mapError, setMapError] = useState('')
 
   useEffect(() => {
     if (!KAKAO_MAP_KEY || !mapEl.current) return
     const scriptId = 'kakao-maps-sdk'
     const init = () => {
       const kakao = (window as any).kakao
-      kakao?.maps.load(() => {
-      if (!mapEl.current || mapRef.current) return
-      mapRef.current = new (window as any).kakao.maps.Map(mapEl.current, {
-        center: new (window as any).kakao.maps.LatLng(MARKET_LAT, MARKET_LNG),
-        level: 5,
-      })
-      setReady(true)
+      if (!kakao?.maps) return
+      kakao.maps.load(() => {
+        if (!mapEl.current || mapRef.current) return
+        mapRef.current = new kakao.maps.Map(mapEl.current, {
+          center: new kakao.maps.LatLng(MARKET_LAT, MARKET_LNG),
+          level: 5,
+        })
+        setReady(true)
       })
     }
+
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script')
       script.id = scriptId
-      script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false`
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false`
+      script.async = true
       script.onload = init
+      script.onerror = () => setMapError('카카오 지도 SDK를 불러오지 못했습니다. JavaScript 키와 도메인 등록을 확인해 주세요.')
       document.head.appendChild(script)
     } else {
       init()
@@ -93,13 +102,16 @@ function MapView({
     overlaysRef.current = []
     lineRef.current = null
 
-    const coordOrders = orders.filter((order) => order.lat && order.lng)
-    if (coordOrders.length === 0) return
+    const coordOrders = orders.filter(hasCoord)
+    if (coordOrders.length === 0) {
+      mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(MARKET_LAT, MARKET_LNG))
+      return
+    }
 
     const bounds = new (window as any).kakao.maps.LatLngBounds()
     const path: KakaoAny[] = []
     coordOrders.forEach((order, index) => {
-      const pos = new (window as any).kakao.maps.LatLng(order.lat!, order.lng!)
+      const pos = new (window as any).kakao.maps.LatLng(order.lat, order.lng)
       bounds.extend(pos)
       path.push(pos)
       const isSelected = selectedId === order.id
@@ -110,7 +122,7 @@ function MapView({
         content: `<button style="border:0;border-radius:10px;padding:6px 8px;background:${isSelected ? '#f97316' : '#111827'};color:white;font-size:12px;font-weight:800;box-shadow:0 6px 14px rgba(0,0,0,.18);white-space:nowrap;">${order.sequence ?? index + 1}. ${order.customer_name} · ${order.quantity}개 · ${estimateMinutes(index + 1)}분</button>`,
       })
       marker.setMap(mapRef.current)
-      (window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
+      ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
       overlay.setMap(mapRef.current)
       markersRef.current.push(marker)
       overlaysRef.current.push(overlay)
@@ -132,32 +144,37 @@ function MapView({
 
   useEffect(() => {
     const selected = orders.find((order) => order.id === selectedId)
-    if (!ready || !mapRef.current || !selected?.lat || !selected.lng || !(window as any).kakao?.maps) return
+    if (!ready || !mapRef.current || !selected || !hasCoord(selected) || !(window as any).kakao?.maps) return
     mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(selected.lat, selected.lng))
   }, [orders, ready, selectedId])
+
+  const coordCount = orders.filter(hasCoord).length
 
   return (
     <div className="relative h-[520px] overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
       <div ref={mapEl} className="h-full w-full" />
-      {!KAKAO_MAP_KEY && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500">지도 키가 설정되지 않았습니다.</div>
-      )}
-      {orders.length > 0 && (
-        <div className="absolute bottom-3 left-3 rounded bg-white/95 px-3 py-2 text-xs text-gray-600 shadow">
-          좌표 {orders.filter((order) => order.lat && order.lng).length}/{orders.length}건 · 경로선 표시
+      {(!KAKAO_MAP_KEY || mapError || coordCount === 0) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 p-6 text-center">
+          <div>
+            <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+            <div className="text-sm font-semibold text-gray-700">
+              {!KAKAO_MAP_KEY ? '지도 키가 설정되지 않았습니다.' : mapError || '좌표가 저장된 주문이 없습니다.'}
+            </div>
+            <div className="mt-1 text-xs text-gray-500">
+              주문관리에서 저장된 lat/lng가 있으면 이 화면에 바로 표시됩니다.
+            </div>
+          </div>
         </div>
       )}
-      <div className="hidden">
-        {orders.map((order) => (
-          <button key={order.id} onClick={() => onSelect(order)}>{order.order_no}</button>
-        ))}
+      <div className="absolute bottom-3 left-3 rounded bg-white/95 px-3 py-2 text-xs text-gray-600 shadow">
+        좌표 {coordCount}/{orders.length}건 · 경로선 표시
       </div>
     </div>
   )
 }
 
 export function DeliveryTracking() {
-  const [selectedDriverId, setSelectedDriverId] = useState<number | 'all'>('all')
+  const [selectedDriverId, setSelectedDriverId] = useState<DriverFilter>('all')
   const [selectedOrderId, setSelectedOrderId] = useState<number | undefined>()
   const [search, setSearch] = useState('')
   const queryClient = useQueryClient()
@@ -179,23 +196,32 @@ export function DeliveryTracking() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['delivery-tracking-orders'] }),
   })
 
-  const activeOrders = useMemo(
-    () => orders.filter((order) => ACTIVE_STATUSES.includes(order.status) && order.driver_id),
+  const visibleOrders = useMemo(
+    () => orders.filter((order) => order.status !== 'cancelled'),
     [orders]
   )
+
   const driverGroups = useMemo(() => {
     const countByDriver = new Map<number, number>()
-    activeOrders.forEach((order) => countByDriver.set(order.driver_id!, (countByDriver.get(order.driver_id!) ?? 0) + 1))
+    visibleOrders.forEach((order) => {
+      if (order.driver_id) countByDriver.set(order.driver_id, (countByDriver.get(order.driver_id) ?? 0) + 1)
+    })
     return drivers.filter((driver) => countByDriver.has(driver.id)).map((driver) => ({
       ...driver,
       count: countByDriver.get(driver.id) ?? 0,
     }))
-  }, [activeOrders, drivers])
+  }, [drivers, visibleOrders])
+
+  const unassignedCount = visibleOrders.filter((order) => !order.driver_id).length
 
   const selectedOrders = useMemo(() => {
     const keyword = search.trim().toLowerCase()
-    return activeOrders
-      .filter((order) => selectedDriverId === 'all' || order.driver_id === selectedDriverId)
+    return visibleOrders
+      .filter((order) => {
+        if (selectedDriverId === 'all') return true
+        if (selectedDriverId === 'unassigned') return !order.driver_id
+        return order.driver_id === selectedDriverId
+      })
       .filter((order) => {
         if (!keyword) return true
         return [order.order_no, order.customer_name, order.customer_phone, order.dong, order.delivery_address, order.items_desc, order.driver_name]
@@ -203,9 +229,10 @@ export function DeliveryTracking() {
           .some((value) => String(value).toLowerCase().includes(keyword))
       })
       .sort((a, b) => (a.sequence ?? 9999) - (b.sequence ?? 9999))
-  }, [activeOrders, search, selectedDriverId])
+  }, [search, selectedDriverId, visibleOrders])
 
   const selectedOrder = selectedOrders.find((order) => order.id === selectedOrderId)
+  const coordTotal = visibleOrders.filter(hasCoord).length
 
   return (
     <div className="p-6 space-y-4 page-fade-in">
@@ -215,7 +242,7 @@ export function DeliveryTracking() {
             <Truck className="w-6 h-6 text-brand-500" />
             배송 확인
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">기사별 배송 명단, 지도 좌표, 순번, 경로와 예상 시간을 확인합니다.</p>
+          <p className="text-sm text-gray-500 mt-0.5">오늘 주문의 지도 좌표, 기사별 명단, 순번, 경로와 예상 시간을 확인합니다.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => autoSequenceMutation.mutate()} className="btn-primary flex items-center gap-1.5 text-sm" disabled={autoSequenceMutation.isPending}>
@@ -228,10 +255,10 @@ export function DeliveryTracking() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">배송중</div><div className="text-2xl font-bold text-gray-900">{activeOrders.length}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">오늘 주문</div><div className="text-2xl font-bold text-gray-900">{visibleOrders.length}</div></div>
         <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">기사</div><div className="text-2xl font-bold text-gray-900">{driverGroups.length}</div></div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">좌표</div><div className="text-2xl font-bold text-gray-900">{activeOrders.filter((o) => o.lat && o.lng).length}</div></div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">완료</div><div className="text-2xl font-bold text-green-600">{orders.filter((o) => o.status === 'delivered').length}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">지도 좌표</div><div className="text-2xl font-bold text-gray-900">{coordTotal}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">미배정</div><div className="text-2xl font-bold text-amber-600">{unassignedCount}</div></div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -240,8 +267,16 @@ export function DeliveryTracking() {
             onClick={() => { setSelectedDriverId('all'); setSelectedOrderId(undefined) }}
             className={`rounded-lg border px-3 py-2 text-sm ${selectedDriverId === 'all' ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 text-gray-600'}`}
           >
-            전체 기사
+            전체
           </button>
+          {unassignedCount > 0 && (
+            <button
+              onClick={() => { setSelectedDriverId('unassigned'); setSelectedOrderId(undefined) }}
+              className={`rounded-lg border px-3 py-2 text-sm ${selectedDriverId === 'unassigned' ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 text-gray-600'}`}
+            >
+              미배정 · {unassignedCount}건
+            </button>
+          )}
           {driverGroups.map((driver) => (
             <button
               key={driver.id}
@@ -264,10 +299,10 @@ export function DeliveryTracking() {
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <div className="border-b border-gray-100 px-4 py-3">
             <div className="font-bold text-gray-900">기사별 명단</div>
-            <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 순번순</div>
+            <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 좌표 {selectedOrders.filter(hasCoord).length}건</div>
           </div>
           {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
-          {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 배송 명단이 없습니다.</div>}
+          {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
           <div className="max-h-[470px] overflow-y-auto divide-y divide-gray-100">
             {selectedOrders.map((order, index) => (
               <button
@@ -290,9 +325,14 @@ export function DeliveryTracking() {
                   <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                   <span className="line-clamp-2">{order.delivery_address}</span>
                 </div>
-                <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
                   <span>{order.items_desc || '물품'} · {order.quantity}개</span>
-                  <span>{order.driver_name} {order.driver_phone ? `· ${order.driver_phone}` : ''}</span>
+                  <span className={hasCoord(order) ? 'text-green-600' : 'text-amber-600'}>
+                    {hasCoord(order) ? `${order.lat!.toFixed(5)}, ${order.lng!.toFixed(5)}` : '좌표 없음'}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {order.driver_name ? `기사 ${order.driver_name}${order.driver_phone ? ` / ${order.driver_phone}` : ''}` : '기사 미배정'}
                 </div>
               </button>
             ))}

@@ -70,6 +70,7 @@ export default function App() {
               <Route index element={<OrderForm />} />
               <Route path="list" element={<ReceiverOrderList />} />
               <Route path="labels" element={<LabelPrint />} />
+              <Route path="delivery-receipts" element={<DeliveryReceipts />} />
               <Route path="my-account" element={<MyAccount />} />
             </Routes>
           </Layout>
