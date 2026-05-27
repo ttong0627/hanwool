@@ -43,6 +43,8 @@ class Order(Base):
     sequence_source: Mapped[str] = mapped_column(String(20), default='manual', nullable=True)
     delivery_photo_path: Mapped[str] = mapped_column(String(500), nullable=True)
     delivery_signature_path: Mapped[str] = mapped_column(String(500), nullable=True)
+    pod_lat: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 위도
+    pod_lng: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 경도
     market_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Float, nullable=True)
     lng: Mapped[float] = mapped_column(Float, nullable=True)

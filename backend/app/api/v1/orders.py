@@ -6,7 +6,7 @@ import os
 import uuid
 
 import aiofiles
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -781,6 +781,8 @@ _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 async def upload_delivery_photo(
     order_id: int,
     file: UploadFile = File(...),
+    pod_lat: Optional[float] = Form(None),
+    pod_lng: Optional[float] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_driver_or_above),
 ):
@@ -816,11 +818,17 @@ async def upload_delivery_photo(
         await f.write(content)
 
     order.delivery_photo_path = filename
+    if pod_lat is not None:
+        order.pod_lat = pod_lat
+    if pod_lng is not None:
+        order.pod_lng = pod_lng
     await db.flush()
 
     return {
         "photo_url": f"/photos/{filename}",
         "order_no": order.order_no,
+        "pod_lat": order.pod_lat,
+        "pod_lng": order.pod_lng,
     }
 
 

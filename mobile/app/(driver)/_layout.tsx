@@ -60,6 +60,11 @@ export default function DriverLayout() {
           ),
         }}
       />
+      {/* 루트 미리보기 — 탭바에 표시하지 않고 헤더 버튼으로만 접근 */}
+      <Tabs.Screen
+        name="route"
+        options={{ href: null }}
+      />
     </Tabs>
   )
 }

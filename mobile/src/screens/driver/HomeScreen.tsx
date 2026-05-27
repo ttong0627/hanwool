@@ -8,7 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SMS from 'expo-sms'
 import * as ImagePicker from 'expo-image-picker'
 import * as ImageManipulator from 'expo-image-manipulator'
+import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api, { BASE_URL } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -61,12 +63,18 @@ async function compressPhoto(uri: string): Promise<string> {
   return result.uri
 }
 
-/* ── 사진 업로드 ─────────────────────────────────────────────────── */
-async function uploadPhoto(orderId: number, photoUri: string): Promise<void> {
+/* ── 사진 업로드 (POD GPS 포함) ─────────────────────────────────── */
+async function uploadPhoto(
+  orderId: number,
+  photoUri: string,
+  podLat?: number,
+  podLng?: number,
+): Promise<void> {
   const compressed = await compressPhoto(photoUri)
-  const filename = 'delivery.jpg'
   const formData = new FormData()
-  formData.append('file', { uri: compressed, name: filename, type: 'image/jpeg' } as unknown as Blob)
+  formData.append('file', { uri: compressed, name: 'delivery.jpg', type: 'image/jpeg' } as unknown as Blob)
+  if (podLat != null) formData.append('pod_lat', String(podLat))
+  if (podLng != null) formData.append('pod_lng', String(podLng))
   await api.post(`/orders/${orderId}/photo`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -127,10 +135,25 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
 function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: Order; onConfirm: (uri: string) => void; onCancel: () => void }) {
+}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
   const insets = useSafeAreaInsets()
+
+  // 모달 열릴 때 GPS 자동 캡처 (백그라운드, 실패해도 진행)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted') return
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        if (!cancelled) setPodCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude })
+      } catch { /* GPS 실패는 무시 — 사진만으로도 POD 유효 */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync()
@@ -180,6 +203,20 @@ function DeliveryCompleteModal({
             </TouchableOpacity>
           )}
 
+          {/* GPS POD 상태 표시 */}
+          <View style={$modal.gpsRow}>
+            <Ionicons
+              name={podCoords ? 'location' : 'location-outline'}
+              size={14}
+              color={podCoords ? T.success : T.textMuted}
+            />
+            <Text style={[$modal.gpsText, { color: podCoords ? T.success : T.textMuted }]}>
+              {podCoords
+                ? `GPS 위치 확보 (${podCoords.lat.toFixed(5)}, ${podCoords.lng.toFixed(5)})`
+                : 'GPS 위치 수신 중...'}
+            </Text>
+          </View>
+
           {/* 안내 배너 */}
           <View style={$modal.notice}>
             <Ionicons name="chatbubble-outline" size={14} color={T.textSub} />
@@ -195,7 +232,7 @@ function DeliveryCompleteModal({
               onPress={() => {
                 if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
                 setLoading(true)
-                onConfirm(photoUri)
+                onConfirm(photoUri, podCoords?.lat, podCoords?.lng)
               }}
               disabled={!photoUri || loading}
             >
@@ -419,6 +456,7 @@ function DeliveryCard({
 export function DriverHomeScreen() {
   const qc = useQueryClient()
   const insets = useSafeAreaInsets()
+  const router = useRouter()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const myId = user?.id ?? null
@@ -533,9 +571,9 @@ export function DriverHomeScreen() {
   const markRetry = (id: number, uri: string) => { retryQueue.current.set(id, uri); setRetryKeys([...retryQueue.current.keys()]) }
   const clearRetry = (id: number) => { retryQueue.current.delete(id); setRetryKeys([...retryQueue.current.keys()]) }
 
-  const handleDeliveryComplete = async (order: Order, photoUri: string) => {
+  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number) => {
     setCompleteTarget(null)
-    try { await uploadPhoto(order.id, photoUri); clearRetry(order.id) }
+    try { await uploadPhoto(order.id, photoUri, podLat, podLng); clearRetry(order.id) }
     catch {
       markRetry(order.id, photoUri)
       Alert.alert('사진 업로드 실패', '배달 완료는 처리됩니다.\n나중에 재시도 버튼으로 재업로드할 수 있습니다.', [{ text: '확인' }])
@@ -603,6 +641,16 @@ export function DriverHomeScreen() {
             </View>
           </View>
           <View style={$s.headerRight}>
+            {/* 루트 미리보기 버튼 */}
+            <TouchableOpacity
+              style={$s.routePreviewBtn}
+              onPress={() => router.push('/(driver)/route')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="map-outline" size={15} color={T.primary} />
+              <Text style={$s.routePreviewText}>루트</Text>
+            </TouchableOpacity>
+
             {/* 루트 모드 토글 */}
             <View style={$s.modeToggle}>
               {(['A', 'B'] as const).map((m) => (
@@ -723,7 +771,7 @@ export function DriverHomeScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri) => handleDeliveryComplete(completeTarget, uri)}
+          onConfirm={(uri, lat, lng) => handleDeliveryComplete(completeTarget, uri, lat, lng)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}
@@ -784,6 +832,10 @@ const $s = StyleSheet.create({
   empty:          { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyTitle:     { fontSize: 17, fontWeight: '600', color: T.textSub },
   emptySub:       { fontSize: 13, color: T.textMuted, textAlign: 'center' },
+
+  // 루트 미리보기 버튼
+  routePreviewBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(249,115,22,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)' },
+  routePreviewText: { fontSize: 12, fontWeight: '700', color: T.primary },
 })
 
 const $card = StyleSheet.create({
@@ -837,6 +889,8 @@ const $modal = StyleSheet.create({
   cameraHint:   { fontSize: 12, color: T.textMuted },
   retake:       { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginBottom: 12 },
   retakeText:   { fontSize: 13, color: T.primary, fontWeight: '600' },
+  gpsRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 4 },
+  gpsText:      { fontSize: 12, fontWeight: '600' },
   notice:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.bg, padding: 12, borderRadius: 10, marginBottom: 20 },
   noticeText:   { fontSize: 12, color: T.textSub, flex: 1, lineHeight: 18 },
   btnRow:       { flexDirection: 'row', gap: 10 },
