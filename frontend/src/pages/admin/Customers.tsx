@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, UserPlus, Search, X, Edit2, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, UserPlus, Search, X, Edit2, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react'
 import api from '@/lib/api'
 import { DONG_LIST, formatDate, formatPhone } from '@/lib/utils'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
@@ -11,18 +11,82 @@ interface Customer {
   phone: string
   dong?: string
   address?: string
+  birth_year?: number
+  age?: number
+  is_elderly?: boolean
   is_active: boolean
   created_at: string
 }
 
 const PAGE_SIZE = 20
+const CURRENT_YEAR = new Date().getFullYear()
+const ELDERLY_BIRTH_YEAR = CURRENT_YEAR - 65
+
+function BirthYearInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const year = parseInt(value)
+  const age = value ? CURRENT_YEAR - year : null
+  const isElderly = age !== null && age >= 65
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        출생연도{' '}
+        <span className="text-gray-400 font-normal text-xs">(65세 이상 검증용)</span>
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          className="input flex-1"
+          type="number"
+          min={1920}
+          max={CURRENT_YEAR}
+          placeholder={`예) ${ELDERLY_BIRTH_YEAR}`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {age !== null && (
+          <span
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${
+              isElderly
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-orange-100 text-orange-700'
+            }`}
+          >
+            {age}세{isElderly ? ' ✓ 대상' : ' ✗ 미해당'}
+          </span>
+        )}
+      </div>
+      {value && !isElderly && age !== null && (
+        <p className="text-xs text-orange-500 mt-1">65세 이상 수혜 대상이 아닙니다.</p>
+      )}
+    </div>
+  )
+}
 
 function CreateCustomerModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', phone: '', dong: '', address: '', password: '' })
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    dong: '',
+    address: '',
+    password: '',
+    birth_year: '',
+  })
 
   const createMutation = useMutation({
-    mutationFn: () => api.post('/users', { ...form, role: 'customer', password: form.password || undefined }),
+    mutationFn: () =>
+      api.post('/users', {
+        ...form,
+        role: 'customer',
+        password: form.password || undefined,
+        birth_year: form.birth_year ? parseInt(form.birth_year) : undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       onClose()
@@ -36,12 +100,16 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">신규 고객 등록</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
         <div className="p-5 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">성명 <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                성명 <span className="text-red-500">*</span>
+              </label>
               <input
                 className="input w-full"
                 value={form.name}
@@ -50,7 +118,9 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">전화번호 <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                전화번호 <span className="text-red-500">*</span>
+              </label>
               <input
                 className="input w-full"
                 type="tel"
@@ -60,6 +130,12 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
               />
             </div>
           </div>
+
+          <BirthYearInput
+            value={form.birth_year}
+            onChange={(v) => setForm((f) => ({ ...f, birth_year: v }))}
+          />
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
             <select
@@ -68,7 +144,11 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}
             >
               <option value="">선택</option>
-              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+              {DONG_LIST.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -81,7 +161,8 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              앱 로그인 비밀번호 <span className="text-gray-400 font-normal">(선택)</span>
+              앱 로그인 비밀번호{' '}
+              <span className="text-gray-400 font-normal">(선택)</span>
             </label>
             <input
               className="input w-full"
@@ -94,7 +175,9 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
-          <button onClick={onClose} className="flex-1 btn-secondary">취소</button>
+          <button onClick={onClose} className="flex-1 btn-secondary">
+            취소
+          </button>
           <button
             onClick={() => createMutation.mutate()}
             disabled={!valid || createMutation.isPending}
@@ -114,10 +197,15 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
     name: customer.name,
     dong: customer.dong || '',
     address: customer.address || '',
+    birth_year: customer.birth_year ? String(customer.birth_year) : '',
   })
 
   const updateMutation = useMutation({
-    mutationFn: () => api.put(`/users/${customer.id}`, form),
+    mutationFn: () =>
+      api.put(`/users/${customer.id}`, {
+        ...form,
+        birth_year: form.birth_year ? parseInt(form.birth_year) : undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       onClose()
@@ -129,12 +217,18 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-lg">고객 정보 수정</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
         </div>
         <div className="p-5 space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
-            <input className="input w-full bg-gray-50 text-gray-400 cursor-not-allowed" value={customer.phone} disabled />
+            <input
+              className="input w-full bg-gray-50 text-gray-400 cursor-not-allowed"
+              value={customer.phone}
+              disabled
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">성명</label>
@@ -144,6 +238,10 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </div>
+          <BirthYearInput
+            value={form.birth_year}
+            onChange={(v) => setForm((f) => ({ ...f, birth_year: v }))}
+          />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">거주 동</label>
             <select
@@ -152,7 +250,11 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
               onChange={(e) => setForm((f) => ({ ...f, dong: e.target.value }))}
             >
               <option value="">선택</option>
-              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+              {DONG_LIST.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -165,7 +267,9 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
           </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
-          <button onClick={onClose} className="flex-1 btn-secondary">취소</button>
+          <button onClick={onClose} className="flex-1 btn-secondary">
+            취소
+          </button>
           <button
             onClick={() => updateMutation.mutate()}
             disabled={!form.name.trim() || updateMutation.isPending}
@@ -185,6 +289,7 @@ export function Customers() {
   const [editing, setEditing] = useState<Customer | null>(null)
   const [search, setSearch] = useState('')
   const [dongFilter, setDongFilter] = useState('')
+  const [elderlyOnly, setElderlyOnly] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
   const [page, setPage] = useState(1)
 
@@ -203,6 +308,7 @@ export function Customers() {
   const filtered = customers.filter((c) => {
     if (!showInactive && !c.is_active) return false
     if (dongFilter && c.dong !== dongFilter) return false
+    if (elderlyOnly && !c.is_elderly) return false
     if (search) {
       const q = search.replace(/-/g, '')
       return c.name.includes(search) || c.phone.replace(/-/g, '').includes(q)
@@ -210,6 +316,7 @@ export function Customers() {
     return true
   })
 
+  const elderlyCount = customers.filter((c) => c.is_active && c.is_elderly).length
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const resetPage = () => setPage(1)
@@ -227,12 +334,16 @@ export function Customers() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             전체 {customers.filter((c) => c.is_active).length.toLocaleString()}명 활성
+            {elderlyCount > 0 && (
+              <span className="ml-2 text-blue-600 font-medium">· 65세↑ {elderlyCount.toLocaleString()}명</span>
+            )}
             {customers.filter((c) => !c.is_active).length > 0 &&
               ` · 비활성 ${customers.filter((c) => !c.is_active).length.toLocaleString()}명`}
           </p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
-          <UserPlus className="w-4 h-4" />신규 고객 등록
+          <UserPlus className="w-4 h-4" />
+          신규 고객 등록
         </button>
       </div>
 
@@ -252,8 +363,22 @@ export function Customers() {
           onChange={(e) => { setDongFilter(e.target.value); resetPage() }}
         >
           <option value="">전체 동</option>
-          {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+          {DONG_LIST.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
         </select>
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={elderlyOnly}
+            onChange={(e) => { setElderlyOnly(e.target.checked); resetPage() }}
+            className="rounded"
+          />
+          <ShieldCheck className="w-4 h-4 text-blue-500" />
+          65세↑만
+        </label>
         <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
           <input
             type="checkbox"
@@ -275,6 +400,7 @@ export function Customers() {
               <tr className="border-b text-left text-gray-500 text-xs uppercase tracking-wide">
                 <th className="pb-3 pr-4 font-medium">성명</th>
                 <th className="pb-3 pr-4 font-medium">연락처</th>
+                <th className="pb-3 pr-4 font-medium">나이</th>
                 <th className="pb-3 pr-4 font-medium">동</th>
                 <th className="pb-3 pr-4 font-medium">주소</th>
                 <th className="pb-3 pr-4 font-medium">등록일</th>
@@ -290,9 +416,28 @@ export function Customers() {
                   <td className="py-3 pr-4 font-medium text-gray-900">{c.name}</td>
                   <td className="py-3 pr-4 text-gray-600 tabular-nums">{c.phone}</td>
                   <td className="py-3 pr-4">
-                    {c.dong
-                      ? <span className="text-xs bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full border border-brand-100">{c.dong}</span>
-                      : <span className="text-xs text-gray-300">-</span>}
+                    {c.age !== undefined ? (
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          c.is_elderly
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-orange-100 text-orange-600'
+                        }`}
+                      >
+                        {c.age}세{c.is_elderly ? ' ✓' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">-</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4">
+                    {c.dong ? (
+                      <span className="text-xs bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full border border-brand-100">
+                        {c.dong}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">-</span>
+                    )}
                   </td>
                   <td className="py-3 pr-4 text-gray-500 text-xs max-w-xs truncate">{c.address || '-'}</td>
                   <td className="py-3 pr-4 text-gray-400 text-xs tabular-nums">{formatDate(c.created_at)}</td>
@@ -310,9 +455,7 @@ export function Customers() {
                         className={`p-1.5 rounded-lg transition-colors ${c.is_active ? 'text-green-500 hover:bg-green-50' : 'text-gray-300 hover:bg-gray-100'}`}
                         title={c.is_active ? '비활성화' : '활성화'}
                       >
-                        {c.is_active
-                          ? <ToggleRight className="w-4 h-4" />
-                          : <ToggleLeft className="w-4 h-4" />}
+                        {c.is_active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                       </button>
                     </div>
                   </td>
@@ -339,7 +482,9 @@ export function Customers() {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm text-gray-600 tabular-nums">{page} / {totalPages}</span>
+          <span className="text-sm text-gray-600 tabular-nums">
+            {page} / {totalPages}
+          </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}

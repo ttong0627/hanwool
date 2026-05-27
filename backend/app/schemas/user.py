@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     dong: Optional[str] = None
     address: Optional[str] = None
     password: Optional[str] = None
+    birth_year: Optional[int] = None
 
     @field_validator("password")
     @classmethod
@@ -33,12 +34,27 @@ class UserCreate(BaseModel):
             raise ValueError("전화번호 형식이 올바르지 않습니다")
         return v
 
+    @field_validator("birth_year")
+    @classmethod
+    def birth_year_range(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and not (1900 <= v <= 2010):
+            raise ValueError("출생연도는 1900~2010 사이여야 합니다")
+        return v
+
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     dong: Optional[str] = None
     address: Optional[str] = None
     is_active: Optional[bool] = None
+    birth_year: Optional[int] = None
+
+    @field_validator("birth_year")
+    @classmethod
+    def birth_year_range(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and not (1900 <= v <= 2010):
+            raise ValueError("출생연도는 1900~2010 사이여야 합니다")
+        return v
 
 
 class PasswordResetRequest(BaseModel):
@@ -63,6 +79,9 @@ class UserOut(BaseModel):
     role: str
     dong: Optional[str] = None
     address: Optional[str] = None
+    birth_year: Optional[int] = None
+    age: Optional[int] = None
+    is_elderly: Optional[bool] = None
     is_active: bool
     created_at: datetime
 

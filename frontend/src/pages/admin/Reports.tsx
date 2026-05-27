@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell,
 } from 'recharts'
-import { BarChart3, Package, CheckCircle, TrendingUp, MapPin, Truck } from 'lucide-react'
+import { BarChart3, Package, CheckCircle, TrendingUp, MapPin, Truck, CalendarDays } from 'lucide-react'
 import api from '@/lib/api'
 
 const DONG_COLORS = ['#f97316', '#fb923c', '#fdba74', '#fed7aa', '#fde68a']
@@ -18,6 +18,13 @@ interface DailyStat { day: string; total: number; delivered: number }
 interface DongStat { dong: string; total: number }
 interface DriverStat { driver_id: number; total: number; delivered: number }
 interface DriverInfo { id: number; name: string; phone: string }
+interface MarketDateStat {
+  market_date: string
+  total: number
+  delivered: number
+  delivery_rate: number
+  driver_count: number
+}
 
 function SummaryCard({
   label, value, sub, icon: Icon, color,
@@ -36,7 +43,6 @@ function SummaryCard({
   )
 }
 
-// X축 날짜 MM/DD 형식
 const formatDay = (day: string) => {
   if (!day) return ''
   const parts = day.split('-')
@@ -68,16 +74,26 @@ export function Reports() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: marketStats = [] } = useQuery<MarketDateStat[]>({
+    queryKey: ['stats-market-date'],
+    queryFn: () => api.get('/admin/stats/by-market-date', { params: { limit: 12 } }).then((r) => r.data),
+  })
+
   const driverMap = drivers.reduce<Record<number, string>>((acc, d) => {
     acc[d.id] = d.name; return acc
   }, {})
 
-  // 요약 계산
   const totalOrders = daily.reduce((s, d) => s + d.total, 0)
   const totalDelivered = daily.reduce((s, d) => s + d.delivered, 0)
   const deliveryRate = totalOrders > 0 ? Math.round((totalDelivered / totalOrders) * 100) : 0
   const avgPerDay = daily.length > 0 ? Math.round(totalOrders / daily.length) : 0
   const topDong = byDong.length > 0 ? byDong[0].dong : '-'
+
+  // 장날 평균
+  const avgPerMarketDay =
+    marketStats.length > 0
+      ? Math.round(marketStats.reduce((s, m) => s + m.total, 0) / marketStats.length)
+      : 0
 
   return (
     <div className="p-6 space-y-6">
@@ -107,8 +123,77 @@ export function Reports() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard label="총 배송 건수" value={totalOrders.toLocaleString()} sub={`최근 ${days}일`} icon={Package} color="bg-blue-500" />
         <SummaryCard label="완료 건수" value={totalDelivered.toLocaleString()} sub={`완료율 ${deliveryRate}%`} icon={CheckCircle} color="bg-green-500" />
-        <SummaryCard label="일 평균 배송" value={`${avgPerDay}건`} sub={`${daily.length}일 기준`} icon={TrendingUp} color="bg-brand-500" />
+        <SummaryCard label="장날 평균 배송" value={`${avgPerMarketDay}건`} sub={`${marketStats.length}회 장날 기준`} icon={CalendarDays} color="bg-brand-500" />
         <SummaryCard label="최다 배송 지역" value={topDong} sub={byDong[0] ? `${byDong[0].total}건` : ''} icon={MapPin} color="bg-yellow-500" />
+      </div>
+
+      {/* ─── 장날별 배송 현황 (핵심) ─── */}
+      <div className="card">
+        <h2 className="font-semibold mb-1 flex items-center gap-2">
+          <CalendarDays className="w-4 h-4 text-brand-500" />
+          장날별 배송 현황
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">장날(3·8·13·18·23·28일)마다 기록된 접수·배송 실적</p>
+
+        {marketStats.length === 0 ? (
+          <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+            장날 데이터 없음 — 주문 접수 후 집계됩니다
+          </div>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart
+                data={[...marketStats].reverse()}
+                margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
+                  dataKey="market_date"
+                  tickFormatter={formatDay}
+                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                />
+                <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} allowDecimals={false} />
+                <Tooltip
+                  formatter={(value: number, name: string) => [value, name === 'total' ? '전체' : '완료']}
+                  labelFormatter={(label) => `장날: ${label}`}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
+                />
+                <Bar dataKey="total" name="total" fill="#fdba74" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="delivered" name="delivered" fill="#f97316" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+
+            {/* 장날별 상세 테이블 */}
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-gray-500 text-xs">
+                    <th className="pb-2 pr-4">장날</th>
+                    <th className="pb-2 pr-4 text-right">접수</th>
+                    <th className="pb-2 pr-4 text-right">완료</th>
+                    <th className="pb-2 pr-4 text-right">완료율</th>
+                    <th className="pb-2 text-right">투입 기사</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketStats.map((m) => (
+                    <tr key={m.market_date} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="py-2 pr-4 tabular-nums font-medium text-gray-700">{m.market_date}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{m.total}</td>
+                      <td className="py-2 pr-4 text-right text-green-600 tabular-nums">{m.delivered}</td>
+                      <td className="py-2 pr-4 text-right">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${m.delivery_rate >= 80 ? 'bg-green-100 text-green-700' : m.delivery_rate >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                          {m.delivery_rate}%
+                        </span>
+                      </td>
+                      <td className="py-2 text-right text-gray-500 tabular-nums">{m.driver_count}명</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 일별 배송 차트 */}
@@ -132,7 +217,6 @@ export function Reports() {
                 labelFormatter={(label) => `날짜: ${label}`}
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
               />
-              <Legend formatter={(value) => value === 'total' ? '전체 접수' : '배달 완료'} />
               <Bar dataKey="total" name="total" fill="#fdba74" radius={[4, 4, 0, 0]} />
               <Bar dataKey="delivered" name="delivered" fill="#f97316" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -142,7 +226,6 @@ export function Reports() {
 
       {/* 동별 + 기사별 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 동별 비율 */}
         <div className="card">
           <h2 className="font-semibold mb-4">동별 배송 비율</h2>
           {byDong.length === 0 ? (
@@ -189,7 +272,6 @@ export function Reports() {
           )}
         </div>
 
-        {/* 기사별 실적 */}
         <div className="card">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <Truck className="w-4 h-4 text-brand-500" />
@@ -231,7 +313,7 @@ export function Reports() {
         </div>
       </div>
 
-      {/* 일별 데이터 테이블 (접을 수 있음) */}
+      {/* 일별 상세 테이블 */}
       {daily.length > 0 && (
         <details className="card">
           <summary className="font-semibold text-sm cursor-pointer hover:text-brand-600 select-none">

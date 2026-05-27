@@ -31,6 +31,7 @@ from app.services.route_service import (
     get_kakao_coordinates,
     optimize_route,
 )
+from app.utils.market_day import is_market_day, is_reception_open
 
 router = APIRouter(prefix="/orders", tags=["주문"])
 
@@ -44,6 +45,14 @@ async def create_order(
     current_user: User = Depends(get_current_user),
 ):
     from app.core.security import decrypt_field
+
+    # 장날·접수시간 서버 강제 검증 (admin/super_admin은 bypass — 비장날 테스트·긴급 접수 허용)
+    if current_user.role not in {"admin", "super_admin"}:
+        if not is_market_day():
+            raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
+        if not is_reception_open():
+            raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
+
     # 고객이 직접 접수하는 경우 본인 정보 자동 주입
     if current_user.role == "customer":
         data.customer_id = current_user.id
@@ -51,6 +60,7 @@ async def create_order(
         data.customer_phone = decrypt_field(current_user.phone_enc)
     elif current_user.role not in {"receiver", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="주문 접수 권한이 없습니다.")
+
     order = await order_service.create_order(db, data, current_user.id)
     return order_service.decrypt_order(order)
 

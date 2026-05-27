@@ -130,6 +130,38 @@ async def stats_by_dong_period(days: int = 30, db: AsyncSession = Depends(get_db
     return [{"dong": row.dong, "total": row.total} for row in result]
 
 
+@router.get("/stats/by-market-date")
+async def stats_by_market_date(
+    limit: int = 12,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """장날별 통계 (최근 limit 회 장날)"""
+    result = await db.execute(
+        select(
+            Order.market_date,
+            func.count().label("total"),
+            func.sum(cast(Order.status == OrderStatus.delivered, Integer)).label("delivered"),
+            func.count(Order.driver_id.distinct()).label("driver_count"),
+        )
+        .where(Order.market_date.isnot(None))
+        .group_by(Order.market_date)
+        .order_by(Order.market_date.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "market_date": str(row.market_date),
+            "total": row.total,
+            "delivered": row.delivered or 0,
+            "delivery_rate": round((row.delivered or 0) / row.total * 100) if row.total else 0,
+            "driver_count": row.driver_count,
+        }
+        for row in rows
+    ]
+
+
 @router.post("/privacy/destroy")
 async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_super_admin)):
     result = await destroy_personal_data(db, current_user.id)

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,15 +18,30 @@ from app.schemas.user import PasswordResetRequest, RoleChangeRequest, UserCreate
 
 router = APIRouter(prefix="/users", tags=["사용자"])
 
-# 역할별 생성 가능한 하위 역할 정의
 _CREATABLE_ROLES = {
     "super_admin": {"super_admin", "admin", "receiver", "driver", "customer"},
     "admin": {"receiver", "driver", "customer"},
     "receiver": {"customer"},
 }
 
+ELDERLY_AGE = 65
+
+
+def _calc_age(birth_year: int) -> int:
+    return date.today().year - birth_year
+
 
 def _to_out(user: User) -> UserOut:
+    birth_year: Optional[int] = None
+    if user.birth_year_enc:
+        try:
+            birth_year = int(decrypt_field(user.birth_year_enc))
+        except Exception:
+            birth_year = None
+
+    age = _calc_age(birth_year) if birth_year else None
+    is_elderly = age is not None and age >= ELDERLY_AGE
+
     return UserOut(
         id=user.id,
         name=decrypt_field(user.name_enc),
@@ -33,6 +49,9 @@ def _to_out(user: User) -> UserOut:
         role=user.role,
         dong=user.dong,
         address=decrypt_field(user.address_enc) if user.address_enc else None,
+        birth_year=birth_year,
+        age=age,
+        is_elderly=is_elderly,
         is_active=user.is_active,
         created_at=user.created_at,
     )
@@ -65,6 +84,7 @@ async def create_user(
         dong=data.dong,
         address_enc=encrypt_field(data.address) if data.address else None,
         password_hash=hash_password(data.password) if data.password else None,
+        birth_year_enc=encrypt_field(str(data.birth_year)) if data.birth_year else None,
     )
     db.add(user)
     await db.flush()
@@ -78,7 +98,6 @@ async def list_users(
     current_user: User = Depends(require_receiver_or_above),
 ):
     q = select(User).where(User.deleted_at == None, User.is_active == True)
-    # receiver는 고객 목록만 조회 가능
     if current_user.role == "receiver":
         q = q.where(User.role == "customer")
     elif role:
@@ -138,6 +157,8 @@ async def update_user(
         user.address_enc = encrypt_field(data.address)
     if data.is_active is not None:
         user.is_active = data.is_active
+    if data.birth_year is not None:
+        user.birth_year_enc = encrypt_field(str(data.birth_year))
     return _to_out(user)
 
 
@@ -148,7 +169,6 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin_or_above),
 ):
-    """비밀번호 재설정 — admin 이상 전용"""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -164,7 +184,6 @@ async def change_user_role(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_super_admin),
 ):
-    """역할 변경 — super_admin 전용"""
     valid_roles = {r.value for r in UserRole}
     if data.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다. 가능: {valid_roles}")

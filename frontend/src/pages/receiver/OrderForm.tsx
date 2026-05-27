@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, ChevronDown, X } from 'lucide-react'
+import { CheckCircle, ChevronDown, X, AlertTriangle, Lock, Store } from 'lucide-react'
 import api from '@/lib/api'
 import { DONG_LIST, formatPhone, detectDong } from '@/lib/utils'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
@@ -25,6 +25,17 @@ interface Customer {
   phone: string
   dong: string
   address: string
+  birth_year?: number
+  age?: number
+  is_elderly?: boolean
+}
+
+interface MarketStatus {
+  is_market_day: boolean
+  reception_open: boolean
+  message: string
+  next_market_date: string | null
+  days_until_next: number
 }
 
 export function OrderForm() {
@@ -39,6 +50,14 @@ export function OrderForm() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [addressValue, setAddressValue] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const { data: marketStatus } = useQuery<MarketStatus>({
+    queryKey: ['market-status'],
+    queryFn: () => api.get('/admin/market-status').then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+
+  const isLocked = marketStatus ? (!marketStatus.is_market_day || !marketStatus.reception_open) : false
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers'],
@@ -116,9 +135,28 @@ export function OrderForm() {
     },
   })
 
+  const elderlyWarning = selectedCustomer && selectedCustomer.age !== undefined && !selectedCustomer.is_elderly
+
   return (
     <div className="p-6 max-w-2xl">
       <h1 className="text-2xl font-bold mb-6">신규 주문 접수</h1>
+
+      {/* 장날/접수시간 상태 배너 */}
+      {marketStatus && (
+        <div className={`mb-4 flex items-center gap-3 border rounded-xl px-4 py-3 ${
+          marketStatus.reception_open
+            ? 'bg-green-50 border-green-300 text-green-800'
+            : marketStatus.is_market_day
+            ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+            : 'bg-red-50 border-red-300 text-red-800'
+        }`}>
+          {isLocked ? <Lock className="w-4 h-4 shrink-0" /> : <Store className="w-4 h-4 shrink-0" />}
+          <span className="text-sm font-semibold">{marketStatus.message}</span>
+          {marketStatus.reception_open && (
+            <span className="ml-auto text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full font-medium">접수 가능</span>
+          )}
+        </div>
+      )}
 
       {success && (
         <div className="mb-4 flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl p-4">
@@ -129,8 +167,10 @@ export function OrderForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="card space-y-4">
-
+      <form
+        onSubmit={handleSubmit((d) => createMutation.mutate(d))}
+        className={`card space-y-4 ${isLocked ? 'opacity-60 pointer-events-none select-none' : ''}`}
+      >
         {/* 고객 검색 */}
         <div ref={dropdownRef} className="relative">
           <label className="label">고객 검색 (전화번호 또는 이름)</label>
@@ -184,6 +224,14 @@ export function OrderForm() {
                   <div>
                     <span className="font-semibold text-gray-900">{c.name}</span>
                     <span className="ml-2 text-sm text-gray-500">{c.phone}</span>
+                    {c.is_elderly && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">65세↑</span>
+                    )}
+                    {c.age !== undefined && !c.is_elderly && (
+                      <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                        {c.age}세
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-gray-400 flex items-center gap-1">
                     <span className="bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">{c.dong}</span>
@@ -200,9 +248,24 @@ export function OrderForm() {
               <span className="text-brand-800 font-medium">{selectedCustomer.name}</span>
               <span className="text-brand-600">{selectedCustomer.phone}</span>
               <span className="text-brand-500 text-xs">· {selectedCustomer.dong}</span>
+              {selectedCustomer.is_elderly && (
+                <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">65세 이상 ✓</span>
+              )}
             </div>
           )}
         </div>
+
+        {/* 65세 미만 경고 */}
+        {elderlyWarning && (
+          <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
+            <div className="text-sm text-orange-700">
+              <span className="font-semibold">수혜 자격 확인 필요</span> —{' '}
+              {selectedCustomer?.name}님 ({selectedCustomer?.age}세)은 65세 미만입니다.
+              담당자 승인 후 접수하세요.
+            </div>
+          </div>
+        )}
 
         <input type="hidden" {...register('customer_phone')} />
         <input type="hidden" {...register('customer_name')} />
@@ -297,11 +360,17 @@ export function OrderForm() {
 
         <button
           type="submit"
-          disabled={createMutation.isPending}
-          className="btn-primary w-full py-3 text-base"
+          disabled={createMutation.isPending || isLocked}
+          className="btn-primary w-full py-3 text-base disabled:opacity-40"
         >
-          {createMutation.isPending ? '접수 중...' : '주문 접수'}
+          {isLocked ? '접수 불가 (장날 11:00~15:00만 접수)' : createMutation.isPending ? '접수 중...' : '주문 접수'}
         </button>
+
+        {createMutation.isError && (
+          <p className="text-sm text-red-600 text-center">
+            {(createMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '접수 중 오류가 발생했습니다.'}
+          </p>
+        )}
       </form>
     </div>
   )
