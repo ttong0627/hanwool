@@ -1,22 +1,63 @@
 import { Tabs } from 'expo-router'
-import { Text } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { Platform } from 'react-native'
+
+const T = {
+  primary:  '#F97316',
+  dark:     '#0F172A',
+  inactive: '#94A3B8',
+  bg:       '#FFFFFF',
+  border:   '#E2E8F0',
+}
 
 export default function DriverLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#f97316',
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: { height: 60, paddingBottom: 8 },
-        tabBarLabelStyle: { fontSize: 13, fontWeight: '600' },
+        tabBarActiveTintColor: T.primary,
+        tabBarInactiveTintColor: T.inactive,
+        tabBarStyle: {
+          height: Platform.OS === 'ios' ? 84 : 68,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+          paddingTop: 8,
+          backgroundColor: T.bg,
+          borderTopWidth: 1,
+          borderTopColor: T.border,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 8,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: '배송 목록',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🚚</Text>,
+          title: '오늘 배송',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="car" size={size ?? 24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: '완료 내역',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkmark-circle" size={size ?? 24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: '내 정보',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size ?? 24} color={color} />
+          ),
         }}
       />
     </Tabs>
