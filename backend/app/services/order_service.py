@@ -131,11 +131,37 @@ def decrypt_order(order: Order) -> dict:
         "request": order.request,
         "weight_estimate": order.weight_estimate,
         "delivery_photo_url": f"/photos/{order.delivery_photo_path}" if order.delivery_photo_path else None,
+        "delivery_signature_url": f"/photos/{order.delivery_signature_path}" if order.delivery_signature_path else None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "assigned_at": order.assigned_at.isoformat() if order.assigned_at else None,
         "picked_up_at": order.picked_up_at.isoformat() if order.picked_up_at else None,
         "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
     }
+
+
+async def attach_driver_info(db: AsyncSession, orders: list[dict]) -> list[dict]:
+    driver_ids = sorted({order.get("driver_id") for order in orders if order.get("driver_id")})
+    if not driver_ids:
+        for order in orders:
+            order["driver_name"] = None
+            order["driver_phone"] = None
+        return orders
+
+    from app.models.user import User
+
+    result = await db.execute(select(User).where(User.id.in_(driver_ids)))
+    drivers = {
+        driver.id: {
+            "driver_name": decrypt_field(driver.name_enc) if driver.name_enc else "",
+            "driver_phone": decrypt_field(driver.phone_enc) if driver.phone_enc else "",
+        }
+        for driver in result.scalars().all()
+    }
+    for order in orders:
+        info = drivers.get(order.get("driver_id"), {})
+        order["driver_name"] = info.get("driver_name")
+        order["driver_phone"] = info.get("driver_phone")
+    return orders
 
 
 async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) -> list:
@@ -145,7 +171,7 @@ async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) ->
         q = q.where(Order.driver_id == driver_id)
     q = q.order_by(Order.sequence, Order.created_at)
     result = await db.execute(q)
-    return [decrypt_order(o) for o in result.scalars().all()]
+    return await attach_driver_info(db, [decrypt_order(o) for o in result.scalars().all()])
 
 
 async def log_order_history(

@@ -5,7 +5,7 @@ from typing import List
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
@@ -195,6 +195,60 @@ def generate_complaint_report_pdf(complaint: dict) -> bytes:
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FFF7ED")),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    return buffer.getvalue()
+
+
+def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=0.8 * cm,
+        leftMargin=0.8 * cm,
+        topMargin=0.8 * cm,
+        bottomMargin=0.8 * cm,
+        title="배송 수령증 목록",
+    )
+    elements = [
+        Paragraph("배송 수령증 목록", _header_style()),
+        Paragraph(f"배송 완료일: {date_str}  |  총 {len(orders)}건", _sub_style()),
+        Spacer(1, 0.25 * cm),
+    ]
+
+    headers = ["주문번호", "이름", "연락처", "배송동", "주소", "물품", "수량", "요청사항", "배송시간", "기사"]
+    rows = [headers]
+    for order in orders:
+        rows.append([
+            order.get("order_no", ""),
+            order.get("customer_name", ""),
+            order.get("customer_phone", ""),
+            order.get("dong", ""),
+            order.get("delivery_address", ""),
+            order.get("items_desc", ""),
+            str(order.get("quantity", 1)),
+            order.get("request", ""),
+            order.get("delivered_at", ""),
+            order.get("driver_name", "") or "",
+        ])
+
+    table = Table(
+        rows,
+        colWidths=[2.5*cm, 2.0*cm, 2.8*cm, 1.6*cm, 5.5*cm, 3.0*cm, 1.0*cm, 3.0*cm, 3.2*cm, 2.0*cm],
+        repeatRows=1,
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF7ED")]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     elements.append(table)
     doc.build(elements)

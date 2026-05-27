@@ -233,6 +233,17 @@ async def get_customer_detail(
         .limit(order_page_size)
     )
     orders_raw = order_result.scalars().all()
+    driver_ids = sorted({order.driver_id for order in orders_raw if order.driver_id})
+    driver_map = {}
+    if driver_ids:
+        driver_result = await db.execute(select(User).where(User.id.in_(driver_ids)))
+        driver_map = {
+            driver.id: {
+                "driver_name": decrypt_field(driver.name_enc) if driver.name_enc else "",
+                "driver_phone": decrypt_field(driver.phone_enc) if driver.phone_enc else "",
+            }
+            for driver in driver_result.scalars().all()
+        }
 
     delivered_count = (await db.execute(
         select(func.count()).select_from(Order).where(
@@ -267,6 +278,9 @@ async def get_customer_detail(
             "market_date": str(order.market_date) if order.market_date else None,
             "created_at": order.created_at.isoformat() if order.created_at else None,
             "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
+            "driver_id": order.driver_id,
+            "driver_name": driver_map.get(order.driver_id, {}).get("driver_name"),
+            "driver_phone": driver_map.get(order.driver_id, {}).get("driver_phone"),
         }
         for order in orders_raw
     ]

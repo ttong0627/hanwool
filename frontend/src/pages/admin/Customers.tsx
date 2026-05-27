@@ -40,6 +40,8 @@ interface OrderItem {
   market_date?: string
   created_at: string
   delivered_at?: string
+  driver_name?: string
+  driver_phone?: string
 }
 
 interface CustomerDetail extends Customer {
@@ -482,6 +484,11 @@ function CustomerDetailPanel({
                       <div className="text-xs text-gray-500 mt-1">{order.delivery_address}</div>
                       {order.items_desc && (
                         <div className="text-xs text-gray-400 mt-0.5 truncate">{order.items_desc} · {order.quantity}개</div>
+                      )}
+                      {(order.driver_name || order.driver_phone) && (
+                        <div className="text-xs text-brand-600 mt-0.5 truncate">
+                          기사 {order.driver_name || '-'} {order.driver_phone ? ` / ${order.driver_phone}` : ''}
+                        </div>
                       )}
                       <div className="text-xs text-gray-400 mt-1 tabular-nums">
                         접수 {fmtDate(order.created_at)}

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -10,11 +10,12 @@ from app.api.v1.deps import require_receiver_or_above, require_super_admin
 from app.api.v1.deps import get_current_user
 from app.core.database import get_db
 from app.core.security import decrypt_field
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.models.user import User
-from app.services.order_service import decrypt_order, get_orders_today
+from app.services.order_service import attach_driver_info, decrypt_order, get_orders_today
 from app.services.pdf_service import (generate_complaint_report_pdf,
                                        generate_delivery_list_pdf,
+                                       generate_delivery_receipts_pdf,
                                        generate_privacy_destruction_pdf,
                                        generate_receipt_pdf)
 from app.services.qr_service import generate_labels_pdf
@@ -54,6 +55,44 @@ async def download_receipt(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=receipt_{order.order_no}.pdf"},
+    )
+
+
+@router.get("/delivery-receipts")
+async def list_delivery_receipts(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    q = select(Order).where(Order.status == OrderStatus.delivered)
+    if date_from:
+        q = q.where(Order.delivered_at >= datetime.fromisoformat(date_from))
+    if date_to:
+        dt_to = datetime.fromisoformat(date_to)
+        if len(date_to) == 10:
+            dt_to = dt_to.replace(hour=23, minute=59, second=59, microsecond=999999)
+        q = q.where(Order.delivered_at <= dt_to)
+    q = q.order_by(Order.delivered_at.desc().nullslast(), Order.order_no.asc())
+    orders = [decrypt_order(order) for order in (await db.execute(q)).scalars().all()]
+    orders = await attach_driver_info(db, orders)
+    return orders
+
+
+@router.get("/delivery-receipts.pdf")
+async def download_delivery_receipts_pdf(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    orders = await list_delivery_receipts(date_from, date_to, db, _)
+    date_label = date_from or date.today().isoformat()
+    pdf_bytes = generate_delivery_receipts_pdf(orders, date_label)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=delivery_receipts_{date.today().strftime('%Y%m%d')}.pdf"},
     )
 
 
