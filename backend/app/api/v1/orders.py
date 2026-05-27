@@ -61,12 +61,17 @@ def _today_start() -> datetime:
     return datetime.combine(date.today(), datetime.min.time())
 
 
-async def _get_today_orders_for_dispatch(db: AsyncSession) -> list[Order]:
+async def _get_today_orders_for_dispatch(
+    db: AsyncSession, include_in_transit: bool = False
+) -> list[Order]:
+    statuses = [OrderStatus.pending, OrderStatus.assigned]
+    if include_in_transit:
+        statuses.append(OrderStatus.in_transit)
     result = await db.execute(
         select(Order)
         .where(
             Order.market_date == date.today(),
-            Order.status.in_([OrderStatus.pending, OrderStatus.assigned]),
+            Order.status.in_(statuses),
         )
         .order_by(Order.created_at.asc())
     )
@@ -109,6 +114,7 @@ async def _dispatch_today_orders(
     driver_ids: list[int],
     executed_by_id: Optional[int] = None,
     is_auto: bool = True,
+    include_in_transit: bool = False,
 ) -> dict:
     from app.core.security import decrypt_field
 
@@ -127,7 +133,7 @@ async def _dispatch_today_orders(
     if len(valid_driver_ids) != len(set(driver_ids)):
         raise HTTPException(status_code=400, detail="활성 기사만 배정할 수 있습니다.")
 
-    today_orders = await _get_today_orders_for_dispatch(db)
+    today_orders = await _get_today_orders_for_dispatch(db, include_in_transit=include_in_transit)
     if not today_orders:
         return {"groups": [], "total": 0}
 
@@ -226,8 +232,15 @@ async def _dispatch_today_orders(
                     else:
                         # 관리자 배차 — 기사가 픽업 확인 후 직접 시작하도록 assigned 상태 유지
                         db_order.status = OrderStatus.assigned
+                # in_transit 주문 재배차: 상태는 유지, 기사·순번만 변경
                 dispatch_item.status = db_order.status
                 if previous_status != db_order.status or previous_driver_id != group.driver_id:
+                    if db_order.status == OrderStatus.in_transit and previous_driver_id != group.driver_id:
+                        note_base = "관리자 재배차 → 배송중 기사 변경"
+                    elif is_auto:
+                        note_base = "자동 배차 → 배송중 전환"
+                    else:
+                        note_base = "관리자 배차 → 배정 대기"
                     await order_service.log_order_history(
                         db,
                         db_order,
@@ -238,7 +251,7 @@ async def _dispatch_today_orders(
                         actor_role="system" if is_auto else None,
                         driver_id=group.driver_id,
                         note=(
-                            ("자동 배차 → 배송중 전환" if is_auto else "관리자 배차 → 배정 대기")
+                            note_base
                             + (f" / 기사 변경: {previous_driver_id} → {group.driver_id}" if previous_driver_id and previous_driver_id != group.driver_id else "")
                         ),
                     )
@@ -546,6 +559,7 @@ async def dispatch_orders_priority(
         driver_ids,
         executed_by_id=current_user.id,
         is_auto=False,
+        include_in_transit=True,
     )
 
 
