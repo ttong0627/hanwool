@@ -44,6 +44,13 @@ class Order(Base):
     market_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Float, nullable=True)
     lng: Mapped[float] = mapped_column(Float, nullable=True)
+    # ── 행안부 표준 주소 키 (주소 정규화 후 저장) ─────────────────────────────
+    legal_emd: Mapped[str] = mapped_column(String(50), nullable=True, index=True)    # 법정동 (경안동 등)
+    service_dong: Mapped[str] = mapped_column(String(50), nullable=True)             # 실제 배송동 (dong_override 반영)
+    bd_mgt_sn: Mapped[str] = mapped_column(String(25), nullable=True)               # 건물관리번호 (행안부 PK)
+    match_status: Mapped[str] = mapped_column(String(20), nullable=True)             # matched/ambiguous/not_found/needs_review
+    match_score: Mapped[float] = mapped_column(Float, nullable=True)                # 매칭 신뢰도 0~1
+    coord_source: Mapped[str] = mapped_column(String(20), nullable=True)             # nexus/kakao/cache/manual
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_up_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
