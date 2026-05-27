@@ -57,3 +57,16 @@ export function detectDong(address: string): string | null {
   }
   return null
 }
+
+/**
+ * 주소 앞의 시/도 prefix 제거 + 앞뒤 공백 제거
+ * "경기도 광주시 경안천로 121" → "경안천로 121"
+ * "광주시 경안천로 121"        → "경안천로 121"
+ * "  경안천로 121  "           → "경안천로 121"
+ */
+export function normalizeAddress(addr: string): string {
+  let s = addr.trim()
+  s = s.replace(/^경기도\s*/, '')   // "경기도 " 또는 "경기도" 제거
+  s = s.replace(/^광주시\s+/, '')   // "광주시 " 제거 (공백 필수: 도로명과 구분)
+  return s.trim()
+}

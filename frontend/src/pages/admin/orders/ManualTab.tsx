@@ -8,7 +8,7 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
-import { formatPhone, detectDong } from '@/lib/utils'
+import { formatPhone, detectDong, normalizeAddress } from '@/lib/utils'
 
 type CellRef = HTMLInputElement | HTMLSelectElement | null
 
@@ -154,7 +154,8 @@ export function ManualTab() {
   }, [rows]) // eslint-disable-line
 
   // ── 주소 변경 ─────────────────────────────────────────────────────────────
-  const handleAddressChange = useCallback((rowIdx: number, value: string) => {
+  const handleAddressChange = useCallback((rowIdx: number, rawValue: string) => {
+    const value = normalizeAddress(rawValue)
     const detected = detectDong(value)
     const rowId = rowsRef.current[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
@@ -305,10 +306,11 @@ export function ManualTab() {
           const detected = detectDong(val) ?? val
           newRows[rowIdx] = { ...newRows[rowIdx], dong: detected }
         } else if (key === 'delivery_address') {
-          const detected = detectDong(val)
+          const normalized = normalizeAddress(val)
+          const detected = detectDong(normalized)
           const dongStatus: DongStatus = detected ? 'valid' : 'out-of-zone'
           newRows[rowIdx] = {
-            ...newRows[rowIdx], delivery_address: val, dongStatus,
+            ...newRows[rowIdx], delivery_address: normalized, dongStatus,
             savedOrderId: undefined, submitStatus: undefined,
             ...(detected ? { dong: detected } : {}),
           }

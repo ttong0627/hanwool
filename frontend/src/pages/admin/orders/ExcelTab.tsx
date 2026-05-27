@@ -4,6 +4,7 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, EXCEL_FIELD_OPTIONS } from './types'
+import { normalizeAddress } from '@/lib/utils'
 
 interface Props {
   onClose?: () => void
@@ -51,7 +52,7 @@ function buildRows(parsed: ParsedExcel, mapping: Mapping): StagingRow[] {
         return headerIdx >= 0 ? (row[headerIdx] ?? '').trim() : ''
       }
       const dong = normalizeDong(get('dong'))
-      const addrVal = get('delivery_address')
+      const addrVal = normalizeAddress(get('delivery_address'))
       const addrHasDong = DONG_LIST.some((d) => addrVal.includes(d))
       const dongStatus: DongStatus = VALID_DONGS.has(dong) && (get('dong') || addrHasDong) ? 'valid' : 'out-of-zone'
 
