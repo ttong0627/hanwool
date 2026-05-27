@@ -46,8 +46,9 @@ declare global {
   }
 }
 
-const MARKET_LAT = 37.4292
-const MARKET_LNG = 127.2551
+// 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
+const MARKET_LAT = 37.4090
+const MARKET_LNG = 127.2574
 
 // 경안시장 마커 HTML — 주황색 store 아이콘 + 라벨
 const MARKET_MARKER_CONTENT = `

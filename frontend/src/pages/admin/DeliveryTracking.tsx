@@ -3,12 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Camera, CheckCircle2, ListOrdered, MapPin, Phone, RefreshCw, Route, Search, Truck, X } from 'lucide-react'
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
-import { getDriverTone } from '@/lib/driverColors'
+import { DriverTone, getDriverTone } from '@/lib/driverColors'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
-// 경안시장: 경기 광주시 경안로25번길 14-1 (경안동 33-16)
-const MARKET_LAT = 37.4292
-const MARKET_LNG = 127.2551
+// 경안시장: 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
+const MARKET_LAT = 37.4090
+const MARKET_LNG = 127.2574
 
 // 동 표시 순서 (배차 우선순위 동일)
 const DONG_ORDER = ['경안동', '탄벌동', '송정동', '쌍령동']
@@ -74,14 +74,27 @@ function makePinEl(
   selected: boolean,
   isDelayed: boolean,
   onClick: () => void,
+  gradient?: string,
+  shadowColor?: string,
 ): HTMLDivElement {
   const sz = selected ? 54 : 44
   const fs = selected ? 21 : 17
   const tri = selected ? 14 : 11
   const border = selected ? 4 : 3
-  const labelBg = isDelayed ? 'rgba(185,28,28,.92)' : 'rgba(0,0,0,.82)'
+  const isDriver = bg !== '#9ca3af'
+  const labelBg = isDelayed
+    ? 'rgba(185,28,28,.92)'
+    : (selected && isDriver) ? bg : 'rgba(0,0,0,.82)'
   const prefix = isDelayed ? '⚠ ' : ''
-  const ring = selected ? `outline:3px solid ${bg};outline-offset:3px;` : ''
+  const pinBg = (selected && gradient) ? gradient : bg
+  const glow = (selected && shadowColor)
+    ? `0 6px 28px ${shadowColor}, 0 2px 8px rgba(0,0,0,.28)`
+    : '0 4px 16px rgba(0,0,0,.40)'
+  const outline = isDelayed
+    ? ';outline:3px dashed #ef4444;outline-offset:2px'
+    : (selected && isDriver)
+      ? `;outline:4px solid ${bg};outline-offset:3px`
+      : ''
   const el = document.createElement('div')
   el.style.cssText = 'pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:0;cursor:pointer;user-select:none;touch-action:manipulation;'
   el.setAttribute('role', 'button')
@@ -89,7 +102,7 @@ function makePinEl(
   el.setAttribute('aria-label', `${seq}번 ${label}`)
   el.innerHTML = `
     <div style="margin-bottom:5px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 6px rgba(0,0,0,.28);">${prefix}${label}</div>
-    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${border}px solid #fff;box-shadow:0 4px 16px rgba(0,0,0,.40)${isDelayed ? ';outline:3px dashed #ef4444;outline-offset:2px' : ring};">
+    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${pinBg};border:${border}px solid #fff;box-shadow:${glow}${outline};">
       <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${seq}</span>
     </div>
     <div style="width:0;height:0;border-left:${tri}px solid transparent;border-right:${tri}px solid transparent;border-top:${tri + 1}px solid ${bg};"></div>
@@ -111,14 +124,14 @@ function makePinEl(
 function MapView({
   orders,
   driverLocations,
-  driverColorMap,
+  driverToneMap,
   selectedId,
   onSelect,
   viewportKey,
 }: {
   orders: Order[]
   driverLocations: DriverLocation[]
-  driverColorMap: Map<number, string>
+  driverToneMap: Map<number, DriverTone>
   selectedId?: number
   onSelect: (order: Order) => void
   viewportKey: string
@@ -259,12 +272,12 @@ function MapView({
 
       const isSelected = selectedId === order.id
       const isDelayed = order.status === 'delayed'
-      const bg = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
+      const tone = order.driver_id ? (driverToneMap.get(order.driver_id) ?? null) : null
+      const bg = tone ? tone.primary : '#9ca3af'
       const seq = order.sequence ?? index + 1
       const label = `${order.customer_name} · ${order.quantity}개`
 
-      // DOM 엘리먼트로 클릭 이벤트 직접 바인딩 (pointer-events 문제 해결)
-      const pinEl = makePinEl(bg, seq, label, isSelected, isDelayed, () => onSelect(order))
+      const pinEl = makePinEl(bg, seq, label, isSelected, isDelayed, () => onSelect(order), tone?.gradient, tone?.shadow)
 
       const overlay = new kakao.maps.CustomOverlay({
         position: pos,
@@ -292,7 +305,7 @@ function MapView({
       mapRef.current.setBounds(bounds)
       lastFitKeyRef.current = viewportKey
     }
-  }, [orders, driverColorMap, ready, selectedId, viewportKey])
+  }, [orders, driverToneMap, ready, selectedId, viewportKey])
 
   // 기사 실시간 위치 핀
   useEffect(() => {
@@ -307,21 +320,24 @@ function MapView({
 
     latest.forEach((loc) => {
       const pos = new (window as any).kakao.maps.LatLng(loc.lat, loc.lng)
-      const driverColor = driverColorMap.get(loc.driver_id) ?? '#7c3aed'
+      const driverTone = driverToneMap.get(loc.driver_id)
+      const driverColor = driverTone?.primary ?? '#7c3aed'
+      const driverGrad = driverTone?.gradient ?? driverColor
+      const driverShadow = driverTone?.shadow ?? 'rgba(124,58,237,.35)'
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
         yAnchor: 1.0,
         content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
-          <div style="margin-bottom:5px;padding:3px 8px;background:${driverColor};color:#fff;font-size:10px;font-weight:700;border-radius:5px;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.22);opacity:.95;">기사 위치</div>
-          <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:${driverColor};border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.38);font-size:22px;">🚗</div>
+          <div style="margin-bottom:5px;padding:3px 8px;background:${driverGrad};color:#fff;font-size:10px;font-weight:700;border-radius:5px;white-space:nowrap;box-shadow:0 2px 8px ${driverShadow};opacity:.97;">기사 위치</div>
+          <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:${driverGrad};border:3px solid white;box-shadow:0 4px 18px ${driverShadow};font-size:22px;">🚗</div>
           <div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:13px solid ${driverColor};"></div>
         </div>`,
       })
       overlay.setMap(mapRef.current)
       driverOverlaysRef.current.push(overlay)
     })
-  }, [driverLocations, driverColorMap, ready])
+  }, [driverLocations, driverToneMap, ready])
 
   // 선택 주문 지도 중심 이동
   useEffect(() => {
@@ -759,7 +775,7 @@ export function DeliveryTracking() {
         <MapView
           orders={selectedOrders}
           driverLocations={driverLocations}
-          driverColorMap={driverColorMap}
+          driverToneMap={driverToneMap}
           selectedId={selectedOrderId}
           onSelect={handleMapSelect}
           viewportKey={viewportKey}
@@ -899,7 +915,7 @@ export function DeliveryTracking() {
                 <span className="flex items-center gap-1 text-gray-700">
                   {selectedOrder.driver_id && (
                     <span
-                      style={{ background: driverColorMap.get(selectedOrder.driver_id) }}
+                      style={{ background: driverToneMap.get(selectedOrder.driver_id)?.primary }}
                       className="inline-block h-2.5 w-2.5 rounded-full"
                     />
                   )}

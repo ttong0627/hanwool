@@ -15,8 +15,8 @@ from app.core.config import settings
 
 # 경안시장 기준 지리적 순서: 인접(경안동) → 북서(탄벌동) → 북동(송정동) → 서외곽(쌍령동)
 DONG_PRIORITY = {"경안동": 0, "탄벌동": 1, "송정동": 2, "쌍령동": 3}
-# 경기 광주시 경안로25번길 14-1 (경안동 33-16)
-MARKET_LOCATION = {"lat": 37.4292, "lng": 127.2551}
+# 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
+MARKET_LOCATION = {"lat": 37.4090, "lng": 127.2574}
 
 JUMP_THRESHOLD_M = 300
 WALK_THRESHOLD_M = 120
