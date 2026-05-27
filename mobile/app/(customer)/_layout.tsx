@@ -1,36 +1,55 @@
 import { Tabs } from 'expo-router'
-import { Text } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { Platform } from 'react-native'
 
 export default function CustomerLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#f97316',
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: { height: 68, paddingBottom: 10 },
-        tabBarLabelStyle: { fontSize: 15, fontWeight: '700' },
+        tabBarActiveTintColor: '#F97316',
+        tabBarInactiveTintColor: '#94A3B8',
+        tabBarStyle: {
+          height: Platform.OS === 'ios' ? 90 : 72,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          paddingTop: 8,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#E2E8F0',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 8,
+        },
+        tabBarLabelStyle: { fontSize: 14, fontWeight: '700', marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: '주문하기',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 26, color }}>🛍️</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bag-handle" size={(size ?? 24) + 2} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="tracking"
         options={{
           title: '배송추적',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 26, color }}>📍</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="location" size={(size ?? 24) + 2} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
           title: '주문내역',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 26, color }}>📋</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="receipt" size={(size ?? 24) + 2} color={color} />
+          ),
         }}
       />
     </Tabs>

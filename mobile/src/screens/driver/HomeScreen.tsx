@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api, { BASE_URL } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useLocationTracking } from '@/hooks/useLocationTracking'
+import { useAutoSaveCache, loadOrdersFromCache } from '@/hooks/useOfflineOrders'
 
 const API_BASE = BASE_URL
 
@@ -432,11 +433,29 @@ export function DriverHomeScreen() {
   const retryQueue = useRef<Map<number, string>>(new Map())
   const [retryKeys, setRetryKeys] = useState<number[]>([])
 
+  const [isOffline, setIsOffline] = useState(false)
+
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ['driver-route', routeMode],
-    queryFn: () => api.get('/deliveries/route', { params: { route_mode: routeMode } }).then((r) => r.data),
+    queryFn: async () => {
+      try {
+        const result = await api.get('/deliveries/route', { params: { route_mode: routeMode } }).then((r) => r.data)
+        setIsOffline(false)
+        return result
+      } catch (err: any) {
+        // 네트워크 오류 시 캐시에서 복원
+        if (!err?.response) {
+          const cached = await loadOrdersFromCache()
+          if (cached) { setIsOffline(true); return cached }
+        }
+        throw err
+      }
+    },
     refetchInterval: 60_000,
   })
+
+  // 정상 조회 시 캐시 저장
+  useAutoSaveCache(orders)
 
   useRouteListener(myId, API_BASE, useCallback(() => {
     qc.invalidateQueries({ queryKey: ['driver-route'] })
@@ -573,7 +592,15 @@ export function DriverHomeScreen() {
         <View style={$s.headerTop}>
           <View>
             <Text style={$s.headerDate}>{dateStr}</Text>
-            <Text style={$s.headerName}>{user?.name ?? '기사'} 님</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={$s.headerName}>{user?.name ?? '기사'} 님</Text>
+              {isOffline && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                  <Ionicons name="cloud-offline-outline" size={12} color="#FCA5A5" />
+                  <Text style={{ fontSize: 11, color: '#FCA5A5', fontWeight: '700' }}>오프라인</Text>
+                </View>
+              )}
+            </View>
           </View>
           <View style={$s.headerRight}>
             {/* 루트 모드 토글 */}
