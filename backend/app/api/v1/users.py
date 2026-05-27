@@ -72,9 +72,17 @@ async def create_user(
         )
 
     phone_hash = hash_phone(data.phone)
-    existing = await db.execute(select(User).where(User.phone_hash == phone_hash))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="등록에 실패했습니다.")
+    existing = await db.execute(
+        select(User).where(User.phone_hash == phone_hash, User.deleted_at.is_(None))
+    )
+    dup = existing.scalar_one_or_none()
+    if dup:
+        role_label = {"super_admin": "최고관리자", "admin": "관리자", "receiver": "접수자",
+                      "driver": "기사", "customer": "고객"}.get(dup.role, dup.role)
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 등록된 전화번호입니다. 현재 '{role_label}' 역할로 계정이 존재합니다.",
+        )
 
     user = User(
         name_enc=encrypt_field(data.name),

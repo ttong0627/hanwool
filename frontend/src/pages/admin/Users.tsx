@@ -101,7 +101,10 @@ function CreateStaffModal({ onClose, currentRole }: { onClose: () => void; curre
             />
           </div>
           {createMutation.isError && (
-            <p className="text-red-500 text-sm">등록에 실패했습니다. 전화번호가 이미 사용 중일 수 있습니다.</p>
+            <p className="text-red-500 text-sm">
+              {(createMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                ?? '등록에 실패했습니다.'}
+            </p>
           )}
         </div>
         <div className="flex gap-2 p-5 pt-0">
