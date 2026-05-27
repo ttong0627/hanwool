@@ -15,6 +15,12 @@
 
 ## 핵심 도메인 규칙 (모든 작업 시 반드시 준수)
 
+### 작업 전 필수 참조
+- 프로젝트 공통 작업 규칙: `AGENTS.md`
+- 주소·배송동·지도·순번·배차 DB 활용 기준: `docs/ADDRESS_STRATEGY.md`
+- 주소 검증 테스트 절차: `docs/ADDRESS_TESTING_GUIDE.md`
+- 주소/배차 관련 기능을 수정할 때는 위 문서를 먼저 읽고, 규칙과 다르게 구현하지 않는다.
+
 ### 장날 (Market Day)
 - **장날**: 매월 3, 8, 13, 18, 23, 28일 고정
 - **접수 시간**: 장날 11:00 ~ 15:00 (서버·클라이언트 모두 강제)
@@ -40,6 +46,8 @@ def is_reception_open() -> bool:
 - User 테이블: `birth_year` 필드 필수 (65세 검증용, AES-256 암호화 대상)
 - Order 테이블: `market_date` 필드 필수 (장날별 통계·감사 추적)
 - 생년월일은 개인정보 → AES-256 암호화 필수
+- 주소는 문자열만 저장하지 않고 행안부 표준키(`adm_cd`, `rn_mgt_sn`, `bd_mgt_sn`, `buld_mnnm`, `buld_slno`)와 매칭 상태를 함께 저장
+- 배송동 판정은 `delivery_zones`, 주소 보정은 `address_overrides`, 검증 이력은 `address_resolution_logs`, 배차 이력은 `dispatch_runs`/`dispatch_run_items`를 기준으로 함
 
 ---
 
