@@ -54,43 +54,50 @@ def _sub_style():
 
 def generate_delivery_list_pdf(orders: List[dict], date_str: str) -> bytes:
     buffer = io.BytesIO()
-    doc = _get_doc(buffer, "배송 명단")
+    # 가로(landscape) A4 — 사용 폭 약 267mm (29.7 - 여백 3cm)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        rightMargin=1.5*cm, leftMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm,
+        title="배송 명단",
+    )
     elements = []
 
     elements.append(Paragraph("경안시장 집배송 서비스", _header_style()))
     elements.append(Paragraph(f"배송 일자: {date_str}  |  총 {len(orders)}건", _sub_style()))
     elements.append(Spacer(1, 0.3*cm))
 
-    headers = ["순번", "일자", "성명", "접수번호", "연락처", "주소", "물품내역", "수량", "요청사항", "비고"]
-    col_widths = [1.2*cm, 2.0*cm, 2.0*cm, 2.5*cm, 3.0*cm, 5.0*cm, 3.5*cm, 1.5*cm, 3.0*cm, 2.0*cm]
+    # 가로 267mm에 맞춰 열 너비 조정 (합계 26.7cm)
+    headers   = ["순번", "성명",  "접수번호",  "연락처",  "주소",    "물품내역", "수량", "요청사항", "비고"]
+    col_widths = [1.2*cm, 2.2*cm, 3.0*cm, 3.2*cm, 8.0*cm, 4.5*cm, 1.5*cm, 4.5*cm, 2.6*cm]
 
     data = [headers]
     for o in orders:
         data.append([
             str(o.get("sequence", "")),
-            o.get("date", date_str),
             o.get("customer_name", ""),
             o.get("order_no", ""),
             o.get("customer_phone", ""),
             o.get("delivery_address", ""),
             o.get("items_desc", ""),
             str(o.get("quantity", 1)),
-            o.get("request", ""),
-            o.get("notes", ""),
+            o.get("request", "") or "",
+            o.get("notes", "") or "",
         ])
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, -1), _F()),
-        ("FONTNAME", (0, 0), (-1, 0), _FB()),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF7ED")]),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#F97316")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, -1), _F()),
+        ("FONTNAME",      (0, 0), (-1, 0),  _FB()),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",         (4, 1), (4, -1),  "LEFT"),   # 주소 열은 왼쪽 정렬
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF7ED")]),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.grey),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     elements.append(table)
