@@ -757,21 +757,22 @@ function OrderListTab() {
   }
 
   return (
-    <div className="space-y-4">
+    <div>
       <StagingPanel onFixed={() => qc.invalidateQueries({ queryKey: ['orders'] })} />
 
-      <div className="card space-y-3">
-        <div className="flex gap-3 flex-wrap items-center">
+      {/* ── 고정 필터 바 (탭 헤더 48px 아래에 고정) ── */}
+      <div className="sticky top-[48px] z-20 bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-2 mb-3 -mx-6 mx-0">
+        <div className="flex gap-2 flex-wrap items-center">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              placeholder="이름 또는 접수번호" className="input pl-8 w-48" />
+              placeholder="이름·접수번호" className="input pl-7 w-36 text-xs py-1.5" />
           </div>
-          <select value={dong} onChange={(e) => { setDong(e.target.value); setPage(1) }} className="input w-32">
+          <select value={dong} onChange={(e) => { setDong(e.target.value); setPage(1) }} className="input w-28 text-xs py-1.5">
             <option value="">전체 동</option>
             {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-          <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} className="input w-32">
+          <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} className="input w-28 text-xs py-1.5">
             <option value="">전체 상태</option>
             {STATUS_FILTER_OPTIONS.map(({ value, label }) => (
               <option key={value} value={value}>{label}</option>
@@ -779,32 +780,30 @@ function OrderListTab() {
           </select>
           <div className="flex items-center gap-1">
             <button onClick={() => { setDateFrom(today); setDateTo(today); setPage(1) }}
-              className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${dateFrom === today && dateTo === today ? 'border-brand-400 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 hover:border-brand-300 hover:text-brand-700'}`}>
+              className={`text-xs px-2 py-1 rounded border transition-colors ${dateFrom === today && dateTo === today ? 'border-brand-400 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 hover:border-brand-300'}`}>
               오늘
             </button>
-            <button onClick={() => setRange(7)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 hover:text-brand-700 transition-colors">
-              1주일
-            </button>
-            <button onClick={() => setRange(30)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 hover:text-brand-700 transition-colors">
-              1달
-            </button>
+            <button onClick={() => setRange(7)} className="text-xs px-2 py-1 rounded border border-gray-200 hover:border-brand-300 transition-colors">1주</button>
+            <button onClick={() => setRange(30)} className="text-xs px-2 py-1 rounded border border-gray-200 hover:border-brand-300 transition-colors">1달</button>
           </div>
-          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} className="input w-36" />
-          <span className="text-gray-400">~</span>
-          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} className="input w-36" />
-          {hasFilter && <button onClick={resetFilters} className="flex items-center gap-1 text-sm text-gray-500"><X className="w-4 h-4" />초기화</button>}
-          <div className="ml-auto flex gap-2">
-            <button onClick={() => window.open('/api/v1/documents/delivery-list.pdf')} className="btn-secondary flex items-center gap-1.5 text-xs px-2.5">
-              <Download className="w-3.5 h-3.5" />배송명단
+          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} className="input w-32 text-xs py-1.5" />
+          <span className="text-gray-300 text-xs">~</span>
+          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} className="input w-32 text-xs py-1.5" />
+          {hasFilter && (
+            <button onClick={resetFilters} className="text-gray-400 hover:text-gray-600 transition-colors" title="필터 초기화">
+              <X className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => window.open('/api/v1/documents/labels.pdf')} className="btn-secondary flex items-center gap-1.5 text-xs px-2.5">
-              <Download className="w-3.5 h-3.5" />QR라벨
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            {data && <span className="text-xs text-gray-400 whitespace-nowrap">총 {data.total}건</span>}
+            <button onClick={() => window.open('/api/v1/documents/delivery-list.pdf')} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
+              <Download className="w-3 h-3" />배송명단
+            </button>
+            <button onClick={() => window.open('/api/v1/documents/labels.pdf')} className="btn-secondary flex items-center gap-1 text-xs px-2 py-1">
+              <Download className="w-3 h-3" />QR라벨
             </button>
           </div>
         </div>
-        {data && <p className="text-xs text-gray-400">총 {data.total}건</p>}
       </div>
 
       {isLoading && <div className="text-center text-gray-400 py-12">불러오는 중...</div>}
@@ -865,100 +864,75 @@ function OrderListTab() {
 /* ── 메인 컴포넌트 ────────────────────────────────────────────────────────── */
 type TabKey = 'list' | 'manual' | 'qr'
 
-const TABS: { key: TabKey; icon: React.ElementType; label: string; desc: string }[] = [
-  { key: 'list',   icon: ClipboardList,   label: '주문 목록',  desc: '접수된 주문 조회·관리' },
-  { key: 'manual', icon: TableProperties,  label: '직접 입력',  desc: '스프레드시트 방식 입력' },
-  { key: 'qr',     icon: QrCode,          label: 'QR 촬영',   desc: '카메라로 QR 스캔 입력' },
-]
-
 export function Orders() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('list')
   const [excelModalOpen, setExcelModalOpen] = useState(false)
 
-  const activeTab = TABS.find((t) => t.key === tab)!
+  const tabBtn = (key: TabKey, Icon: React.ElementType, label: string) => (
+    <button
+      key={key}
+      onClick={() => setTab(key)}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap
+        ${tab === key ? 'bg-brand-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+    >
+      <Icon className="w-3.5 h-3.5 shrink-0" />{label}
+    </button>
+  )
 
   return (
-    <div className="p-6 max-w-5xl page-fade-in">
-      {/* 헤더 */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center">
-          <ClipboardList className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-black text-gray-900">주문 관리</h1>
-          <p className="text-sm text-gray-500">배송 요청 접수 · 조회 · 관리</p>
-        </div>
-      </div>
-
-      {/* 탭 내비게이션 — 순서: 주문목록 · 직접입력 · 엑셀업로드 · QR촬영 */}
-      <div className="grid grid-cols-4 gap-2 mb-6">
-        {/* 주문목록 · 직접입력 */}
-        {TABS.slice(0, 2).map(({ key, icon: Icon, label, desc }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`rounded-xl border-2 p-3 text-left transition-all ${
-              tab === key
-                ? 'border-brand-500 bg-brand-50 shadow-sm'
-                : 'border-gray-200 hover:border-brand-300 bg-white'
-            }`}
-          >
-            <div className={`flex items-center gap-2 mb-1 ${tab === key ? 'text-brand-600' : 'text-gray-500'}`}>
-              <Icon className="w-4 h-4" />
-              <span className={`font-bold text-sm ${tab === key ? 'text-brand-700' : 'text-gray-700'}`}>{label}</span>
+    <div className="page-fade-in">
+      {/* ── 상단 고정: 타이틀 + 탭 ── */}
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-5xl mx-auto px-6 py-2.5 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center">
+              <ClipboardList className="w-3.5 h-3.5 text-white" />
             </div>
-            <p className="text-xs text-gray-400 leading-snug">{desc}</p>
-          </button>
-        ))}
-
-        {/* 엑셀 업로드 — 모달로 열기 */}
-        <button
-          onClick={() => setExcelModalOpen(true)}
-          className="rounded-xl border-2 p-3 text-left transition-all border-gray-200 hover:border-brand-300 bg-white hover:bg-brand-50"
-        >
-          <div className="flex items-center gap-2 mb-1 text-gray-500">
-            <FileSpreadsheet className="w-4 h-4" />
-            <span className="font-bold text-sm text-gray-700">엑셀 업로드</span>
+            <span className="font-black text-gray-900 text-sm">주문 관리</span>
           </div>
-          <p className="text-xs text-gray-400 leading-snug">파일 업로드 + 컬럼 매핑</p>
-        </button>
-
-        {/* QR 촬영 */}
-        {TABS.slice(2).map(({ key, icon: Icon, label, desc }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`rounded-xl border-2 p-3 text-left transition-all ${
-              tab === key
-                ? 'border-brand-500 bg-brand-50 shadow-sm'
-                : 'border-gray-200 hover:border-brand-300 bg-white'
-            }`}
-          >
-            <div className={`flex items-center gap-2 mb-1 ${tab === key ? 'text-brand-600' : 'text-gray-500'}`}>
-              <Icon className="w-4 h-4" />
-              <span className={`font-bold text-sm ${tab === key ? 'text-brand-700' : 'text-gray-700'}`}>{label}</span>
-            </div>
-            <p className="text-xs text-gray-400 leading-snug">{desc}</p>
-          </button>
-        ))}
+          <div className="h-4 w-px bg-gray-200 shrink-0" />
+          <div className="flex items-center gap-1 flex-wrap">
+            {tabBtn('list', ClipboardList, '주문목록')}
+            {tabBtn('manual', TableProperties, '직접입력')}
+            <button
+              onClick={() => setExcelModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />엑셀업로드
+            </button>
+            {tabBtn('qr', QrCode, 'QR촬영')}
+          </div>
+        </div>
       </div>
 
-      {/* 탭 콘텐츠 */}
-      <div className="card">
-        {tab !== 'list' && (
-          <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100">
-            <activeTab.icon className="w-5 h-5 text-brand-500" />
-            <div>
-              <h2 className="font-bold text-gray-800">{activeTab.label}</h2>
-              <p className="text-xs text-gray-400">{activeTab.desc}</p>
+      {/* ── 탭 콘텐츠 ── */}
+      <div className="max-w-5xl mx-auto px-6 py-4">
+        {tab === 'list' && <OrderListTab />}
+        {tab === 'qr' && (
+          <div className="card">
+            <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100">
+              <QrCode className="w-5 h-5 text-brand-500" />
+              <div>
+                <h2 className="font-bold text-gray-800">QR 촬영</h2>
+                <p className="text-xs text-gray-400">카메라로 QR 스캔 입력</p>
+              </div>
             </div>
+            <QrTab />
           </div>
         )}
-
-        {tab === 'list' && <OrderListTab />}
-        {tab === 'qr' && <QrTab />}
-        {tab === 'manual' && <ManualTab />}
+        {tab === 'manual' && (
+          <div className="card">
+            <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100">
+              <TableProperties className="w-5 h-5 text-brand-500" />
+              <div>
+                <h2 className="font-bold text-gray-800">직접 입력</h2>
+                <p className="text-xs text-gray-400">스프레드시트 방식 입력</p>
+              </div>
+            </div>
+            <ManualTab />
+          </div>
+        )}
       </div>
 
       {/* 엑셀 업로드 모달 */}
