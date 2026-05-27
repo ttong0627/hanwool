@@ -10,8 +10,15 @@ from app.models.complaint import Complaint
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.services.privacy_service import destroy_personal_data
+from app.utils.market_day import market_day_status
 
 router = APIRouter(prefix="/admin", tags=["관리자"])
+
+
+@router.get("/market-status")
+async def get_market_status(_: User = Depends(require_admin)):
+    """장날·접수 시간 현황 (프론트 Dashboard 용)"""
+    return market_day_status()
 
 
 @router.get("/dashboard")

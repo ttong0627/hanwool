@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import encrypt_field, decrypt_field
 from app.models.order import Order, OrderStatus
 from app.schemas.order import OrderCreate
+from app.utils.market_day import is_market_day
 
 
 def _generate_order_no(sequence: int) -> str:
@@ -25,6 +26,7 @@ async def _next_sequence(db: AsyncSession) -> int:
 
 async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) -> Order:
     seq = await _next_sequence(db)
+    today = date.today()
     order = Order(
         order_no=_generate_order_no(seq),
         customer_id=data.customer_id,
@@ -40,6 +42,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         request=data.request,
         weight_estimate=data.weight_estimate,
         pickup_location=data.pickup_location,
+        market_date=today if is_market_day(today) else None,
     )
     db.add(order)
     await db.flush()

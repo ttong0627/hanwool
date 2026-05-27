@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Bike, Clock3, MapPin, RefreshCw, Search, Truck } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Bike, Clock3, MapPin, RefreshCw, Search, Truck, ListOrdered, CheckCircle2 } from 'lucide-react'
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
 import { formatDate, STATUS_LABEL } from '@/lib/utils'
@@ -56,6 +56,8 @@ function StatTile({ label, value, icon: Icon }: { label: string; value: number; 
 export function DeliveryTracking() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
+  const [seqResult, setSeqResult] = useState<{ updated: number; quality: { drivers: { driver_id: number; total: number; avg_dist_m: number; estimated_accuracy: number; jumps: unknown[] }[] } } | null>(null)
+  const queryClient = useQueryClient()
 
   const {
     data: orders = [],
@@ -66,6 +68,14 @@ export function DeliveryTracking() {
     queryKey: ['delivery-tracking-orders'],
     queryFn: () => api.get('/orders/today').then((r) => r.data),
     refetchInterval: 30_000,
+  })
+
+  const autoSequenceMutation = useMutation({
+    mutationFn: () => api.post('/orders/sequence/auto').then((r) => r.data),
+    onSuccess: (data) => {
+      setSeqResult(data)
+      queryClient.invalidateQueries({ queryKey: ['delivery-tracking-orders'] })
+    },
   })
 
   const { data: drivers = [] } = useQuery<Driver[]>({
@@ -134,15 +144,40 @@ export function DeliveryTracking() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">오늘 진행 중인 배송과 기사 위치를 확인합니다</p>
         </div>
-        <button
-          onClick={refresh}
-          className="btn-secondary flex items-center gap-1.5 text-sm"
-          disabled={ordersFetching || locationsFetching}
-        >
-          <RefreshCw className={`w-4 h-4 ${(ordersFetching || locationsFetching) ? 'animate-spin' : ''}`} />
-          새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => autoSequenceMutation.mutate()}
+            className="btn-primary flex items-center gap-1.5 text-sm"
+            disabled={autoSequenceMutation.isPending}
+          >
+            <ListOrdered className={`w-4 h-4 ${autoSequenceMutation.isPending ? 'animate-spin' : ''}`} />
+            배송순번 자동계산
+          </button>
+          <button
+            onClick={refresh}
+            className="btn-secondary flex items-center gap-1.5 text-sm"
+            disabled={ordersFetching || locationsFetching}
+          >
+            <RefreshCw className={`w-4 h-4 ${(ordersFetching || locationsFetching) ? 'animate-spin' : ''}`} />
+            새로고침
+          </button>
+        </div>
       </div>
+
+      {seqResult && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center gap-2 text-blue-700 font-semibold text-sm">
+            <CheckCircle2 className="w-4 h-4" />
+            배송순번 계산 완료 — {seqResult.updated}건 업데이트
+          </div>
+          {seqResult.quality.drivers.map((d) => (
+            <div key={d.driver_id} className="text-xs text-blue-600">
+              기사 #{d.driver_id} · {d.total}건 · 평균 {d.avg_dist_m}m · 예상정확도 {d.estimated_accuracy}%
+              {d.jumps.length > 0 && <span className="text-orange-500 ml-2">점프 {d.jumps.length}건 확인 필요</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatTile label="배정" value={assigned} icon={Truck} />

@@ -6,6 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
+# birth_year_enc: AES-256 암호화된 출생연도 (65세 이상 검증용)
+
 
 class UserRole(str, PyEnum):
     super_admin = "super_admin"
@@ -33,6 +35,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default=UserRole.customer)
     dong: Mapped[str] = mapped_column(String(20), nullable=True)
     address_enc: Mapped[str] = mapped_column(String(1024), nullable=True)
+    birth_year_enc: Mapped[str] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

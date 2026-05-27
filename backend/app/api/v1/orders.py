@@ -26,6 +26,11 @@ from app.schemas.order import (
     OrderTransferRequest,
 )
 from app.services import order_service, sms_service
+from app.services.route_service import (
+    analyze_sequence_quality,
+    get_kakao_coordinates,
+    optimize_route,
+)
 
 router = APIRouter(prefix="/orders", tags=["주문"])
 
@@ -339,3 +344,67 @@ async def upload_delivery_photo(
         "photo_url": f"/photos/{filename}",
         "order_no": order.order_no,
     }
+
+
+@router.post("/sequence/auto")
+async def auto_sequence(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """
+    오늘 접수된 주문의 배송순번을 기사별로 자동 계산하고 저장합니다.
+    - 도로명 정보가 있으면 roadAwareTSP
+    - 없으면 nearestNeighborTSP (좌표 기반)
+    - 좌표 없는 주문은 Kakao API로 실시간 geocoding 시도
+    """
+    from datetime import date
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    q = select(Order).where(
+        Order.created_at >= today_start,
+        Order.driver_id.isnot(None),
+        Order.status.notin_([OrderStatus.cancelled]),
+    )
+    result = await db.execute(q)
+    today_orders = result.scalars().all()
+
+    if not today_orders:
+        return {"updated": 0, "quality": {"drivers": []}}
+
+    # 좌표 없는 주문은 Kakao geocoding 시도
+    from app.core.security import decrypt_field
+    for order in today_orders:
+        if not order.lat or not order.lng:
+            addr = decrypt_field(order.delivery_address_enc)
+            coord = await get_kakao_coordinates(addr)
+            if coord:
+                order.lat = coord["lat"]
+                order.lng = coord["lng"]
+
+    # optimize_route용 dict 변환
+    order_dicts = [
+        {
+            "id": o.id,
+            "driver_id": o.driver_id,
+            "dong": o.dong,
+            "lat": o.lat,
+            "lng": o.lng,
+            "delivery_address": decrypt_field(o.delivery_address_enc),
+            "order_no": o.order_no,
+        }
+        for o in today_orders
+    ]
+
+    optimized = optimize_route(order_dicts)
+
+    # sequence 저장
+    seq_map = {item["id"]: item.get("sequence") for item in optimized}
+    for order in today_orders:
+        new_seq = seq_map.get(order.id)
+        if new_seq is not None:
+            order.sequence = new_seq
+
+    await db.flush()
+
+    quality = analyze_sequence_quality(optimized)
+    return {"updated": len(today_orders), "quality": quality}

@@ -1,12 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useState, useEffect, useRef } from 'react'
-import { Package, Truck, CheckCircle, Clock, AlertCircle, MapPin, WifiOff } from 'lucide-react'
+import { useCallback, useState, useEffect } from 'react'
+import { Package, Truck, CheckCircle, Clock, AlertCircle, MapPin, WifiOff, CalendarDays, Store } from 'lucide-react'
 import api from '@/lib/api'
 import { useWebSocket, LOCATION_TIMEOUT } from '@/hooks/useWebSocket'
 import { OrderCard } from '@/components/OrderCard'
 import { KakaoDriverMap } from '@/components/KakaoDriverMap'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
+
+interface MarketStatus {
+  is_market_day: boolean
+  reception_open: boolean
+  message: string
+  next_market_date: string | null
+  days_until_next: number
+}
 
 interface DriverLocation {
   driver_id: number
@@ -85,11 +93,39 @@ function DriverLocationCard({ driver, location }: { driver: DriverStatus; locati
   )
 }
 
+function MarketStatusBanner({ status }: { status: MarketStatus }) {
+  const bg = status.reception_open
+    ? 'bg-green-50 border-green-300 text-green-800'
+    : status.is_market_day
+    ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+    : 'bg-gray-50 border-gray-200 text-gray-600'
+
+  const Icon = status.is_market_day ? Store : CalendarDays
+
+  return (
+    <div className={`flex items-center gap-3 border rounded-xl px-4 py-3 ${bg}`}>
+      <Icon className="w-5 h-5 shrink-0" />
+      <span className="font-semibold text-sm">{status.message}</span>
+      {status.reception_open && (
+        <span className="ml-auto text-xs font-medium bg-green-200 text-green-800 rounded-full px-2 py-0.5">
+          접수 가능
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function Dashboard() {
   const { data: stats, refetch } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get('/admin/dashboard').then((r) => r.data),
     refetchInterval: 30_000,
+  })
+
+  const { data: marketStatus } = useQuery<MarketStatus>({
+    queryKey: ['market-status'],
+    queryFn: () => api.get('/admin/market-status').then((r) => r.data),
+    refetchInterval: 60_000,
   })
 
   const { data: todayOrders } = useQuery({
@@ -133,6 +169,8 @@ export function Dashboard() {
         <h1 className="text-2xl font-bold text-gray-900">실시간 현황</h1>
         <p className="text-sm text-gray-500">{stats?.today} 기준</p>
       </div>
+
+      {marketStatus && <MarketStatusBanner status={marketStatus} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="오늘 총 주문" value={stats?.total_orders_today ?? 0} icon={Package} color="bg-blue-500" />
