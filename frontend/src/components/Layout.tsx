@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Truck, Users, MessageSquareWarning, BarChart3, LogOut, Shield, QrCode, UserCog, MapPin, Route } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut, Shield, QrCode, UserCog, MapPin, Route } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 import { HanwoolLogo } from './HanwoolLogo'
@@ -11,7 +11,6 @@ const adminNavs = [
   { to: '/admin/dispatch', icon: Route, label: '배차 관리' },
   { to: '/admin/drivers', icon: Truck, label: '기사 관리' },
   { to: '/admin/customers', icon: Users, label: '고객 관리' },
-  { to: '/admin/complaints', icon: MessageSquareWarning, label: '민원 관리' },
   { to: '/admin/reports', icon: BarChart3, label: '통계·보고서' },
   { to: '/admin/privacy', icon: Shield, label: '개인정보' },
   { to: '/admin/users', icon: UserCog, label: '사용자 관리' },

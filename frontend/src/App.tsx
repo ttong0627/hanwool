@@ -8,7 +8,6 @@ import { DeliveryTracking } from '@/pages/admin/DeliveryTracking'
 import { DeliveryDispatch } from '@/pages/admin/DeliveryDispatch'
 import { Drivers } from '@/pages/admin/Drivers'
 import { Customers } from '@/pages/admin/Customers'
-import { Complaints } from '@/pages/admin/Complaints'
 import { Reports } from '@/pages/admin/Reports'
 import { Privacy } from '@/pages/admin/Privacy'
 import { StaffUsers } from '@/pages/admin/Users'
@@ -52,7 +51,6 @@ export default function App() {
               <Route path="dispatch" element={<DeliveryDispatch />} />
               <Route path="drivers" element={<Drivers />} />
               <Route path="customers" element={<Customers />} />
-              <Route path="complaints" element={<Complaints />} />
               <Route path="reports" element={<Reports />} />
               <Route path="privacy" element={<Privacy />} />
               <Route path="users" element={<StaffUsers />} />

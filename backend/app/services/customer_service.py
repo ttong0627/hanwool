@@ -308,12 +308,29 @@ async def customer_stats(db: AsyncSession) -> dict:
     )).scalars().all()
     active_count = len(active_ids)
 
+    # 65세 이상 수혜 대상 (birth_year_enc 기반 — 복호화 없이 birth_year 필드로 계산)
+    current_year = datetime.now(timezone.utc).year
+    all_customers = (await db.execute(
+        select(User).where(User.role == UserRole.customer, User.deleted_at.is_(None))
+    )).scalars().all()
+    elderly_count = 0
+    for c in all_customers:
+        if c.birth_year_enc:
+            try:
+                by = int(decrypt_field(c.birth_year_enc))
+                if current_year - by >= 65:
+                    elderly_count += 1
+            except Exception:
+                pass
+
     return {
         "total": total,
         "new_this_month": new_this_month,
         "returning": returning,
         "returning_rate": round(returning / total * 100) if total else 0,
         "active_30d": active_count,
+        "elderly_count": elderly_count,
+        "elderly_rate": round(elderly_count / total * 100) if total else 0,
         "top_customers": top_customers,
         "by_dong": by_dong,
     }
