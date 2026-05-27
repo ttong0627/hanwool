@@ -8,6 +8,11 @@ const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 const MARKET_LAT = 37.4069688196691
 const MARKET_LNG = 127.248444387416
 
+// 기사별 고유 색상 팔레트 (최대 6명)
+const DRIVER_COLORS = ['#2563eb', '#16a34a', '#9333ea', '#d97706', '#0891b2', '#be185d']
+// 동 표시 순서 (배차 우선순위 동일)
+const DONG_ORDER = ['경안동', '탄벌동', '송정동', '쌍령동']
+
 type KakaoAny = any
 type DriverFilter = number | 'all' | 'unassigned'
 type StatusFilter = 'all' | 'in_transit' | 'delivered' | 'delayed'
@@ -54,32 +59,24 @@ interface DriverLocation {
   updated_at: string | null
 }
 
-function markerBg(status: string): string {
-  switch (status) {
-    case 'delivered': return '#22c55e'
-    case 'delayed':   return '#ef4444'
-    case 'in_transit': return '#f97316'
-    case 'assigned':
-    case 'picked_up': return '#2563eb'
-    default: return '#9ca3af'
-  }
-}
-
 function hasCoord(o: Order) {
   return typeof o.lat === 'number' && typeof o.lng === 'number'
 }
 
-// 투명 1×1 PNG (base64) — 클릭 영역만 제공, 시각적으로 보이지 않음
+// 투명 1×1 PNG — 클릭 영역 전용 (Kakao 기본 핀 숨김)
 const TRANSPARENT_1PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
-function pinHtml(bg: string, seq: number | string, label: string, selected: boolean) {
+function pinHtml(bg: string, seq: number | string, label: string, selected: boolean, isDelayed = false) {
   const sz = selected ? 52 : 44
   const fs = selected ? 20 : 17
   const tri = selected ? 13 : 11
+  const border = selected ? 4 : 3
+  const labelBg = isDelayed ? 'rgba(185,28,28,.92)' : 'rgba(0,0,0,.82)'
+  const prefix = isDelayed ? '⚠ ' : ''
   return `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
-    <div style="margin-bottom:5px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;background:rgba(0,0,0,.82);color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.22);">${label}</div>
-    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${selected ? 4 : 3}px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.38);">
+    <div style="margin-bottom:5px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.22);">${prefix}${label}</div>
+    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${border}px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.38)${isDelayed ? ';outline:3px dashed #ef4444;outline-offset:2px' : ''};">
       <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${seq}</span>
     </div>
     <div style="width:0;height:0;border-left:${tri}px solid transparent;border-right:${tri}px solid transparent;border-top:${tri + 1}px solid ${bg};"></div>
@@ -89,12 +86,14 @@ function pinHtml(bg: string, seq: number | string, label: string, selected: bool
 function MapView({
   orders,
   driverLocations,
+  driverColorMap,
   selectedId,
   onSelect,
   viewportKey,
 }: {
   orders: Order[]
   driverLocations: DriverLocation[]
+  driverColorMap: Map<number, string>
   selectedId?: number
   onSelect: (order: Order) => void
   viewportKey: string
@@ -178,7 +177,6 @@ function MapView({
       return
     }
 
-    // 투명 마커 이미지 (클릭 이벤트 전용)
     const emptyImg = new (window as any).kakao.maps.MarkerImage(
       TRANSPARENT_1PX,
       new (window as any).kakao.maps.Size(1, 1)
@@ -193,11 +191,12 @@ function MapView({
       path.push(pos)
 
       const isSelected = selectedId === order.id
-      const bg = markerBg(order.status)
+      const isDelayed = order.status === 'delayed'
+      // 핀 색상: 기사 고유 색상 우선, 미배정은 회색
+      const bg = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
       const seq = order.sequence ?? index + 1
       const label = `${order.customer_name} · ${order.quantity}개`
 
-      // 투명 마커 — 클릭 이벤트만 처리
       const marker = new (window as any).kakao.maps.Marker({
         position: pos,
         map: mapRef.current,
@@ -206,12 +205,11 @@ function MapView({
       })
       ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
 
-      // 핀 모양 오버레이 — 시각적 표현 (원 + 삼각형 포인터)
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
         yAnchor: 1.0,
-        content: pinHtml(bg, seq, label, isSelected),
+        content: pinHtml(bg, seq, label, isSelected, isDelayed),
       })
       overlay.setMap(mapRef.current)
       markersRef.current.push(marker)
@@ -233,7 +231,7 @@ function MapView({
       mapRef.current.setBounds(bounds)
       lastFitKeyRef.current = viewportKey
     }
-  }, [orders, ready, selectedId, viewportKey])
+  }, [orders, driverColorMap, ready, selectedId, viewportKey])
 
   // 기사 실시간 위치 핀
   useEffect(() => {
@@ -248,20 +246,21 @@ function MapView({
 
     latest.forEach((loc) => {
       const pos = new (window as any).kakao.maps.LatLng(loc.lat, loc.lng)
+      const driverColor = driverColorMap.get(loc.driver_id) ?? '#7c3aed'
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
         yAnchor: 1.0,
         content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
-          <div style="margin-bottom:5px;padding:3px 8px;background:rgba(109,40,217,.92);color:#fff;font-size:10px;font-weight:700;border-radius:5px;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.22);">기사 위치</div>
-          <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:#7c3aed;border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.38);font-size:22px;">🚗</div>
-          <div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:13px solid #7c3aed;"></div>
+          <div style="margin-bottom:5px;padding:3px 8px;background:${driverColor};color:#fff;font-size:10px;font-weight:700;border-radius:5px;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.22);opacity:.95;">기사 위치</div>
+          <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:${driverColor};border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.38);font-size:22px;">🚗</div>
+          <div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:13px solid ${driverColor};"></div>
         </div>`,
       })
       overlay.setMap(mapRef.current)
       driverOverlaysRef.current.push(overlay)
     })
-  }, [driverLocations, ready])
+  }, [driverLocations, driverColorMap, ready])
 
   // 선택 주문 지도 중심 이동
   useEffect(() => {
@@ -295,21 +294,20 @@ function MapView({
           <span>좌표 {coordCount}/{orders.length}건</span>
           {noCoordCount > 0 && <span className="font-semibold text-orange-600">미설정 {noCoordCount}건</span>}
         </div>
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          {([
-            { color: '#f59e0b', label: '경안시장(출발)' },
-            { color: '#22c55e', label: '완료' },
-            { color: '#f97316', label: '진행중' },
-            { color: '#ef4444', label: '지연' },
-            { color: '#2563eb', label: '배정됨' },
-            { color: '#9ca3af', label: '미배정' },
-            { color: '#7c3aed', label: '기사위치' },
-          ] as const).map(({ color, label }) => (
-            <span key={label} className="flex items-center gap-1">
-              <span style={{ background: color }} className="inline-block h-2.5 w-2.5 rounded-full" />
-              <span className="text-gray-600">{label}</span>
-            </span>
-          ))}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="flex items-center gap-1">
+            <span style={{ background: '#f59e0b' }} className="inline-block h-2.5 w-2.5 rounded-full" />
+            <span className="text-gray-600">경안시장(출발)</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span style={{ background: '#9ca3af' }} className="inline-block h-2.5 w-2.5 rounded-full" />
+            <span className="text-gray-600">미배정</span>
+          </span>
+          <span className="flex items-center gap-1 text-gray-500">핀 색상 = 기사 색상</span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-full border border-red-400 border-dashed bg-transparent" />
+            <span className="text-red-600">지연</span>
+          </span>
         </div>
       </div>
     </div>
@@ -344,7 +342,7 @@ export function DeliveryTracking() {
     refetchInterval: 10_000,
   })
 
-  // 지연 알림 WebSocket 수신 시 주문 목록 즉시 갱신
+  // 지연 알림 WebSocket
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) return
@@ -360,7 +358,7 @@ export function DeliveryTracking() {
           }
         } catch { /* ignore */ }
       }
-    } catch { /* WS 미지원 환경에서 조용히 무시 */ }
+    } catch { /* WS 미지원 환경 */ }
     return () => ws?.close()
   }, [queryClient])
 
@@ -379,6 +377,7 @@ export function DeliveryTracking() {
     [orders]
   )
 
+  // 오늘 배송에 참여 중인 기사 목록 (주문 순서대로 안정적으로 색상 부여)
   const driverGroups = useMemo(() => {
     const countByDriver = new Map<number, number>()
     visibleOrders.forEach((o) => {
@@ -389,6 +388,13 @@ export function DeliveryTracking() {
       .map((d) => ({ ...d, count: countByDriver.get(d.id) ?? 0 }))
   }, [drivers, visibleOrders])
 
+  // 기사 ID → 고유 색상 매핑 (driverGroups 인덱스 기반, 안정적)
+  const driverColorMap = useMemo(() => {
+    const map = new Map<number, string>()
+    driverGroups.forEach((d, i) => map.set(d.id, DRIVER_COLORS[i % DRIVER_COLORS.length]))
+    return map
+  }, [driverGroups])
+
   const unassignedCount = visibleOrders.filter((o) => !o.driver_id).length
   const delayedCount = visibleOrders.filter((o) => o.status === 'delayed').length
   const inProgressCount = visibleOrders.filter((o) =>
@@ -396,6 +402,7 @@ export function DeliveryTracking() {
   ).length
   const noCoordCount = visibleOrders.filter((o) => !hasCoord(o)).length
 
+  // 동별 현황 — 경안동/탄벌동/송정동/쌍령동 고정 순서
   const dongStats = useMemo(() => {
     const map = new Map<string, { total: number; delivered: number; active: number; delayed: number }>()
     visibleOrders.forEach((o) => {
@@ -406,7 +413,9 @@ export function DeliveryTracking() {
       else if (['assigned', 'picked_up', 'in_transit'].includes(o.status)) curr.active++
       map.set(o.dong, curr)
     })
-    return Array.from(map.entries()).sort((a, b) => b[1].total - a[1].total)
+    return DONG_ORDER
+      .filter((dong) => map.has(dong))
+      .map((dong) => [dong, map.get(dong)!] as const)
   }, [visibleOrders])
 
   const selectedOrders = useMemo(() => {
@@ -441,7 +450,7 @@ export function DeliveryTracking() {
   }, [selectedOrderId])
 
   return (
-    <div className="p-6 space-y-4 page-fade-in">
+    <div className="space-y-4 p-6 page-fade-in">
       {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -486,7 +495,7 @@ export function DeliveryTracking() {
         </div>
       )}
 
-      {/* 동별 현황 카드 */}
+      {/* 동별 현황 카드 — 경안동/탄벌동/송정동/쌍령동 고정 순서 */}
       {dongStats.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {dongStats.map(([dong, stat]) => {
@@ -517,8 +526,8 @@ export function DeliveryTracking() {
       )}
 
       {/* 필터 바 */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-        {/* 기사 필터 */}
+      <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+        {/* 기사 필터 — 고유 색상 카드 */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-gray-500">기사</span>
           <button
@@ -530,29 +539,43 @@ export function DeliveryTracking() {
           {unassignedCount > 0 && (
             <button
               onClick={() => { setSelectedDriverId('unassigned'); setSelectedOrderId(undefined) }}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${selectedDriverId === 'unassigned' ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700' : 'border-gray-200 text-gray-600'}`}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm ${selectedDriverId === 'unassigned' ? 'border-gray-400 bg-gray-100 font-semibold text-gray-800' : 'border-gray-200 text-gray-600'}`}
             >
+              <span className="h-3 w-3 rounded-full bg-gray-400" />
               미배정 · {unassignedCount}건
             </button>
           )}
-          {driverGroups.map((driver) => (
-            <button
-              key={driver.id}
-              onClick={() => { setSelectedDriverId(driver.id); setSelectedOrderId(undefined) }}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${selectedDriverId === driver.id ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700' : 'border-gray-200 text-gray-600'}`}
-            >
-              {driver.name} · {driver.count}건
-            </button>
-          ))}
+          {driverGroups.map((driver) => {
+            const color = driverColorMap.get(driver.id) ?? '#9ca3af'
+            const isActive = selectedDriverId === driver.id
+            return (
+              <button
+                key={driver.id}
+                onClick={() => { setSelectedDriverId(driver.id); setSelectedOrderId(undefined) }}
+                style={isActive ? { borderColor: color, backgroundColor: `${color}18` } : {}}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${isActive ? 'font-semibold' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {/* 기사 고유 색상 dot */}
+                <span
+                  style={{ background: color }}
+                  className="inline-block h-3 w-3 shrink-0 rounded-full shadow-sm"
+                />
+                <span style={isActive ? { color } : {}}>{driver.name}</span>
+                <span className={`text-xs ${isActive ? 'font-bold' : 'text-gray-400'}`} style={isActive ? { color } : {}}>
+                  {driver.count}건
+                </span>
+              </button>
+            )
+          })}
         </div>
         {/* 상태 필터 + 검색 */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-gray-500">상태</span>
           {([
-            { key: 'all',        label: '전체' },
+            { key: 'all', label: '전체' },
             { key: 'in_transit', label: '진행중' },
-            { key: 'delivered',  label: '완료' },
-            { key: 'delayed',    label: '지연' },
+            { key: 'delivered', label: '완료' },
+            { key: 'delayed', label: '지연' },
           ] as { key: StatusFilter; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -583,27 +606,29 @@ export function DeliveryTracking() {
         </div>
       </div>
 
-      {/* 지도 + 목록 */}
+      {/* 지도 + 명단 */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <MapView
           orders={selectedOrders}
           driverLocations={driverLocations}
+          driverColorMap={driverColorMap}
           selectedId={selectedOrderId}
           onSelect={handleMapSelect}
           viewportKey={viewportKey}
         />
 
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-4 py-3">
             <div className="font-bold text-gray-900">배송 명단</div>
             <div className="text-xs text-gray-500">총 {selectedOrders.length}건 · 배송순번 정렬</div>
           </div>
           {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
           {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-          <div className="max-h-[calc(100vh-400px)] min-h-[300px] overflow-y-auto divide-y divide-gray-100">
+          <div className="max-h-[calc(100vh-400px)] min-h-[300px] divide-y divide-gray-100 overflow-y-auto">
             {selectedOrders.map((order, index) => {
               const isDelayed = order.status === 'delayed'
               const isDelivered = order.status === 'delivered'
+              const driverColor = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
               return (
                 <button
                   key={order.id}
@@ -619,7 +644,7 @@ export function DeliveryTracking() {
                 >
                   <div className="grid grid-cols-[32px_1fr] items-center gap-2">
                     <span
-                      style={{ background: markerBg(order.status) }}
+                      style={{ background: driverColor }}
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
                     >
                       {order.sequence ?? index + 1}
@@ -637,7 +662,15 @@ export function DeliveryTracking() {
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 pl-8 text-[11px] text-gray-500">
                     <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
-                    <span className="shrink-0 truncate">{order.driver_name || '미배정'}</span>
+                    <span className="flex shrink-0 items-center gap-1 truncate">
+                      {order.driver_id && (
+                        <span
+                          style={{ background: driverColor }}
+                          className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        />
+                      )}
+                      {order.driver_name || '미배정'}
+                    </span>
                   </div>
                 </button>
               )
@@ -662,7 +695,15 @@ export function DeliveryTracking() {
               <span className="text-gray-700">{selectedOrder.dong}</span>
               <span className="text-gray-700">{selectedOrder.items_desc || '물품'} · {selectedOrder.quantity}개</span>
               {selectedOrder.driver_name && (
-                <span className="text-gray-700">기사: {selectedOrder.driver_name}</span>
+                <span className="flex items-center gap-1 text-gray-700">
+                  {selectedOrder.driver_id && (
+                    <span
+                      style={{ background: driverColorMap.get(selectedOrder.driver_id) }}
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                    />
+                  )}
+                  기사: {selectedOrder.driver_name}
+                </span>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -709,27 +750,22 @@ export function DeliveryTracking() {
       {showConfirmSeq && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="mb-3 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-orange-500" />
               <h3 className="font-bold text-gray-900">배송 순번 재적용</h3>
             </div>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="mb-2 text-sm text-gray-600">
               현재 진행 중인 배송이{' '}
               <span className="font-bold text-orange-600">{inProgressCount}건</span> 있습니다.
             </p>
-            <p className="text-sm text-gray-600 mb-5">
+            <p className="mb-5 text-sm text-gray-600">
               순번을 재정렬하면 <strong>기사 앱의 배송 목록 순서가 변경</strong>됩니다.
               계속하시겠습니까?
             </p>
             <div className="flex gap-2">
-              <button onClick={() => setShowConfirmSeq(false)} className="btn-secondary flex-1">
-                취소
-              </button>
+              <button onClick={() => setShowConfirmSeq(false)} className="btn-secondary flex-1">취소</button>
               <button
-                onClick={() => {
-                  setShowConfirmSeq(false)
-                  autoSequenceMutation.mutate()
-                }}
+                onClick={() => { setShowConfirmSeq(false); autoSequenceMutation.mutate() }}
                 className="btn-primary flex-1"
               >
                 재적용
@@ -745,7 +781,7 @@ export function DeliveryTracking() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           onClick={() => setPodPreviewUrl(null)}
         >
-          <div className="relative max-h-[90vh] max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="relative w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => setPodPreviewUrl(null)}
               className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-lg"

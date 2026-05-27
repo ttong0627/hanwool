@@ -2,31 +2,25 @@
 배차 분배 서비스 — 기사 수에 따른 동별 그룹핑 + 배송순번 할당
 
 규칙:
-  1명: 경안동→송정동→쌍령동→탄벌동 순서로 전체 배송
-  2명: [경안동+쌍령동] / [송정동+탄벌동] 고정 그룹
-  3명: 수량 최소 2개동 묶어 1명, 나머지 각 1명
-  4명: 동별 1:1, 불균형 동은 이관 허용
+  1명: 경안동→탄벌동→송정동→쌍령동 순서로 전체 배송
+  2명: 기사1=[경안동→쌍령동] / 기사2=[탄벌동→송정동] 고정 그룹
+  3명: 기사1=[경안동→탄벌동] / 기사2=송정동 / 기사3=쌍령동 고정 그룹
+  4명: 경안동/탄벌동/송정동/쌍령동 순서로 기사별 1개 동씩 배정
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
 
+# 배송 동 우선순위 — 1명 기사 이동 경로 및 그룹 내 정렬 기준
 DONG_PRIORITY: dict[str, int] = {
     "경안동": 0,
-    "송정동": 1,
-    "쌍령동": 2,
-    "탄벌동": 3,
+    "탄벌동": 1,
+    "송정동": 2,
+    "쌍령동": 3,
 }
 
-# 2명 배차 — 시도 가능한 3가지 페어링 (지리적 인접성 고려 순서)
-_PAIRS_2: list[tuple[list[str], list[str]]] = [
-    (["경안동", "쌍령동"], ["송정동", "탄벌동"]),
-    (["경안동", "탄벌동"], ["송정동", "쌍령동"]),
-    (["경안동", "송정동"], ["쌍령동", "탄벌동"]),
-]
-
-# 불균형 임계값: 평균 대비 이 배수 이상이면 이관 대상 표시
+# 불균형 임계값: 평균 대비 이 배수 이상이면 이관 대상 표시 (4명 배차 시 사용)
 IMBALANCE_RATIO = 1.5
 
 
@@ -64,9 +58,20 @@ def _assign_sequences(orders: list[DispatchOrder]) -> list[DispatchOrder]:
     return orders
 
 
+def _make_group(driver_id: int, dong_list: list[str], orders: list[DispatchOrder]) -> DriverGroup:
+    group_orders = [o for o in orders if o.dong in dong_list]
+    return DriverGroup(
+        driver_id=driver_id,
+        dongs=sorted(dong_list, key=lambda d: DONG_PRIORITY.get(d, 99)),
+        orders=_assign_sequences(_sort_orders(group_orders)),
+        can_transfer_to=[],
+    )
+
+
 def dispatch_1_driver(
     orders: list[DispatchOrder], driver_id: int
 ) -> list[DriverGroup]:
+    """경안동→탄벌동→송정동→쌍령동 전체 배송"""
     sorted_orders = _assign_sequences(_sort_orders(orders))
     return [DriverGroup(
         driver_id=driver_id,
@@ -79,96 +84,44 @@ def dispatch_1_driver(
 def dispatch_2_drivers(
     orders: list[DispatchOrder], driver_ids: list[int]
 ) -> list[DriverGroup]:
-    # 3가지 페어링 중 건수 불균형이 가장 작은 조합 선택
-    best_pair = _PAIRS_2[0]
-    best_imbalance = float("inf")
-    for pair in _PAIRS_2:
-        counts = [sum(1 for o in orders if o.dong in group) for group in pair]
-        imbalance = max(counts) - min(counts)
-        if imbalance < best_imbalance:
-            best_imbalance = imbalance
-            best_pair = pair
-
-    groups: list[DriverGroup] = []
-    for i, dong_list in enumerate(best_pair):
-        group_orders = [o for o in orders if o.dong in dong_list]
-        sorted_orders = _assign_sequences(_sort_orders(group_orders))
-        groups.append(DriverGroup(
-            driver_id=driver_ids[i],
-            dongs=dong_list,
-            orders=sorted_orders,
-            can_transfer_to=[],
-        ))
-    return groups
+    """기사1=[경안동→쌍령동], 기사2=[탄벌동→송정동] 고정 그룹"""
+    GROUPS: list[list[str]] = [
+        ["경안동", "쌍령동"],
+        ["탄벌동", "송정동"],
+    ]
+    return [_make_group(driver_ids[i], dong_list, orders) for i, dong_list in enumerate(GROUPS)]
 
 
 def dispatch_3_drivers(
     orders: list[DispatchOrder], driver_ids: list[int]
 ) -> list[DriverGroup]:
-    # 동별 수량 집계
-    dong_counts: dict[str, int] = {d: 0 for d in DONG_PRIORITY}
-    for o in orders:
-        dong_counts[o.dong] = dong_counts.get(o.dong, 0) + 1
-
-    # 수량 오름차순 정렬 → 최소 2개동 묶음
-    sorted_dongs = sorted(dong_counts.items(), key=lambda x: x[1])
-    bundle_dongs = [sorted_dongs[0][0], sorted_dongs[1][0]]
-    solo_dongs = [sorted_dongs[2][0], sorted_dongs[3][0]]
-
-    groups: list[DriverGroup] = []
-
-    # 그룹0: 묶음 2개동 (driver_ids[0])
-    bundle_orders = [o for o in orders if o.dong in bundle_dongs]
-    sorted_bundle = _assign_sequences(_sort_orders(bundle_orders))
-    groups.append(DriverGroup(
-        driver_id=driver_ids[0],
-        dongs=sorted(bundle_dongs, key=lambda d: DONG_PRIORITY.get(d, 99)),
-        orders=sorted_bundle,
-        can_transfer_to=[],
-    ))
-
-    # 그룹1, 2: 각각 1개동
-    for idx, dong in enumerate(
-        sorted(solo_dongs, key=lambda d: DONG_PRIORITY.get(d, 99)), start=1
-    ):
-        solo_orders = [o for o in orders if o.dong == dong]
-        sorted_solo = _assign_sequences(_sort_orders(solo_orders))
-        groups.append(DriverGroup(
-            driver_id=driver_ids[idx],
-            dongs=[dong],
-            orders=sorted_solo,
-            can_transfer_to=[],
-        ))
-
-    return groups
+    """기사1=[경안동→탄벌동], 기사2=송정동, 기사3=쌍령동 고정 그룹"""
+    GROUPS: list[list[str]] = [
+        ["경안동", "탄벌동"],
+        ["송정동"],
+        ["쌍령동"],
+    ]
+    return [_make_group(driver_ids[i], dong_list, orders) for i, dong_list in enumerate(GROUPS)]
 
 
 def dispatch_4_drivers(
     orders: list[DispatchOrder], driver_ids: list[int]
 ) -> list[DriverGroup]:
-    # 동 우선순위 순서대로 기사 배정
+    """경안동/탄벌동/송정동/쌍령동 — 기사별 1개 동씩 배정"""
     dong_order = sorted(DONG_PRIORITY.keys(), key=lambda d: DONG_PRIORITY[d])
     groups: list[DriverGroup] = []
     counts: list[int] = []
 
     for i, dong in enumerate(dong_order):
-        driver_id = driver_ids[i]
-        dong_orders = [o for o in orders if o.dong == dong]
-        sorted_orders = _assign_sequences(_sort_orders(dong_orders))
-        groups.append(DriverGroup(
-            driver_id=driver_id,
-            dongs=[dong],
-            orders=sorted_orders,
-            can_transfer_to=[],
-        ))
-        counts.append(len(dong_orders))
+        g = _make_group(driver_ids[i], [dong], orders)
+        groups.append(g)
+        counts.append(len(g.orders))
 
     # 불균형 감지: 평균 대비 IMBALANCE_RATIO 이상인 동 → 이관 허용 표시
     avg = sum(counts) / max(len(counts), 1)
     for i, group in enumerate(groups):
         if counts[i] > avg * IMBALANCE_RATIO:
-            other_ids = [g.driver_id for j, g in enumerate(groups) if j != i]
-            group.can_transfer_to = other_ids
+            group.can_transfer_to = [g.driver_id for j, g in enumerate(groups) if j != i]
 
     return groups
 
