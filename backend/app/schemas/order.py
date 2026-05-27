@@ -15,6 +15,7 @@ class OrderCreate(BaseModel):
     quantity: int = 1
     notes: Optional[str] = None
     request: Optional[str] = None
+    weight_estimate: Optional[str] = None
     dong_override: bool = False
     pickup_location: str = "경안시장"
 
