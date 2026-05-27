@@ -863,6 +863,7 @@ async def auto_sequence(
             "id": o.id,
             "driver_id": o.driver_id,
             "dong": o.dong,
+            "service_dong": o.service_dong or o.dong,
             "lat": o.lat,
             "lng": o.lng,
             "delivery_address": decrypt_field(o.delivery_address_enc),

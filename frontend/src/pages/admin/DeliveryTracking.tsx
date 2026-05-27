@@ -127,10 +127,11 @@ function MapView({
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
-        yAnchor: 0.5,
-        content: `<div style="pointer-events:none;display:flex;align-items:center;gap:3px;transform:translateY(-14px);">
-          <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:${isSelected ? '#f97316' : '#111827'};color:white;font-size:11px;font-weight:900;box-shadow:0 3px 8px rgba(0,0,0,.22);">${order.sequence ?? index + 1}</span>
-          <span style="max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:999px;background:rgba(17,24,39,.92);color:white;padding:3px 6px;font-size:10px;font-weight:800;box-shadow:0 3px 8px rgba(0,0,0,.16);">${order.customer_name} · ${order.quantity}개</span>
+        yAnchor: 0.22,
+        content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:74px;">
+          <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;background:${isSelected ? '#f97316' : '#2563eb'};color:white;font-size:12px;font-weight:900;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,.28);">${order.sequence ?? index + 1}</span>
+          <span style="max-width:98px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:4px;background:#111827;color:white;padding:2px 5px;font-size:10px;font-weight:800;line-height:1.2;box-shadow:0 2px 6px rgba(0,0,0,.2);">${order.customer_name} · ${order.quantity}개</span>
+          <span style="max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:3px;background:#111827;color:white;padding:1px 4px;font-size:9px;font-weight:700;line-height:1.15;box-shadow:0 2px 5px rgba(0,0,0,.16);">${order.dong || ''}</span>
         </div>`,
       })
       marker.setMap(mapRef.current)
@@ -172,7 +173,7 @@ function MapView({
   const coordCount = orders.filter(hasCoord).length
 
   return (
-    <div className="relative h-[520px] overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+    <div className="relative h-[620px] overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
       <div ref={mapEl} className="h-full w-full" />
       {(!KAKAO_MAP_KEY || mapError || coordCount === 0) && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 p-6 text-center">
@@ -198,6 +199,7 @@ export function DeliveryTracking() {
   const [selectedDriverId, setSelectedDriverId] = useState<DriverFilter>('all')
   const [selectedOrderId, setSelectedOrderId] = useState<number | undefined>()
   const [search, setSearch] = useState('')
+  const rowRefs = useRef<Record<number, HTMLButtonElement | null>>({})
   const queryClient = useQueryClient()
 
   const { data: orders = [], isLoading, refetch, isFetching } = useQuery<Order[]>({
@@ -256,6 +258,11 @@ export function DeliveryTracking() {
   const handleMapSelect = useCallback((order: Order) => setSelectedOrderId(order.id), [])
   const viewportKey = String(selectedDriverId)
 
+  useEffect(() => {
+    if (!selectedOrderId) return
+    rowRefs.current[selectedOrderId]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [selectedOrderId])
+
   return (
     <div className="p-6 space-y-4 page-fade-in">
       <div className="flex items-center justify-between gap-3">
@@ -308,7 +315,7 @@ export function DeliveryTracking() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_420px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <MapView orders={selectedOrders} selectedId={selectedOrderId} onSelect={handleMapSelect} viewportKey={viewportKey} />
 
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -318,12 +325,13 @@ export function DeliveryTracking() {
           </div>
           {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
           {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-          <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-100">
+          <div className="max-h-[620px] overflow-y-auto divide-y divide-gray-100">
             {selectedOrders.map((order, index) => (
               <button
                 key={order.id}
+                ref={(el) => { rowRefs.current[order.id] = el }}
                 onClick={() => setSelectedOrderId(order.id)}
-                className={`w-full px-3 py-2 text-left transition-colors ${selectedOrderId === order.id ? 'bg-brand-50' : 'hover:bg-gray-50'}`}
+                className={`w-full px-3 py-2 text-left transition-colors ${selectedOrderId === order.id ? 'bg-brand-50 ring-1 ring-inset ring-brand-300' : 'hover:bg-gray-50'}`}
               >
                 <div className="grid grid-cols-[32px_1fr_42px] items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[11px] font-black text-white">{order.sequence ?? index + 1}</span>

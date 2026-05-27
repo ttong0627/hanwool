@@ -229,6 +229,35 @@ def road_aware_tsp(points: list[dict], start_lat: float, start_lng: float) -> li
 # 메인 배송순번 최적화
 # ──────────────────────────────────────────────
 
+def _dong_priority_key(order: dict) -> int:
+    return DONG_PRIORITY.get(order.get("service_dong") or order.get("dong"), 99)
+
+
+def _optimize_by_priority_dong(driver_orders: list[dict], start_lat: float, start_lng: float) -> list[dict]:
+    """배송동 우선순위를 먼저 지키고, 각 배송동 내부에서 이동거리를 줄인다."""
+    ordered_all: list[dict] = []
+    cur_lat, cur_lng = start_lat, start_lng
+
+    priority_values = sorted({_dong_priority_key(order) for order in driver_orders})
+    for priority in priority_values:
+        dong_orders = [order for order in driver_orders if _dong_priority_key(order) == priority]
+        if not dong_orders:
+            continue
+
+        has_road = any(_road_key(order.get("delivery_address", "") or "") for order in dong_orders)
+        if has_road:
+            ordered = road_aware_tsp(dong_orders, cur_lat, cur_lng)
+        else:
+            ordered = nearest_neighbor_tsp(dong_orders, cur_lat, cur_lng)
+
+        ordered_all.extend(ordered)
+        last_with_coord = next((order for order in reversed(ordered) if _has_coord(order)), None)
+        if last_with_coord:
+            cur_lat, cur_lng = last_with_coord["lat"], last_with_coord["lng"]
+
+    return ordered_all
+
+
 def optimize_route(orders: list[dict]) -> list[dict]:
     """
     기사별로 독립적으로 순번 계산.
@@ -254,11 +283,7 @@ def optimize_route(orders: list[dict]) -> list[dict]:
         start_lat = MARKET_LOCATION["lat"]
         start_lng = MARKET_LOCATION["lng"]
 
-        has_road = any(_road_key(o.get("delivery_address", "") or "") for o in driver_orders)
-        if has_road:
-            ordered = road_aware_tsp(driver_orders, start_lat, start_lng)
-        else:
-            ordered = nearest_neighbor_tsp(driver_orders, start_lat, start_lng)
+        ordered = _optimize_by_priority_dong(driver_orders, start_lat, start_lng)
 
         for i, o in enumerate(ordered):
             o["sequence"] = i + 1
