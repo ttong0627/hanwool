@@ -608,6 +608,23 @@ async def get_transfer_history(
     return result.scalars().all()
 
 
+@router.delete("/{order_id}/hard")
+async def hard_delete_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_receiver_or_above),
+):
+    """주문 DB 완전 삭제 — admin 이상 전용, 복구 불가"""
+    if current_user.role not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="관리자 이상만 완전 삭제 가능합니다.")
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    await db.delete(order)
+    return {"message": "주문이 완전히 삭제되었습니다."}
+
+
 @router.delete("/{order_id}")
 async def cancel_order(
     order_id: int,

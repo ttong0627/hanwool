@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
-import { OrderCard } from '@/components/OrderCard'
-import { DONG_LIST, STATUS_FILTER_OPTIONS } from '@/lib/utils'
+import { StatusBadge } from '@/components/StatusBadge'
+import { DONG_LIST, STATUS_FILTER_OPTIONS, formatDate } from '@/lib/utils'
 import { QrTab } from './orders/QrTab'
 import { ExcelTab } from './orders/ExcelTab'
 import { ManualTab } from './orders/ManualTab'
@@ -134,19 +134,24 @@ function EditModal({ order, onConfirm, onClose }: {
   )
 }
 
-/* ── 취소 확인 다이얼로그 ────────────────────────────────────────────────────── */
+/* ── 완전 삭제 확인 다이얼로그 ──────────────────────────────────────────────── */
 function CancelDialog({ order, onConfirm, onClose }: { order: Order; onConfirm: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-        <h2 className="text-lg font-bold mb-2">주문 취소</h2>
+        <h2 className="text-lg font-bold mb-1">주문 완전 삭제</h2>
+        <div className="flex items-center gap-1.5 text-xs text-red-600 mb-3">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          DB에서 완전히 제거됩니다. 복구할 수 없습니다.
+        </div>
         <div className="bg-gray-50 rounded-xl p-3 mb-4 text-sm">
           <p className="font-semibold">{order.order_no}</p>
           <p className="text-gray-500">{order.customer_name} · {order.dong}</p>
+          <p className="text-gray-400 text-xs mt-0.5">{order.delivery_address}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={onClose} className="btn-secondary flex-1">닫기</button>
-          <button onClick={onConfirm} className="flex-1 py-2 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm">취소 확정</button>
+          <button onClick={onClose} className="btn-secondary flex-1">취소</button>
+          <button onClick={onConfirm} className="flex-1 py-2 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm">완전 삭제</button>
         </div>
       </div>
     </div>
@@ -190,6 +195,103 @@ function MatchBadge({ status }: { status?: string }) {
   return null
 }
 
+/* ── 주소 검토 이슈 라벨 ────────────────────────────────────────────────────── */
+function MatchIssueLabel({ order }: { order: Order }) {
+  const { match_status, service_dong, dong } = order
+  if (!match_status || match_status === 'matched') return null
+  let text: string
+  let cls: string
+  if (match_status === 'not_found') {
+    text = '주소 불명'; cls = 'bg-red-100 text-red-700'
+  } else if (service_dong && service_dong !== dong) {
+    text = `동 불일치→${service_dong}`; cls = 'bg-amber-100 text-amber-700'
+  } else {
+    text = '좌표 미확인'; cls = 'bg-amber-100 text-amber-700'
+  }
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
+      <AlertTriangle className="w-2.5 h-2.5" />{text}
+    </span>
+  )
+}
+
+function matchIssueText(order: Order): string {
+  if (!order.match_status || order.match_status === 'matched') return ''
+  if (order.match_status === 'not_found') return '입력한 주소를 도로명 DB에서 찾을 수 없습니다'
+  if (order.service_dong && order.service_dong !== order.dong)
+    return `입력 동(${order.dong})과 검증 동(${order.service_dong})이 다릅니다`
+  return '좌표(위/경도)를 확인할 수 없습니다'
+}
+
+/* ── 압축형 주문 행 ──────────────────────────────────────────────────────── */
+function CompactRow({ order, driverMap, onAssign, onEdit, onDelete }: {
+  order: Order; driverMap: Record<number, string>
+  onAssign: () => void; onEdit: () => void; onDelete: () => void
+}) {
+  const hasIssue = order.match_status && order.match_status !== 'matched'
+  return (
+    <div className={`flex items-center gap-2 px-4 py-2.5 transition-colors text-sm ${hasIssue ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
+      {/* 순번 */}
+      <div className="w-5 shrink-0 text-center">
+        {order.sequence
+          ? <span className="w-5 h-5 bg-brand-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">{order.sequence}</span>
+          : null}
+      </div>
+      {/* 접수번호 + 상태 */}
+      <div className="w-44 shrink-0">
+        <div className="flex items-center gap-1">
+          <span className="font-bold text-brand-700 text-xs">{order.order_no}</span>
+          <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full">{order.dong}</span>
+        </div>
+        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+          <StatusBadge status={order.status} />
+          <MatchIssueLabel order={order} />
+        </div>
+      </div>
+      {/* 고객 */}
+      <div className="w-32 shrink-0">
+        <div className="font-semibold text-gray-900 truncate">{order.customer_name}</div>
+        <div className="text-xs text-gray-400">{order.customer_phone}</div>
+      </div>
+      {/* 주소 + 물품 */}
+      <div className="flex-1 min-w-0">
+        <p className="text-gray-700 truncate">{order.delivery_address}</p>
+        <div className="flex items-center gap-2">
+          {order.items_desc && <p className="text-xs text-gray-400 truncate">{order.items_desc} · {order.quantity}개</p>}
+          {hasIssue && <p className="text-[10px] text-amber-600 truncate">{matchIssueText(order)}</p>}
+        </div>
+      </div>
+      {/* 기사 */}
+      {order.driver_id && driverMap[order.driver_id] && (
+        <div className="w-14 shrink-0 text-xs text-brand-600 font-medium truncate text-center">{driverMap[order.driver_id]}</div>
+      )}
+      {/* 시간 */}
+      <div className="w-14 shrink-0 text-xs text-gray-400 text-right">{formatDate(order.created_at, 'MM/dd HH:mm')}</div>
+      {/* 액션 */}
+      <div className="flex gap-1 shrink-0">
+        {!['delivered', 'cancelled'].includes(order.status) && (
+          <button title="기사 배정" onClick={onAssign}
+            className="p-1.5 rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-600 text-gray-400 transition-colors">
+            <Truck className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {order.status === 'pending' && (
+          <button title="수정" onClick={onEdit}
+            className="p-1.5 rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-600 text-gray-400 transition-colors">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {!['delivered'].includes(order.status) && (
+          <button title="완전 삭제" onClick={onDelete}
+            className="p-1.5 rounded-lg border border-red-200 hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── 배송동 경고 패널 (오늘 주문 중 주소 검토 필요 항목) ─────────────────────── */
 function StagingPanel({ onFixed }: { onFixed: () => void }) {
   const user = useAuthStore((s) => s.user)
@@ -214,7 +316,7 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
     },
   })
   const cancelMutation = useMutation({
-    mutationFn: (orderId: number) => api.delete(`/orders/${orderId}`),
+    mutationFn: (orderId: number) => api.delete(`/orders/${orderId}/hard`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
@@ -432,7 +534,7 @@ function OrderListTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditTarget(null) },
   })
   const cancelMutation = useMutation({
-    mutationFn: (orderId: number) => api.delete(`/orders/${orderId}`),
+    mutationFn: (orderId: number) => api.delete(`/orders/${orderId}/hard`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setCancelTarget(null) },
   })
 
@@ -502,31 +604,20 @@ function OrderListTab() {
 
       {isLoading && <div className="text-center text-gray-400 py-12">불러오는 중...</div>}
 
-      <div className="space-y-3">
+      <div className="rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-100 bg-white">
         {items.map((order) => (
-          <OrderCard key={order.id} order={order}
-            actions={
-              <div className="flex gap-2 flex-wrap">
-                {!['delivered', 'cancelled'].includes(order.status) && (
-                  <button onClick={() => setAssignTarget(order)} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1">
-                    <Truck className="w-3.5 h-3.5" />
-                    {order.driver_id ? `${driverMap[order.driver_id] ?? '기사'} 재배정` : '기사 배정'}
-                  </button>
-                )}
-                {order.status === 'pending' && (
-                  <button onClick={() => setEditTarget(order)} className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1">
-                    <Pencil className="w-3.5 h-3.5" />수정
-                  </button>
-                )}
-                {['pending', 'assigned'].includes(order.status) && (
-                  <button onClick={() => setCancelTarget(order)} className="text-xs py-1.5 px-3 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1">
-                    <Trash2 className="w-3.5 h-3.5" />취소
-                  </button>
-                )}
-              </div>
-            }
+          <CompactRow
+            key={order.id}
+            order={order}
+            driverMap={driverMap}
+            onAssign={() => setAssignTarget(order)}
+            onEdit={() => setEditTarget(order)}
+            onDelete={() => setCancelTarget(order)}
           />
         ))}
+        {items.length === 0 && !isLoading && (
+          <div className="text-center text-gray-400 py-12 text-sm">조회된 주문이 없습니다.</div>
+        )}
       </div>
 
       {data && data.total_pages > 1 && (
