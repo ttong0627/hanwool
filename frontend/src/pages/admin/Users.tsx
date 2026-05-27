@@ -393,15 +393,17 @@ export function StaffUsers() {
       )}
 
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <UserCog className="w-6 h-6 text-brand-500" />
-            사용자 관리
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            스태프 계정 등록 · 정보 수정 · 비밀번호 관리 · 역할 설정
-          </p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm shrink-0">
+            <UserCog className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">사용자 관리</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              스태프 계정 등록 · 정보 수정 · 비밀번호 관리 · 역할 설정
+            </p>
+          </div>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
           <UserPlus className="w-4 h-4" />신규 계정
@@ -409,48 +411,48 @@ export function StaffUsers() {
       </div>
 
       {/* 역할 필터 탭 */}
-      <div className="flex gap-2 flex-wrap">
-        {[{ value: '', label: '전체' }, ...STAFF_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))].map(({ value, label }) => (
-          <button
-            key={value}
-            onClick={() => setRoleFilter(value)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-              roleFilter === value
-                ? 'bg-brand-500 text-white border-brand-500'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            {label}
-            <span className="ml-1.5 text-xs opacity-70">
-              {value ? users.filter((u) => u.role === value).length : users.length}
-            </span>
-          </button>
-        ))}
+      <div className="flex gap-1.5 flex-wrap">
+        {[{ value: '', label: '전체' }, ...STAFF_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))].map(({ value, label }) => {
+          const isActive = roleFilter === value
+          return (
+            <button
+              key={value}
+              onClick={() => setRoleFilter(value)}
+              className={`driver-chip text-sm transition-all duration-150 ${isActive ? 'driver-chip-active' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:shadow-sm'}`}
+              style={isActive ? { borderColor: '#f97316', background: 'rgba(249,115,22,0.08)', color: '#ea580c' } : {}}
+            >
+              {label}
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ml-0.5 ${isActive ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'}`}>
+                {value ? users.filter((u) => u.role === value).length : users.length}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {isLoading && <div className="text-center text-gray-400 py-12">불러오는 중...</div>}
 
       {!isLoading && (
-        <div className="card overflow-x-auto">
+        <div className="card-elevated rounded-xl overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-gray-500 text-xs uppercase tracking-wide">
-                <th className="pb-3 pr-4 font-medium">이름</th>
-                <th className="pb-3 pr-4 font-medium">전화번호</th>
-                <th className="pb-3 pr-4 font-medium">역할</th>
-                <th className="pb-3 pr-4 font-medium">상태</th>
-                <th className="pb-3 pr-4 font-medium">등록일</th>
-                <th className="pb-3 font-medium">관리</th>
+              <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide" style={{ background: 'rgba(0,0,0,0.02)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                <th className="py-3 px-4 font-semibold">이름</th>
+                <th className="py-3 pr-4 font-semibold">전화번호</th>
+                <th className="py-3 pr-4 font-semibold">역할</th>
+                <th className="py-3 pr-4 font-semibold">상태</th>
+                <th className="py-3 pr-4 font-semibold">등록일</th>
+                <th className="py-3 pr-4 font-semibold">관리</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((u) => (
                 <tr
                   key={u.id}
-                  className={`border-b last:border-0 hover:bg-gray-50 transition-colors ${!u.is_active ? 'opacity-50' : ''}`}
+                  className={`border-b border-gray-50 last:border-0 hover:bg-brand-50/30 transition-colors duration-100 ${!u.is_active ? 'opacity-50' : ''}`}
                 >
-                  <td className="py-3 pr-4 font-medium text-gray-900">{u.name}</td>
-                  <td className="py-3 pr-4 text-gray-600 tabular-nums">{u.phone}</td>
+                  <td className="py-3.5 px-4 font-semibold text-gray-900">{u.name}</td>
+                  <td className="py-3.5 pr-4 text-gray-500 tabular-nums">{u.phone}</td>
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
@@ -463,13 +465,13 @@ export function StaffUsers() {
                       )}
                     </div>
                   </td>
-                  <td className="py-3 pr-4">
-                    <span className={`text-xs font-medium ${u.is_active ? 'text-green-600' : 'text-gray-400'}`}>
+                  <td className="py-3.5 pr-4">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
                       {u.is_active ? '활성' : '비활성'}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-gray-400 text-xs tabular-nums">{formatDate(u.created_at)}</td>
-                  <td className="py-3">
+                  <td className="py-3.5 pr-4 text-gray-400 text-xs tabular-nums">{formatDate(u.created_at)}</td>
+                  <td className="py-3.5 pr-4">
                     <div className="flex items-center gap-1">
                       {/* 정보 수정 */}
                       <button
@@ -536,12 +538,21 @@ export function StaffUsers() {
       )}
 
       {/* 안내 메모 */}
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700">
-        <p className="font-semibold mb-1">로그인 안내</p>
-        <ul className="space-y-0.5 text-blue-600 text-xs">
-          <li>· 관리자·접수자: 웹 브라우저 로그인 (전화번호 + 비밀번호)</li>
-          <li>· 기사: 모바일 앱 로그인 (전화번호 + 비밀번호)</li>
-          <li>· 등록 후 비밀번호를 해당 직원에게 전달해 주세요.</li>
+      <div className="card-elevated rounded-xl p-4 border-l-4 border-blue-400 text-sm">
+        <p className="font-bold text-gray-800 mb-1.5">로그인 안내</p>
+        <ul className="space-y-1 text-gray-500 text-xs">
+          <li className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+            관리자·접수자: 웹 브라우저 로그인 (전화번호 + 비밀번호)
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+            기사: 모바일 앱 로그인 (전화번호 + 비밀번호)
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+            등록 후 비밀번호를 해당 직원에게 전달해 주세요.
+          </li>
         </ul>
       </div>
     </div>

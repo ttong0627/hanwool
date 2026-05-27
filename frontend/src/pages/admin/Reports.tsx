@@ -59,19 +59,19 @@ function SummaryCard({
   badge?: string
 }) {
   return (
-    <div className="card flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-        <Icon className="w-6 h-6 text-white" />
+    <div className="card-elevated rounded-xl p-4 flex items-center gap-3.5 group">
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${color} shadow-sm group-hover:scale-110 transition-transform duration-200`}>
+        <Icon className="w-5 h-5 text-white" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-2xl font-bold text-gray-900">{value}</span>
+          <span className="text-[22px] font-black tabular-nums leading-none text-gray-900">{value}</span>
           {badge && (
-            <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{badge}</span>
+            <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{badge}</span>
           )}
         </div>
-        <div className="text-sm text-gray-500">{label}</div>
-        {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+        <div className="text-xs font-medium text-gray-500 mt-1">{label}</div>
+        {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
       </div>
     </div>
   )
@@ -121,12 +121,14 @@ function GovTab({
     <div className="space-y-6">
       {/* 복지 서비스 개요 */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <ShieldCheck className="w-4 h-4 text-blue-500" />
-          <h2 className="font-bold text-gray-700">복지 서비스 현황</h2>
-          <span className="text-xs text-gray-400">최근 {days}일 기준</span>
+        <div className="section-title mb-3">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+            <ShieldCheck className="w-3 h-3 text-white" />
+          </div>
+          복지 서비스 현황
+          <span className="text-xs font-normal text-gray-400 ml-1">최근 {days}일 기준</span>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger">
           <SummaryCard
             label="총 수혜 건수"
             value={totalOrders.toLocaleString()}
@@ -161,7 +163,7 @@ function GovTab({
 
       {/* 65세 이상 수혜자 현황 */}
       {customerStats && (
-        <div className="card">
+        <div className="card-elevated rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <ShieldCheck className="w-4 h-4 text-blue-500" />
             <h2 className="font-semibold text-gray-800">65세 이상 수혜 현황</h2>
@@ -192,7 +194,7 @@ function GovTab({
       )}
 
       {/* 장날별 서비스 완료율 */}
-      <div className="card">
+      <div className="card-elevated rounded-xl p-5">
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-blue-500" />
           장날별 서비스 완료율
@@ -263,7 +265,7 @@ function GovTab({
       </div>
 
       {/* 동별 서비스 균형 */}
-      <div className="card">
+      <div className="card-elevated rounded-xl p-5">
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           <MapPin className="w-4 h-4 text-blue-500" />
           동별 서비스 균형
@@ -302,7 +304,7 @@ function GovTab({
 
       {/* 서비스 완료율 추이 */}
       {completionTrend.length > 0 && (
-        <div className="card">
+        <div className="card-elevated rounded-xl p-5">
           <h2 className="font-semibold mb-1 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-blue-500" />
             서비스 완료율 추이
@@ -371,12 +373,14 @@ function MarketTab({
     <div className="space-y-6">
       {/* 영업 현황 요약 */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Store className="w-4 h-4 text-brand-500" />
-          <h2 className="font-bold text-gray-700">영업 현황</h2>
-          <span className="text-xs text-gray-400">최근 {days}일 기준</span>
+        <div className="section-title mb-3">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center">
+            <Store className="w-3 h-3 text-white" />
+          </div>
+          영업 현황
+          <span className="text-xs font-normal text-gray-400 ml-1">최근 {days}일 기준</span>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger">
           <SummaryCard
             label="총 배송 물량"
             value={totalOrders.toLocaleString()}
@@ -409,7 +413,7 @@ function MarketTab({
       </div>
 
       {/* 장날별 물량 차트 */}
-      <div className="card">
+      <div className="card-elevated rounded-xl p-5">
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-brand-500" />
           장날별 배송 물량
@@ -448,7 +452,7 @@ function MarketTab({
       {/* 동별 수요 + 기사별 실적 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 동별 수요 분포 */}
-        <div className="card">
+        <div className="card-elevated rounded-xl p-5">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <MapPin className="w-4 h-4 text-brand-500" />
             동별 수요 분포
@@ -498,7 +502,7 @@ function MarketTab({
         </div>
 
         {/* 기사별 실적 */}
-        <div className="card">
+        <div className="card-elevated rounded-xl p-5">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <Truck className="w-4 h-4 text-brand-500" />
             기사별 실적
@@ -544,7 +548,7 @@ function MarketTab({
 
       {/* 최다 이용 고객 Top 5 */}
       {customerStats && customerStats.top_customers.length > 0 && (
-        <div className="card">
+        <div className="card-elevated rounded-xl p-5">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <Star className="w-4 h-4 text-brand-500" />
             최다 이용 고객 Top 5
@@ -570,7 +574,7 @@ function MarketTab({
 
       {/* 일별 물량 차트 (접기) */}
       {daily.length > 0 && (
-        <details className="card">
+        <details className="card-elevated rounded-xl p-5">
           <summary className="font-semibold text-sm cursor-pointer hover:text-brand-600 select-none flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
             일별 배송 물량 상세 ({daily.length}일)
@@ -639,45 +643,43 @@ export function Reports() {
     <div className="p-6 space-y-5 max-w-5xl page-fade-in">
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-brand-500" />
-            통계·보고서
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">관점에 맞는 탭을 선택하세요</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* 기간 선택 */}
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {PERIOD_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setDays(opt.value)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${days === opt.value ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                {opt.label}
-              </button>
-            ))}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-sm shrink-0">
+            <BarChart3 className="w-5 h-5 text-white" />
           </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">통계·보고서</h1>
+            <p className="text-sm text-gray-400 mt-0.5">관점에 맞는 탭을 선택하세요</p>
+          </div>
+        </div>
+        {/* 기간 선택 */}
+        <div className="tab-segment">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setDays(opt.value)}
+              className={`tab-segment-item ${days === opt.value ? 'active' : ''}`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+      <div className="tab-segment w-fit">
         <button
           onClick={() => setTab('gov')}
-          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-            tab === 'gov' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-          }`}
+          className={`tab-segment-item ${tab === 'gov' ? 'active' : ''}`}
+          style={tab === 'gov' ? { color: '#2563eb' } : {}}
         >
           <Building2 className="w-4 h-4" />
           지자체용
         </button>
         <button
           onClick={() => setTab('market')}
-          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-            tab === 'market' ? 'bg-brand-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
-          }`}
+          className={`tab-segment-item ${tab === 'market' ? 'active' : ''}`}
+          style={tab === 'market' ? { color: '#f97316' } : {}}
         >
           <Store className="w-4 h-4" />
           시장용
@@ -685,7 +687,7 @@ export function Reports() {
       </div>
 
       {/* 탭 설명 */}
-      <div className={`rounded-xl px-4 py-3 text-sm ${tab === 'gov' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-brand-50 text-brand-700 border border-brand-100'}`}>
+      <div className={`card-elevated rounded-xl px-4 py-3 text-sm border-l-4 ${tab === 'gov' ? 'border-blue-400 text-blue-700' : 'border-brand-400 text-brand-700'}`}>
         {tab === 'gov'
           ? '복지 서비스 완료율, 65세 이상 수혜자 현황, 동별 서비스 균형을 중심으로 행정 목적 보고서를 제공합니다.'
           : '장날 물량 추이, 기사 실적, 최다 이용 고객, 동별 수요를 중심으로 시장 운영 현황 보고서를 제공합니다.'}
