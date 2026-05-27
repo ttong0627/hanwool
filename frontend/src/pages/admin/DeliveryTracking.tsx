@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Camera, ListOrdered, MapPin, Phone, RefreshCw, Route, Search, Truck, X } from 'lucide-react'
+import { AlertTriangle, Camera, CheckCircle2, ListOrdered, MapPin, Phone, RefreshCw, Route, Search, Truck, X } from 'lucide-react'
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
 import { getDriverTone } from '@/lib/driverColors'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
-const MARKET_LAT = 37.4069688196691
-const MARKET_LNG = 127.248444387416
+// 경안시장: 경기 광주시 경안로25번길 14-1 (경안동 33-16)
+const MARKET_LAT = 37.4292
+const MARKET_LNG = 127.2551
 
 // 동 표시 순서 (배차 우선순위 동일)
 const DONG_ORDER = ['경안동', '탄벌동', '송정동', '쌍령동']
@@ -66,20 +67,45 @@ function hasCoord(o: Order) {
 const TRANSPARENT_1PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
-function pinHtml(bg: string, seq: number | string, label: string, selected: boolean, isDelayed = false) {
-  const sz = selected ? 52 : 44
-  const fs = selected ? 20 : 17
-  const tri = selected ? 13 : 11
+function makePinEl(
+  bg: string,
+  seq: number | string,
+  label: string,
+  selected: boolean,
+  isDelayed: boolean,
+  onClick: () => void,
+): HTMLDivElement {
+  const sz = selected ? 54 : 44
+  const fs = selected ? 21 : 17
+  const tri = selected ? 14 : 11
   const border = selected ? 4 : 3
   const labelBg = isDelayed ? 'rgba(185,28,28,.92)' : 'rgba(0,0,0,.82)'
   const prefix = isDelayed ? '⚠ ' : ''
-  return `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
-    <div style="margin-bottom:5px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.22);">${prefix}${label}</div>
-    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${border}px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.38)${isDelayed ? ';outline:3px dashed #ef4444;outline-offset:2px' : ''};">
+  const ring = selected ? `outline:3px solid ${bg};outline-offset:3px;` : ''
+  const el = document.createElement('div')
+  el.style.cssText = 'pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:0;cursor:pointer;user-select:none;touch-action:manipulation;'
+  el.setAttribute('role', 'button')
+  el.setAttribute('tabindex', '0')
+  el.setAttribute('aria-label', `${seq}번 ${label}`)
+  el.innerHTML = `
+    <div style="margin-bottom:5px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 6px rgba(0,0,0,.28);">${prefix}${label}</div>
+    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${border}px solid #fff;box-shadow:0 4px 16px rgba(0,0,0,.40)${isDelayed ? ';outline:3px dashed #ef4444;outline-offset:2px' : ring};">
       <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${seq}</span>
     </div>
     <div style="width:0;height:0;border-left:${tri}px solid transparent;border-right:${tri}px solid transparent;border-top:${tri + 1}px solid ${bg};"></div>
-  </div>`
+  `
+  const select = (e: Event) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onClick()
+  }
+  el.addEventListener('click', select)
+  el.addEventListener('pointerdown', (e) => e.stopPropagation())
+  el.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true })
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') select(e)
+  })
+  return el
 }
 
 function MapView({
@@ -147,11 +173,57 @@ function MapView({
       position: pos,
       xAnchor: 0.5,
       yAnchor: 1.0,
-      content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
-        <div style="margin-bottom:5px;padding:3px 9px;background:rgba(120,53,15,.95);color:#fef3c7;font-size:11px;font-weight:800;border-radius:5px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.28);">🏪 경안시장 (출발)</div>
-        <div style="display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;background:#f59e0b;border:4px solid white;box-shadow:0 4px 16px rgba(0,0,0,.4);font-size:24px;">🏪</div>
-        <div style="width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:15px solid #f59e0b;"></div>
-      </div>`,
+      content: `
+        <style>
+          @keyframes mktPulse {
+            0%   { transform: translate(-50%,-50%) scale(1);   opacity: .55; }
+            70%  { transform: translate(-50%,-50%) scale(2.2); opacity: 0;   }
+            100% { transform: translate(-50%,-50%) scale(2.2); opacity: 0;   }
+          }
+          @keyframes mktPulse2 {
+            0%   { transform: translate(-50%,-50%) scale(1);   opacity: .35; }
+            70%  { transform: translate(-50%,-50%) scale(2.8); opacity: 0;   }
+            100% { transform: translate(-50%,-50%) scale(2.8); opacity: 0;   }
+          }
+        </style>
+        <div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;position:relative;">
+          <!-- 펄스 링 1 -->
+          <div style="position:absolute;top:38px;left:50%;width:54px;height:54px;border-radius:50%;background:rgba(249,115,22,.5);animation:mktPulse 2s ease-out infinite;"></div>
+          <!-- 펄스 링 2 -->
+          <div style="position:absolute;top:38px;left:50%;width:54px;height:54px;border-radius:50%;background:rgba(249,115,22,.3);animation:mktPulse2 2s .5s ease-out infinite;"></div>
+          <!-- 라벨 -->
+          <div style="
+            margin-bottom:8px;
+            padding:5px 14px;
+            background:linear-gradient(135deg,#ea580c,#f97316);
+            color:#fff;
+            font-size:13px;
+            font-weight:900;
+            border-radius:99px;
+            white-space:nowrap;
+            box-shadow:0 4px 18px rgba(234,88,12,.65);
+            border:2px solid rgba(255,255,255,.55);
+            letter-spacing:-.2px;
+          ">&#127978; 경안시장 출발</div>
+          <!-- 사각 마커 본체 (주문핀과 다른 형태) -->
+          <div style="
+            position:relative;z-index:1;
+            width:58px;height:58px;
+            background:linear-gradient(145deg,#f97316,#ea580c);
+            border:4px solid #fff;
+            border-radius:12px;
+            box-shadow:0 10px 30px rgba(249,115,22,.7), 0 2px 8px rgba(0,0,0,.25);
+            display:flex;align-items:center;justify-content:center;
+            transform:rotate(0deg);
+          ">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </div>
+          <!-- 꼬리 -->
+          <div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:16px solid #ea580c;margin-top:-1px;"></div>
+        </div>`,
     })
     startOverlayRef.current.setMap(mapRef.current)
   }, [ready])
@@ -165,6 +237,7 @@ function MapView({
     markersRef.current = []
     overlaysRef.current = []
     lineRef.current = null
+    const kakao = (window as any).kakao
 
     const coordOrders = orders.filter(hasCoord)
     const shouldFit = lastFitKeyRef.current !== viewportKey
@@ -176,42 +249,31 @@ function MapView({
       return
     }
 
-    const emptyImg = new (window as any).kakao.maps.MarkerImage(
-      TRANSPARENT_1PX,
-      new (window as any).kakao.maps.Size(1, 1)
-    )
-
-    const bounds = new (window as any).kakao.maps.LatLngBounds()
+    const bounds = new kakao.maps.LatLngBounds()
     const path: KakaoAny[] = []
 
     coordOrders.forEach((order, index) => {
-      const pos = new (window as any).kakao.maps.LatLng(order.lat, order.lng)
+      const pos = new kakao.maps.LatLng(order.lat, order.lng)
       bounds.extend(pos)
       path.push(pos)
 
       const isSelected = selectedId === order.id
       const isDelayed = order.status === 'delayed'
-      // 핀 색상: 기사 고유 색상 우선, 미배정은 회색
       const bg = order.driver_id ? (driverColorMap.get(order.driver_id) ?? '#9ca3af') : '#9ca3af'
       const seq = order.sequence ?? index + 1
       const label = `${order.customer_name} · ${order.quantity}개`
 
-      const marker = new (window as any).kakao.maps.Marker({
-        position: pos,
-        map: mapRef.current,
-        image: emptyImg,
-        clickable: true,
-      })
-      ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
+      // DOM 엘리먼트로 클릭 이벤트 직접 바인딩 (pointer-events 문제 해결)
+      const pinEl = makePinEl(bg, seq, label, isSelected, isDelayed, () => onSelect(order))
 
-      const overlay = new (window as any).kakao.maps.CustomOverlay({
+      const overlay = new kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
         yAnchor: 1.0,
-        content: pinHtml(bg, seq, label, isSelected, isDelayed),
+        content: pinEl,
+        zIndex: isSelected ? 10000 : 100 + Number(seq || 0),
       })
       overlay.setMap(mapRef.current)
-      markersRef.current.push(marker)
       overlaysRef.current.push(overlay)
     })
 
@@ -278,17 +340,28 @@ function MapView({
     <div className="map-premium relative" style={{ height: 'calc(100vh - 320px)', minHeight: '480px' }}>
       <div ref={mapEl} className="h-full w-full" />
 
-      {/* 지도 로드 실패 / 좌표 없음 */}
-      {(!KAKAO_MAP_KEY || mapError || coordCount === 0) && (
+      {/* 지도 키 없음 / SDK 로드 실패 — 전체 덮개 */}
+      {(!KAKAO_MAP_KEY || !!mapError) && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/90 backdrop-blur-sm p-6 text-center">
           <div>
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
               <MapPin className="h-7 w-7 text-gray-300" />
             </div>
             <div className="text-sm font-semibold text-gray-700">
-              {!KAKAO_MAP_KEY ? '지도 키가 설정되지 않았습니다.' : mapError || '좌표가 저장된 주문이 없습니다.'}
+              {!KAKAO_MAP_KEY ? '지도 키가 설정되지 않았습니다.' : mapError}
             </div>
-            <div className="mt-1 text-xs text-gray-400">주문관리에서 저장된 좌표가 있으면 표시됩니다.</div>
+            <div className="mt-1 text-xs text-gray-400">서버 .env에 KAKAO_MAP_KEY를 설정하면 실시간 지도가 표시됩니다.</div>
+          </div>
+        </div>
+      )}
+
+      {/* 좌표 없는 주문 안내 — 소형 배너 (지도는 계속 표시) */}
+      {coordCount === 0 && !mapError && !!KAKAO_MAP_KEY && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+          <div className="glass-panel rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm shadow-lg">
+            <MapPin className="w-4 h-4 text-orange-500 flex-shrink-0" />
+            <span className="text-gray-700 font-medium">좌표가 저장된 주문이 없습니다.</span>
+            <span className="text-gray-400 text-xs">주문관리에서 주소를 저장하면 핀이 표시됩니다.</span>
           </div>
         </div>
       )}
@@ -462,14 +535,27 @@ export function DeliveryTracking() {
   const handleMapSelect = useCallback((order: Order) => setSelectedOrderId(order.id), [])
   const viewportKey = String(selectedDriverId)
 
-  // 핀 클릭 시 명단 리스트 스크롤 (overflow 컨테이너 내 중앙 위치)
+  // 핀 클릭 시 명단 리스트 스크롤 — 선택 아이템을 컨테이너 중앙에 위치
   useEffect(() => {
-    if (!selectedOrderId || !listRef.current) return
-    const el = rowRefs.current[selectedOrderId]
-    if (!el) return
-    const container = listRef.current
-    const top = el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2
-    container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    if (!selectedOrderId) return
+    // React 렌더 완료 후 실행 (requestAnimationFrame × 2 = 다음 페인트 후)
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = rowRefs.current[selectedOrderId]
+        const container = listRef.current
+        if (!el || !container) return
+        const elRect = el.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        const scrollTop =
+          container.scrollTop +
+          elRect.top -
+          containerRect.top -
+          container.clientHeight / 2 +
+          el.offsetHeight / 2
+        container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
+      })
+    })
+    return () => cancelAnimationFrame(raf)
   }, [selectedOrderId])
 
   return (
@@ -716,24 +802,38 @@ export function DeliveryTracking() {
                 <button
                   key={order.id}
                   ref={(el) => { rowRefs.current[order.id] = el }}
-                  onClick={() => setSelectedOrderId(order.id)}
-                  style={isSelected ? { background: driverTone?.soft ?? 'rgba(156,163,175,0.12)', boxShadow: `inset 3px 0 0 ${driverColor}` } : {}}
-                  className={`w-full px-3 py-2.5 text-left transition-all duration-100 ${
+                  onClick={() => setSelectedOrderId((prev) => prev === order.id ? undefined : order.id)}
+                  style={isSelected
+                    ? {
+                        background: driverTone?.soft ?? 'rgba(156,163,175,0.10)',
+                        boxShadow: `inset 4px 0 0 ${driverColor}`,
+                        borderBottom: `1px solid ${driverTone?.border ?? 'rgba(156,163,175,0.25)'}`,
+                      }
+                    : {}
+                  }
+                  className={`w-full px-3 py-2.5 text-left transition-all duration-150 ${
                     isSelected
-                      ? ''
+                      ? 'ring-0'
                       : isDelayed
                       ? 'bg-red-50/70 hover:bg-red-50 border-l-2 border-l-red-400'
                       : 'hover:bg-gray-50/80'
                   }`}
                 >
                   <div className="grid grid-cols-[28px_1fr] items-start gap-2.5">
-                    {/* 순번 원 */}
-                    <div
-                      style={{ background: driverTone?.gradient ?? driverColor, boxShadow: isSelected ? `0 0 0 3px ${driverTone?.border ?? 'rgba(156,163,175,0.30)'}` : 'none' }}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white mt-0.5 transition-all"
-                    >
-                      {order.sequence ?? index + 1}
+                    {/* 순번 원 or 체크 아이콘 */}
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center mt-0.5">
+                      {isSelected ? (
+                        <CheckCircle2 className="h-6 w-6" style={{ color: driverColor }} />
+                      ) : (
+                        <div
+                          style={{ background: driverTone?.gradient ?? driverColor }}
+                          className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white"
+                        >
+                          {order.sequence ?? index + 1}
+                        </div>
+                      )}
                     </div>
+
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`text-sm font-semibold leading-tight ${isDelivered ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
