@@ -139,7 +139,10 @@ export function ManualTab() {
       try {
         const res = await api.get('/orders/geocode', { params: { address: value } })
         const { lat, lng, address_name } = res.data
-        const refinedDong = detectDong(address_name ?? value)
+        const fullAddr = address_name ?? value
+        const refinedDong = detectDong(fullAddr)
+        // 서비스 지역 외라도 실제 동 이름 추출 (예: 세류동, 분당동 등)
+        const anyDong = fullAddr.match(/([가-힣]+동)/)?.[1] ?? null
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
         setRows(
           rows.map((r, i) =>
@@ -148,10 +151,10 @@ export function ManualTab() {
                   ...r,
                   addrStatus: 'valid' as AddrStatus,
                   lat, lng,
-                  delivery_address: address_name ?? value,
+                  delivery_address: fullAddr,
                   addrRefined: address_name,
                   dongStatus,
-                  ...(refinedDong ? { dong: refinedDong } : {}),
+                  dong: refinedDong ?? anyDong ?? r.dong,
                   savedOrderId: undefined,
                   submitStatus: undefined,
                 }
@@ -440,7 +443,8 @@ export function ManualTab() {
                             ) : row.dongStatus === 'out-of-zone' ? (
                               <>
                                 <span className="text-[10px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full flex items-center gap-0.5 whitespace-nowrap">
-                                  <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />지역 외
+                                  <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                                  {row.dong || '지역 외'}
                                 </span>
                                 {isAdmin && !row.dongOverride && (
                                   <button
@@ -536,12 +540,18 @@ export function ManualTab() {
 
       {/* 지역 외 경고 배너 */}
       {rows.some((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride) && (
-        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>
-            서비스 지역 외 주소가 {rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).length}건 있습니다.
-            {isAdmin ? ' 배송동 열의 "강제 등록" 체크박스로 허용할 수 있습니다.' : ' 관리자에게 문의하세요.'}
-          </span>
+        <div className="flex items-start gap-3 bg-red-50 border-2 border-red-400 rounded-xl px-4 py-3 text-sm text-red-800 animate-pulse">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-600 mt-0.5" />
+          <div>
+            <p className="font-bold text-red-700">
+              ⛔ 서비스 지역 외 주소 {rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).length}건
+            </p>
+            <p className="text-xs mt-0.5 text-red-600">
+              감지된 동: {[...new Set(rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).map((r) => r.dong).filter(Boolean))].join(', ')}
+              &nbsp;— 배송 가능 지역: 경안동·송정동·쌍령동·탄벌동
+            </p>
+            {isAdmin && <p className="text-xs mt-1 text-amber-700 font-medium">배송동 열의 "강제등록"을 눌러 허용할 수 있습니다.</p>}
+          </div>
         </div>
       )}
 
