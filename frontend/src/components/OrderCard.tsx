@@ -1,4 +1,4 @@
-import { MapPin, Phone, Package, Clock, Camera } from 'lucide-react'
+import { MapPin, Phone, Package, Clock, Camera, AlertTriangle } from 'lucide-react'
 import { StatusBadge } from './StatusBadge'
 import { formatDate } from '@/lib/utils'
 
@@ -18,6 +18,21 @@ interface Order {
   created_at: string
   driver_id?: number
   delivery_photo_url?: string | null
+  match_status?: string
+  standard_road_address?: string
+}
+
+function MatchBadge({ status }: { status?: string }) {
+  if (!status || status === 'matched') return null
+  const isReview = status === 'needs_review'
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+      isReview ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+    }`}>
+      <AlertTriangle className="w-2.5 h-2.5" />
+      {isReview ? '검토필요' : '미확인'}
+    </span>
+  )
 }
 
 interface Props {
@@ -41,6 +56,7 @@ export function OrderCard({ order, onClick, actions }: Props) {
           )}
           <span className="font-bold text-brand-700">{order.order_no}</span>
           <span className="text-xs bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full">{order.dong}</span>
+          <MatchBadge status={order.match_status} />
         </div>
         <StatusBadge status={order.status} />
       </div>

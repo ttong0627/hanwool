@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, Download, X, Truck, Pencil, Trash2,
   ChevronLeft, ChevronRight, QrCode, FileSpreadsheet,
-  TableProperties, ClipboardList,
+  TableProperties, ClipboardList, AlertTriangle, MapPin,
+  CheckCircle2, ChevronDown, ChevronUp,
 } from 'lucide-react'
+import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
 import { OrderCard } from '@/components/OrderCard'
 import { DONG_LIST, STATUS_LABEL } from '@/lib/utils'
@@ -18,6 +20,9 @@ interface Order {
   status: string; dong: string; delivery_address: string; items_desc?: string
   quantity: number; sequence?: number; created_at: string; driver_id?: number
   delivery_photo_url?: string | null; notes?: string; request?: string; weight_estimate?: string
+  // 주소 검증 필드
+  match_status?: string; service_dong?: string; standard_road_address?: string
+  match_score?: number; coord_source?: string
 }
 interface Driver { id: number; name: string; phone: string }
 
@@ -175,6 +180,158 @@ function ExcelModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+/* ── 주소 검증 배지 ─────────────────────────────────────────────────────────── */
+function MatchBadge({ status }: { status?: string }) {
+  if (!status || status === 'matched') return null
+  if (status === 'needs_review')
+    return <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700"><AlertTriangle className="w-2.5 h-2.5" />검토필요</span>
+  if (status === 'not_found')
+    return <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"><AlertTriangle className="w-2.5 h-2.5" />미확인</span>
+  return null
+}
+
+/* ── 배송동 경고 패널 (오늘 주문 중 주소 검토 필요 항목) ─────────────────────── */
+function StagingPanel({ onFixed }: { onFixed: () => void }) {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const qc = useQueryClient()
+
+  const [expanded, setExpanded] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [batchDong, setBatchDong] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const today = new Date().toISOString().split('T')[0]
+  const { data: todayData } = useQuery({
+    queryKey: ['orders-today-flagged'],
+    queryFn: () => api.get('/orders', {
+      params: { date_from: today, date_to: today, page_size: 100 }
+    }).then((r) => r.data),
+    refetchInterval: 30_000,
+  })
+
+  const flagged: Order[] = (todayData?.items ?? []).filter(
+    (o: Order) => o.match_status === 'needs_review' || o.match_status === 'not_found'
+  )
+
+  const toggle = (id: number) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const selectAll = () => setSelectedIds(new Set(flagged.map((o) => o.id)))
+  const clearAll = () => setSelectedIds(new Set())
+
+  const handleBatchFix = async () => {
+    if (!batchDong || selectedIds.size === 0) return
+    setSaving(true)
+    try {
+      await Promise.all(
+        [...selectedIds].map((id) => api.put(`/orders/${id}`, { dong: batchDong }))
+      )
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+      setSelectedIds(new Set())
+      setBatchDong('')
+      onFixed()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (flagged.length === 0) return null
+
+  return (
+    <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 overflow-hidden mb-4">
+      {/* 헤더 */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-100/60 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600" />
+          <span className="font-bold text-amber-800 text-sm">배송동 검토 필요 — {flagged.length}건</span>
+          <span className="text-xs text-amber-600">주소 자동 매칭 실패 또는 좌표 미확인</span>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-amber-600" /> : <ChevronDown className="w-4 h-4 text-amber-600" />}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-amber-200 px-4 py-3 space-y-3">
+          {/* 배치 동 수정 (admin 전용) */}
+          {isAdmin && (
+            <div className="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-amber-200 p-3">
+              <MapPin className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="text-xs font-semibold text-amber-800 shrink-0">배치 동 수정:</span>
+              <select
+                value={batchDong}
+                onChange={(e) => setBatchDong(e.target.value)}
+                className="input text-xs py-1 px-2 h-7 w-28"
+              >
+                <option value="">동 선택</option>
+                {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <button
+                onClick={selectAll}
+                className="text-xs text-amber-700 underline hover:text-amber-900"
+              >전체 선택</button>
+              {selectedIds.size > 0 && (
+                <>
+                  <button onClick={clearAll} className="text-xs text-gray-500 underline">선택 해제</button>
+                  <button
+                    onClick={handleBatchFix}
+                    disabled={!batchDong || saving}
+                    className="ml-auto btn-primary text-xs py-1 px-3 disabled:opacity-40"
+                  >
+                    {saving ? '저장 중…' : `${selectedIds.size}건 동 변경`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 검토 필요 주문 목록 */}
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {flagged.map((order) => (
+              <div
+                key={order.id}
+                onClick={() => isAdmin && toggle(order.id)}
+                className={`flex items-start gap-3 p-3 rounded-xl border text-sm transition-colors ${
+                  selectedIds.has(order.id)
+                    ? 'border-amber-400 bg-amber-100'
+                    : 'border-amber-100 bg-white hover:border-amber-300'
+                } ${isAdmin ? 'cursor-pointer' : ''}`}
+              >
+                {isAdmin && (
+                  <div className={`mt-0.5 w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center ${
+                    selectedIds.has(order.id) ? 'border-amber-500 bg-amber-500' : 'border-gray-300'
+                  }`}>
+                    {selectedIds.has(order.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-800">{order.customer_name}</span>
+                    <span className="text-xs text-gray-500">{order.order_no}</span>
+                    <MatchBadge status={order.match_status} />
+                    <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{order.dong}</span>
+                    {order.service_dong && order.service_dong !== order.dong && (
+                      <span className="text-xs text-amber-700">→ 검증동: {order.service_dong}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{order.standard_road_address ?? order.delivery_address}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── 주문 목록 탭 ──────────────────────────────────────────────────────────── */
 function OrderListTab() {
   const qc = useQueryClient()
@@ -225,6 +382,8 @@ function OrderListTab() {
 
   return (
     <div className="space-y-4">
+      <StagingPanel onFixed={() => qc.invalidateQueries({ queryKey: ['orders'] })} />
+
       <div className="card space-y-3">
         <div className="flex gap-3 flex-wrap items-center">
           <div className="relative">
