@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { getDriverColor } from '@/lib/driverColors'
 
 interface Driver {
   id: number
@@ -213,16 +214,24 @@ export function Drivers() {
         {drivers.map((driver) => {
           const stats = statsMap[driver.id] || { total: 0, delivered: 0 }
           const progressPct = stats.total > 0 ? Math.round((stats.delivered / stats.total) * 100) : 0
+          const color = getDriverColor(driver.id)
 
           return (
             <div
               key={driver.id}
-              className={`card border-l-4 ${driver.is_active ? 'border-brand-400' : 'border-gray-200'}`}
+              className="card border-l-4"
+              style={{ borderLeftColor: driver.is_active ? color : '#e5e7eb' }}
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${driver.is_active ? 'bg-brand-100' : 'bg-gray-100'}`}>
-                    <Truck className={`w-5 h-5 ${driver.is_active ? 'text-brand-600' : 'text-gray-400'}`} />
+                  <div
+                    style={driver.is_active ? { background: `${color}20` } : {}}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${!driver.is_active ? 'bg-gray-100' : ''}`}
+                  >
+                    <Truck
+                      style={driver.is_active ? { color } : {}}
+                      className={`w-5 h-5 ${!driver.is_active ? 'text-gray-400' : ''}`}
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -280,7 +289,10 @@ export function Drivers() {
                     <span>{progressPct}%</span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${progressPct}%`, background: color }}
+                    />
                   </div>
                 </div>
               )}

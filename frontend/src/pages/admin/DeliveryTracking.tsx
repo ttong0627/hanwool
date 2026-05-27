@@ -3,13 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Camera, ListOrdered, MapPin, Phone, RefreshCw, Route, Search, Truck, X } from 'lucide-react'
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
+import { getDriverColor } from '@/lib/driverColors'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 const MARKET_LAT = 37.4069688196691
 const MARKET_LNG = 127.248444387416
 
-// 기사별 고유 색상 팔레트 (최대 6명)
-const DRIVER_COLORS = ['#2563eb', '#16a34a', '#9333ea', '#d97706', '#0891b2', '#be185d']
 // 동 표시 순서 (배차 우선순위 동일)
 const DONG_ORDER = ['경안동', '탄벌동', '송정동', '쌍령동']
 
@@ -322,6 +321,7 @@ export function DeliveryTracking() {
   const [showConfirmSeq, setShowConfirmSeq] = useState(false)
   const [podPreviewUrl, setPodPreviewUrl] = useState<string | null>(null)
   const rowRefs = useRef<Record<number, HTMLButtonElement | null>>({})
+  const listRef = useRef<HTMLDivElement | null>(null)
   const queryClient = useQueryClient()
 
   const { data: orders = [], isLoading, refetch, isFetching } = useQuery<Order[]>({
@@ -388,10 +388,10 @@ export function DeliveryTracking() {
       .map((d) => ({ ...d, count: countByDriver.get(d.id) ?? 0 }))
   }, [drivers, visibleOrders])
 
-  // 기사 ID → 고유 색상 매핑 (driverGroups 인덱스 기반, 안정적)
+  // 기사 ID → 고유 색상 매핑 (driver.id 기반 — 모든 메뉴에서 동일한 색상)
   const driverColorMap = useMemo(() => {
     const map = new Map<number, string>()
-    driverGroups.forEach((d, i) => map.set(d.id, DRIVER_COLORS[i % DRIVER_COLORS.length]))
+    driverGroups.forEach((d) => map.set(d.id, getDriverColor(d.id)))
     return map
   }, [driverGroups])
 
@@ -444,9 +444,14 @@ export function DeliveryTracking() {
   const handleMapSelect = useCallback((order: Order) => setSelectedOrderId(order.id), [])
   const viewportKey = String(selectedDriverId)
 
+  // 핀 클릭 시 명단 리스트 스크롤 (overflow 컨테이너 내 중앙 위치)
   useEffect(() => {
-    if (!selectedOrderId) return
-    rowRefs.current[selectedOrderId]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    if (!selectedOrderId || !listRef.current) return
+    const el = rowRefs.current[selectedOrderId]
+    if (!el) return
+    const container = listRef.current
+    const top = el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2
+    container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
   }, [selectedOrderId])
 
   return (
@@ -624,7 +629,7 @@ export function DeliveryTracking() {
           </div>
           {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
           {!isLoading && selectedOrders.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-          <div className="max-h-[calc(100vh-400px)] min-h-[300px] divide-y divide-gray-100 overflow-y-auto">
+          <div ref={listRef} className="max-h-[calc(100vh-400px)] min-h-[300px] divide-y divide-gray-100 overflow-y-auto">
             {selectedOrders.map((order, index) => {
               const isDelayed = order.status === 'delayed'
               const isDelivered = order.status === 'delivered'

@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { getDriverColor } from '@/lib/driverColors'
 
 interface Driver {
   id: number
@@ -197,24 +198,34 @@ function DriverSelectGrid({
       {drivers.map((driver, index) => {
         const selectedIndex = selectedDriverIds.indexOf(driver.id)
         const isSelected = selectedIndex >= 0
+        const color = getDriverColor(driver.id)
         return (
           <button
             key={driver.id}
             onClick={() => onToggle(driver.id)}
+            style={isSelected ? { borderColor: color, backgroundColor: `${color}12` } : {}}
             className={`flex items-center gap-3 p-3 rounded-lg border-2 text-left transition-all ${
-              isSelected ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 bg-white'
+              isSelected ? '' : 'border-gray-200 hover:border-gray-300 bg-white'
             }`}
           >
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${
-              isSelected ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-500'
-            }`}>
+            <div
+              style={isSelected ? { background: color } : {}}
+              className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                isSelected ? 'text-white' : 'bg-gray-100 text-gray-500'
+              }`}
+            >
               {isSelected ? selectedIndex + 1 : index + 1}
             </div>
             <div className="min-w-0">
               <div className="font-semibold text-gray-900 truncate">{driver.name}</div>
               <div className="text-xs text-gray-500 truncate">{driver.phone}</div>
             </div>
-            {isSelected && <CheckCircle className="w-4 h-4 text-brand-500 ml-auto flex-shrink-0" />}
+            {isSelected && (
+              <span
+                style={{ background: color }}
+                className="ml-auto flex-shrink-0 h-2.5 w-2.5 rounded-full"
+              />
+            )}
           </button>
         )
       })}
@@ -265,14 +276,22 @@ function ConfirmModal({
         </p>
 
         <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-          {selectedDriverIds.map((id, idx) => (
-            <div key={id} className="flex items-center gap-2 text-sm text-gray-700">
-              <div className="w-5 h-5 rounded-full bg-brand-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                {idx + 1}
+          {selectedDriverIds.map((id, idx) => {
+            const color = getDriverColor(id)
+            return (
+              <div key={id} className="flex items-center gap-2 text-sm text-gray-700">
+                <div
+                  style={{ background: color }}
+                  className="w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center flex-shrink-0"
+                >
+                  {idx + 1}
+                </div>
+                <span style={{ color }} className="font-semibold">
+                  {driverMap[id]?.name ?? `기사 #${id}`}
+                </span>
               </div>
-              <span className="font-medium">{driverMap[id]?.name ?? `기사 #${id}`}</span>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {isRequest && (
@@ -527,15 +546,19 @@ export function DeliveryDispatch() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {dispatchResult.groups.map((group) => {
               const driver = driverMap[group.driver_id]
+              const color = getDriverColor(group.driver_id)
               return (
-                <div key={group.driver_id} className="card">
+                <div key={group.driver_id} className="card border-l-4" style={{ borderLeftColor: color }}>
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <div className="font-bold text-gray-900">{driver?.name ?? `기사 #${group.driver_id}`}</div>
-                      <div className="text-xs text-gray-500">{group.dongs.join(', ')}</div>
+                    <div className="flex items-center gap-2">
+                      <span style={{ background: color }} className="inline-block h-3 w-3 rounded-full shrink-0" />
+                      <div>
+                        <div className="font-bold text-gray-900">{driver?.name ?? `기사 #${group.driver_id}`}</div>
+                        <div className="text-xs text-gray-500">{group.dongs.join(', ')}</div>
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-black text-brand-600">{group.order_count}</div>
+                      <div className="text-2xl font-black" style={{ color }}>{group.order_count}</div>
                       <div className="text-xs text-gray-400">건</div>
                     </div>
                   </div>
@@ -543,7 +566,10 @@ export function DeliveryDispatch() {
                   <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
                     {group.orders.map((order) => (
                       <div key={order.id} className="flex items-center gap-3 py-2">
-                        <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center flex-shrink-0">
+                        <div
+                          style={{ background: color }}
+                          className="w-7 h-7 rounded-full text-white text-xs font-black flex items-center justify-center flex-shrink-0"
+                        >
                           {order.sequence}
                         </div>
                         <div className="flex-1 min-w-0">
