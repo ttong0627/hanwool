@@ -4,11 +4,34 @@ from typing import List
 
 import qrcode
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-from reportlab.platypus import Image, SimpleDocTemplate, Table, TableStyle, Paragraph
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Table, TableStyle
+
+_FONT_REGISTERED = False
+
+def _ensure_fonts():
+    global _FONT_REGISTERED
+    if _FONT_REGISTERED:
+        return
+    try:
+        pdfmetrics.registerFont(TTFont("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"))
+        pdfmetrics.registerFont(TTFont("NanumGothicBold", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"))
+        _FONT_REGISTERED = True
+    except Exception:
+        _FONT_REGISTERED = False
+
+def _F():
+    _ensure_fonts()
+    return "NanumGothic" if _FONT_REGISTERED else "Helvetica"
+
+def _FB():
+    _ensure_fonts()
+    return "NanumGothicBold" if _FONT_REGISTERED else "Helvetica-Bold"
 
 
 def generate_qr_bytes(data: str) -> bytes:
@@ -30,10 +53,9 @@ def generate_labels_pdf(orders: List[dict]) -> bytes:
         topMargin=0.5*cm, bottomMargin=0.5*cm,
     )
     elements = []
-    label_style = ParagraphStyle("label", fontName="Helvetica-Bold", fontSize=10, alignment=TA_CENTER)
-    addr_style = ParagraphStyle("addr", fontName="Helvetica", fontSize=8, alignment=TA_CENTER)
+    label_style = ParagraphStyle("label", fontName=_FB(), fontSize=10, alignment=TA_CENTER)
+    addr_style = ParagraphStyle("addr", fontName=_F(), fontSize=8, alignment=TA_CENTER)
 
-    # 4개씩 묶어서 2x2 배치
     for i in range(0, len(orders), 4):
         batch = orders[i:i+4]
         while len(batch) < 4:
