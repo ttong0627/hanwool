@@ -1,66 +1,88 @@
-"""extend address fields: orders full standard keys + address_cache full keys
+"""extend address standard keys and cache metadata
 
 Revision ID: m8n9o0p1q234
 Revises: l7m8n9o0p123
 Create Date: 2026-05-27
 """
 from alembic import op
-import sqlalchemy as sa
 
-revision = 'm8n9o0p1q234'
-down_revision = 'l7m8n9o0p123'
+revision = "m8n9o0p1q234"
+down_revision = "l7m8n9o0p123"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # ── orders: 행안부 표준키 전체 필드 확장 ─────────────────────────────────
-    op.add_column('orders', sa.Column('raw_address',            sa.Text(),        nullable=True))
-    op.add_column('orders', sa.Column('standard_road_address',  sa.Text(),        nullable=True))
-    op.add_column('orders', sa.Column('jibun_address',          sa.Text(),        nullable=True))
-    op.add_column('orders', sa.Column('detail_address',         sa.Text(),        nullable=True))
-    op.add_column('orders', sa.Column('admin_emd',              sa.String(50),    nullable=True))
-    op.add_column('orders', sa.Column('adm_cd',                 sa.String(10),    nullable=True))
-    op.add_column('orders', sa.Column('rn_mgt_sn',              sa.String(20),    nullable=True))
-    op.add_column('orders', sa.Column('udrt_yn',                sa.String(1),     nullable=True))
-    op.add_column('orders', sa.Column('buld_mnnm',              sa.Integer(),     nullable=True))
-    op.add_column('orders', sa.Column('buld_slno',              sa.Integer(),     nullable=True))
-    op.add_column('orders', sa.Column('address_verified_at',    sa.DateTime(timezone=True), nullable=True))
+    order_columns = {
+        "raw_address": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS raw_address text",
+        "standard_road_address": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS standard_road_address text",
+        "jibun_address": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS jibun_address text",
+        "detail_address": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS detail_address text",
+        "admin_emd": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_emd varchar(50)",
+        "adm_cd": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS adm_cd varchar(10)",
+        "rn_mgt_sn": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rn_mgt_sn varchar(20)",
+        "udrt_yn": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS udrt_yn varchar(1)",
+        "buld_mnnm": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS buld_mnnm integer",
+        "buld_slno": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS buld_slno integer",
+        "address_verified_at": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS address_verified_at timestamptz",
+    }
+    for statement in order_columns.values():
+        op.execute(statement)
 
-    # ── address_cache: 행안부 표준키 + 매칭 품질 필드 ────────────────────────
-    op.add_column('address_cache', sa.Column('normalized_query', sa.String(500), nullable=True))
-    op.add_column('address_cache', sa.Column('adm_cd',           sa.String(10),  nullable=True))
-    op.add_column('address_cache', sa.Column('rn_mgt_sn',        sa.String(20),  nullable=True))
-    op.add_column('address_cache', sa.Column('bd_mgt_sn',        sa.String(25),  nullable=True))
-    op.add_column('address_cache', sa.Column('udrt_yn',          sa.String(1),   nullable=True))
-    op.add_column('address_cache', sa.Column('buld_mnnm',        sa.Integer(),   nullable=True))
-    op.add_column('address_cache', sa.Column('buld_slno',        sa.Integer(),   nullable=True))
-    op.add_column('address_cache', sa.Column('match_status',     sa.String(20),  nullable=True))
-    op.add_column('address_cache', sa.Column('match_score',      sa.Float(),     nullable=True))
-    op.add_column('address_cache', sa.Column('match_message',    sa.Text(),      nullable=True))
-    op.create_index('ix_address_cache_normalized_query', 'address_cache', ['normalized_query'])
+    cache_columns = {
+        "normalized_query": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS normalized_query varchar(500)",
+        "adm_cd": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS adm_cd varchar(10)",
+        "rn_mgt_sn": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS rn_mgt_sn varchar(20)",
+        "bd_mgt_sn": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS bd_mgt_sn varchar(25)",
+        "udrt_yn": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS udrt_yn varchar(1)",
+        "buld_mnnm": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS buld_mnnm integer",
+        "buld_slno": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS buld_slno integer",
+        "match_status": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS match_status varchar(20)",
+        "match_score": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS match_score double precision",
+        "match_message": "ALTER TABLE address_cache ADD COLUMN IF NOT EXISTS match_message text",
+    }
+    for statement in cache_columns.values():
+        op.execute(statement)
+
+    op.execute("CREATE INDEX IF NOT EXISTS ix_orders_adm_cd ON orders (adm_cd)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_orders_rn_mgt_sn ON orders (rn_mgt_sn)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_orders_match_status ON orders (match_status)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_address_cache_normalized_query ON address_cache (normalized_query)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_address_cache_bd_mgt_sn ON address_cache (bd_mgt_sn)")
 
 
 def downgrade() -> None:
-    op.drop_index('ix_address_cache_normalized_query', table_name='address_cache')
-    op.drop_column('address_cache', 'match_message')
-    op.drop_column('address_cache', 'match_score')
-    op.drop_column('address_cache', 'match_status')
-    op.drop_column('address_cache', 'buld_slno')
-    op.drop_column('address_cache', 'buld_mnnm')
-    op.drop_column('address_cache', 'udrt_yn')
-    op.drop_column('address_cache', 'bd_mgt_sn')
-    op.drop_column('address_cache', 'rn_mgt_sn')
-    op.drop_column('address_cache', 'adm_cd')
-    op.drop_column('address_cache', 'normalized_query')
-    op.drop_column('orders', 'address_verified_at')
-    op.drop_column('orders', 'buld_slno')
-    op.drop_column('orders', 'buld_mnnm')
-    op.drop_column('orders', 'udrt_yn')
-    op.drop_column('orders', 'rn_mgt_sn')
-    op.drop_column('orders', 'adm_cd')
-    op.drop_column('orders', 'admin_emd')
-    op.drop_column('orders', 'detail_address')
-    op.drop_column('orders', 'jibun_address')
-    op.drop_column('orders', 'standard_road_address')
-    op.drop_column('orders', 'raw_address')
+    op.execute("DROP INDEX IF EXISTS ix_address_cache_bd_mgt_sn")
+    op.execute("DROP INDEX IF EXISTS ix_address_cache_normalized_query")
+    op.execute("DROP INDEX IF EXISTS ix_orders_match_status")
+    op.execute("DROP INDEX IF EXISTS ix_orders_rn_mgt_sn")
+    op.execute("DROP INDEX IF EXISTS ix_orders_adm_cd")
+
+    for column in (
+        "match_message",
+        "match_score",
+        "match_status",
+        "buld_slno",
+        "buld_mnnm",
+        "udrt_yn",
+        "bd_mgt_sn",
+        "rn_mgt_sn",
+        "adm_cd",
+        "normalized_query",
+    ):
+        op.execute(f"ALTER TABLE address_cache DROP COLUMN IF EXISTS {column}")
+
+    for column in (
+        "address_verified_at",
+        "buld_slno",
+        "buld_mnnm",
+        "udrt_yn",
+        "rn_mgt_sn",
+        "adm_cd",
+        "admin_emd",
+        "detail_address",
+        "jibun_address",
+        "standard_road_address",
+        "raw_address",
+    ):
+        op.execute(f"ALTER TABLE orders DROP COLUMN IF EXISTS {column}")
