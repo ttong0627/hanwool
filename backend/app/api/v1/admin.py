@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin, require_receiver_or_above, require_super_admin
+from app.api.v1.deps import require_admin, require_admin_or_above, require_receiver_or_above, require_super_admin
 from app.core.database import get_db
 from app.models.complaint import Complaint
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
@@ -67,7 +67,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(re
 async def list_dispatch_requests(
     status_filter: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_super_admin),
+    _: User = Depends(require_admin_or_above),
 ):
     from app.core.security import decrypt_field
 
@@ -104,7 +104,7 @@ async def resolve_dispatch_request(
     request_id: int,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin_or_above),
 ):
     driver_ids = body.get("driver_ids", [])
     if not isinstance(driver_ids, list) or not driver_ids:

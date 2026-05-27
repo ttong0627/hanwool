@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
     get_current_user,
+    require_admin_or_above,
     require_driver_or_above,
     require_receiver_or_above,
 )
@@ -64,7 +65,7 @@ async def _get_today_orders_for_dispatch(db: AsyncSession) -> list[Order]:
     result = await db.execute(
         select(Order)
         .where(
-            Order.created_at >= _today_start(),
+            Order.market_date == date.today(),
             Order.status.in_([OrderStatus.pending, OrderStatus.assigned]),
         )
         .order_by(Order.created_at.asc())
@@ -177,12 +178,17 @@ async def _dispatch_today_orders(
                 previous_driver_id = db_order.driver_id
                 db_order.driver_id = group.driver_id
                 db_order.sequence = dispatch_item.sequence
-                db_order.sequence_source = "auto"
+                db_order.sequence_source = "auto" if is_auto else "manual"
                 if db_order.status in {OrderStatus.pending, OrderStatus.assigned}:
-                    db_order.status = OrderStatus.in_transit
                     db_order.assigned_at = now
-                if not db_order.picked_up_at:
-                    db_order.picked_up_at = now
+                    if is_auto:
+                        # 기사가 직접 시작 요청 — 즉시 배송중 전환, picked_up_at 기록
+                        db_order.status = OrderStatus.in_transit
+                        if not db_order.picked_up_at:
+                            db_order.picked_up_at = now
+                    else:
+                        # 관리자 배차 — 기사가 픽업 확인 후 직접 시작하도록 assigned 상태 유지
+                        db_order.status = OrderStatus.assigned
                 dispatch_item.status = db_order.status
                 if previous_status != db_order.status or previous_driver_id != group.driver_id:
                     await order_service.log_order_history(
@@ -195,8 +201,8 @@ async def _dispatch_today_orders(
                         actor_role="system" if is_auto else None,
                         driver_id=group.driver_id,
                         note=(
-                            ("자동 배차 후 배송중 전환" if is_auto else "관리자 배차 후 배송중 전환")
-                            + (f" / 기사 변경: {previous_driver_id} -> {group.driver_id}" if previous_driver_id and previous_driver_id != group.driver_id else "")
+                            ("자동 배차 → 배송중 전환" if is_auto else "관리자 배차 → 배정 대기")
+                            + (f" / 기사 변경: {previous_driver_id} → {group.driver_id}" if previous_driver_id and previous_driver_id != group.driver_id else "")
                         ),
                     )
                 db.add(
@@ -208,7 +214,7 @@ async def _dispatch_today_orders(
                         service_dong=db_order.service_dong or db_order.dong,
                         lat=db_order.lat,
                         lng=db_order.lng,
-                        sequence_source="auto",
+                        sequence_source="auto" if is_auto else "manual",
                     )
                 )
 
@@ -323,16 +329,41 @@ async def start_driver_work(
     if not is_driver_capable(current_user):
         raise HTTPException(status_code=403, detail="기사 또는 기사 업무가 부여된 관리자만 배송업무를 시작할 수 있습니다.")
 
-    today_start = _today_start()
-    assigned_count = (await db.execute(
-        select(func.count()).select_from(Order).where(
-            Order.created_at >= today_start,
+    today = date.today()
+    active_orders_result = await db.execute(
+        select(Order).where(
+            Order.market_date == today,
             Order.driver_id == current_user.id,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
-    )).scalar() or 0
+    )
+    my_active_orders = active_orders_result.scalars().all()
+    assigned_count = len(my_active_orders)
 
     if assigned_count > 0:
+        # 관리자가 미리 배차한 주문(assigned 상태)이 있으면 → 배송중으로 전환 (업무 시작 확정)
+        pre_assigned = [o for o in my_active_orders if o.status == OrderStatus.assigned]
+        if pre_assigned:
+            now_utc = datetime.now(timezone.utc)
+            for order in pre_assigned:
+                order.status = OrderStatus.in_transit
+                order.picked_up_at = now_utc
+                await order_service.log_order_history(
+                    db, order,
+                    event_type="started",
+                    from_status=OrderStatus.assigned,
+                    to_status=OrderStatus.in_transit,
+                    actor_user_id=current_user.id,
+                    actor_role="driver",
+                    note="기사 업무 시작 — 배송중 전환",
+                )
+            await db.flush()
+            await _push_route_to_drivers(pre_assigned)
+            return {
+                "status": "assigned",
+                "assigned_count": len(pre_assigned),
+                "message": f"오늘 배송 {len(pre_assigned)}건을 시작합니다.",
+            }
         return {
             "status": "already_assigned",
             "assigned_count": assigned_count,
@@ -341,13 +372,13 @@ async def start_driver_work(
 
     total_active = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.created_at >= today_start,
+            Order.market_date == today,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
     )).scalar() or 0
     pending_count = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.created_at >= today_start,
+            Order.market_date == today,
             Order.driver_id == None,
             Order.status == OrderStatus.pending,
         )
@@ -410,11 +441,67 @@ async def start_driver_work(
     }
 
 
+@router.get("/dispatch/today-status")
+async def get_today_dispatch_status(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin_or_above),
+):
+    today = date.today()
+
+    status_rows = await db.execute(
+        select(Order.status, func.count().label("cnt"))
+        .where(Order.market_date == today, Order.status != OrderStatus.cancelled)
+        .group_by(Order.status)
+    )
+    by_status = {row.status: row.cnt for row in status_rows}
+
+    dong_rows = await db.execute(
+        select(Order.dong, func.count().label("cnt"))
+        .where(
+            Order.market_date == today,
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+        .group_by(Order.dong)
+    )
+    by_dong = {row.dong: row.cnt for row in dong_rows}
+
+    runs_result = await db.execute(
+        select(DispatchRun)
+        .where(DispatchRun.market_date == today)
+        .order_by(DispatchRun.executed_at.asc())
+    )
+    runs = runs_result.scalars().all()
+
+    return {
+        "total": sum(by_status.values()),
+        "by_status": {
+            "pending":    by_status.get("pending", 0),
+            "assigned":   by_status.get("assigned", 0),
+            "picked_up":  by_status.get("picked_up", 0),
+            "in_transit": by_status.get("in_transit", 0),
+            "delivered":  by_status.get("delivered", 0),
+            "delayed":    by_status.get("delayed", 0),
+        },
+        "by_dong": by_dong,
+        "dispatch_runs": [
+            {
+                "id": r.id,
+                "driver_count": r.driver_count,
+                "order_count": r.order_count,
+                "is_auto": r.is_auto,
+                "notes": r.notes,
+                "executed_at": r.executed_at.isoformat() if r.executed_at else None,
+            }
+            for r in runs
+        ],
+    }
+
+
 @router.post("/dispatch")
 async def dispatch_orders_priority(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_receiver_or_above),
+    current_user: User = Depends(require_admin_or_above),
 ):
     driver_ids: list[int] = body.get("driver_ids", [])
     return await _dispatch_today_orders(

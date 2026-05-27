@@ -19,10 +19,11 @@ DONG_PRIORITY: dict[str, int] = {
     "탄벌동": 3,
 }
 
-# 2명 배차 시 고정 그룹
-GROUPS_2: list[list[str]] = [
-    ["경안동", "쌍령동"],
-    ["송정동", "탄벌동"],
+# 2명 배차 — 시도 가능한 3가지 페어링 (지리적 인접성 고려 순서)
+_PAIRS_2: list[tuple[list[str], list[str]]] = [
+    (["경안동", "쌍령동"], ["송정동", "탄벌동"]),
+    (["경안동", "탄벌동"], ["송정동", "쌍령동"]),
+    (["경안동", "송정동"], ["쌍령동", "탄벌동"]),
 ]
 
 # 불균형 임계값: 평균 대비 이 배수 이상이면 이관 대상 표시
@@ -78,13 +79,22 @@ def dispatch_1_driver(
 def dispatch_2_drivers(
     orders: list[DispatchOrder], driver_ids: list[int]
 ) -> list[DriverGroup]:
+    # 3가지 페어링 중 건수 불균형이 가장 작은 조합 선택
+    best_pair = _PAIRS_2[0]
+    best_imbalance = float("inf")
+    for pair in _PAIRS_2:
+        counts = [sum(1 for o in orders if o.dong in group) for group in pair]
+        imbalance = max(counts) - min(counts)
+        if imbalance < best_imbalance:
+            best_imbalance = imbalance
+            best_pair = pair
+
     groups: list[DriverGroup] = []
-    for i, dong_list in enumerate(GROUPS_2):
-        driver_id = driver_ids[i]
+    for i, dong_list in enumerate(best_pair):
         group_orders = [o for o in orders if o.dong in dong_list]
         sorted_orders = _assign_sequences(_sort_orders(group_orders))
         groups.append(DriverGroup(
-            driver_id=driver_id,
+            driver_id=driver_ids[i],
             dongs=dong_list,
             orders=sorted_orders,
             can_transfer_to=[],
