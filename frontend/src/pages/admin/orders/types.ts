@@ -25,15 +25,15 @@ export const COL_LABELS: Record<ColKey, string> = {
   request: '요청사항',
 }
 
-export const COL_WIDTHS: Record<ColKey, string> = {
-  customer_name: '90px',
-  customer_phone: '130px',
-  dong: '110px',
-  delivery_address: '220px',
-  items_desc: '140px',
-  item_code: '65px',
-  quantity: '60px',
-  request: '130px',
+export const COL_WIDTHS: Record<ColKey, string | undefined> = {
+  customer_name: '76px',
+  customer_phone: '112px',
+  dong: '84px',
+  delivery_address: undefined,  // auto — 남은 공간 전부
+  items_desc: '88px',
+  item_code: '50px',
+  quantity: '46px',
+  request: '86px',
 }
 
 export type AddrStatus = 'idle' | 'validating' | 'valid' | 'invalid'

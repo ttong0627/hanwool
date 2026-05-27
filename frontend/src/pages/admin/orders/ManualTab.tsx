@@ -138,15 +138,14 @@ export function ManualTab() {
     clearTimeout(addrTimers[rowId])
 
     if (!value || value.length < 5) {
-      // 함수형 업데이트: 항상 최신 state 기준으로 병합
       setRows(prev => prev.map((r, i) => i === rowIdx ? {
         ...r,
         delivery_address: value,
         savedOrderId: undefined,
         submitStatus: undefined,
         addrStatus: 'idle',
-        dongStatus: undefined,
-        dong: detected ?? '경안동',
+        dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
+        dong: detected ?? '',
       } : r))
       return
     }
@@ -185,10 +184,16 @@ export function ManualTab() {
           submitStatus: undefined,
         } : r))
       } catch {
-        // geocode 실패: 주소 그대로 유지, dongStatus 변경 없음
+        // geocode 실패: 주소 텍스트에서 동 재감지 시도
+        const fallbackDong = detectDong(value)
+        const fallbackDongStatus: DongStatus | undefined = fallbackDong
+          ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone')
+          : undefined
         setRows(prev => prev.map((r, i) => i === rowIdx ? {
           ...r,
           addrStatus: 'invalid' as AddrStatus,
+          dong: fallbackDong ?? '',
+          dongStatus: fallbackDongStatus,
         } : r))
       }
     }, 600)
@@ -431,12 +436,14 @@ export function ManualTab() {
       </div>
 
       {/* 스프레드시트 그리드 */}
-      <div className="border border-gray-200 rounded-xl overflow-auto">
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full border-collapse text-sm" style={{ tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: 36 }} />
-            {COL_KEYS.map((k) => <col key={k} style={{ width: COL_WIDTHS[k] }} />)}
-            <col style={{ width: 36 }} />
+            <col style={{ width: 28 }} />
+            {COL_KEYS.map((k) => (
+              COL_WIDTHS[k] ? <col key={k} style={{ width: COL_WIDTHS[k] }} /> : <col key={k} />
+            ))}
+            <col style={{ width: 28 }} />
           </colgroup>
 
           <thead className="sticky top-0 z-10 bg-gradient-to-b from-gray-100 to-gray-50 border-b-2 border-gray-200 shadow-sm">
@@ -559,7 +566,7 @@ export function ManualTab() {
                                   </span>
                                 )}
                               </>
-                            ) : row.dong ? (
+                            ) : (row.dong && row.dongStatus === 'valid') ? (
                               <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 {row.dong}
                               </span>
