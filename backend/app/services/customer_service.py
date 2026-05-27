@@ -48,33 +48,37 @@ async def upsert_customer(
         return None
 
     ph = compute_phone_hash(phone)
-    result = await db.execute(
-        select(User).where(User.phone_hash == ph, User.role == UserRole.customer)
+    # phone_hash는 전체 user에 unique → role 필터 없이 조회해야 중복 INSERT 방지
+    result = await db.execute(select(User).where(User.phone_hash == ph))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        if existing.role == UserRole.customer:
+            # 기존 고객 정보 업데이트
+            if name:
+                existing.name_enc = encrypt_field(name)
+            if dong:
+                existing.dong = dong
+            if address:
+                existing.address_enc = encrypt_field(address)
+            if birth_year:
+                existing.birth_year_enc = encrypt_field(str(birth_year))
+            await db.flush()
+        # admin/receiver 등 다른 역할이면 삽입 없이 그대로 반환
+        return existing
+
+    # 신규 고객 생성
+    customer = User(
+        name_enc=encrypt_field(name or ""),
+        phone_enc=encrypt_field(phone),
+        phone_hash=ph,
+        role=UserRole.customer,
+        dong=dong or "경안동",
+        address_enc=encrypt_field(address) if address else None,
+        birth_year_enc=encrypt_field(str(birth_year)) if birth_year else None,
+        is_active=True,
     )
-    customer = result.scalar_one_or_none()
-
-    if customer:
-        if name:
-            customer.name_enc = encrypt_field(name)
-        if dong:
-            customer.dong = dong
-        if address:
-            customer.address_enc = encrypt_field(address)
-        if birth_year:
-            customer.birth_year_enc = encrypt_field(str(birth_year))
-    else:
-        customer = User(
-            name_enc=encrypt_field(name or ""),
-            phone_enc=encrypt_field(phone),
-            phone_hash=ph,
-            role=UserRole.customer,
-            dong=dong or "경안동",
-            address_enc=encrypt_field(address) if address else None,
-            birth_year_enc=encrypt_field(str(birth_year)) if birth_year else None,
-            is_active=True,
-        )
-        db.add(customer)
-
+    db.add(customer)
     await db.flush()
     return customer
 
