@@ -4,6 +4,7 @@ from app.models.delivery import Delivery
 from app.models.complaint import Complaint
 from app.models.sms_log import SmsLog
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
+from app.models.address_cache import AddressCache
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "SmsLog",
     "DispatchRequest",
     "DispatchRequestStatus",
+    "AddressCache",
 ]
