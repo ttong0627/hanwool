@@ -38,7 +38,19 @@ export function ManualTab() {
   const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
   const cellRefs = useRef<CellRef[][]>([])
   const [kakaoRow, setKakaoRow] = useState<number | null>(null)
+  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null)
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
+
+  // 컬럼별 IME 힌트: 'ko' = 한글, 'en' = 영문/숫자
+  const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInputElement['inputMode']; hint: string; hintColor: string }>> = {
+    customer_name:    { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
+    customer_phone:   { lang: 'en', inputMode: 'tel',     hint: '숫', hintColor: 'bg-slate-500' },
+    delivery_address: { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
+    items_desc:       { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
+    item_code:        { lang: 'en', inputMode: 'numeric', hint: '숫', hintColor: 'bg-slate-500' },
+    quantity:         { lang: 'en', inputMode: 'numeric', hint: '숫', hintColor: 'bg-slate-500' },
+    request:          { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
+  }
 
   const focusCell = useCallback((row: number, col: number) => {
     const el = cellRefs.current[row]?.[col]
@@ -361,14 +373,24 @@ export function ManualTab() {
             <col style={{ width: 36 }} />
           </colgroup>
 
-          <thead className="sticky top-0 z-10 bg-gray-100 border-b-2 border-gray-300">
+          <thead className="sticky top-0 z-10 bg-gradient-to-b from-gray-100 to-gray-50 border-b-2 border-gray-200 shadow-sm">
             <tr>
-              <th className="text-center text-gray-400 font-normal text-xs py-2 border-r border-gray-200">#</th>
-              {COL_KEYS.map((k) => (
-                <th key={k} className="text-left px-2 py-2 text-xs font-semibold text-gray-600 border-r border-gray-200 whitespace-nowrap overflow-hidden">
-                  {COL_LABELS[k]}
-                </th>
-              ))}
+              <th className="text-center text-gray-400 font-normal text-xs py-2.5 border-r border-gray-200">#</th>
+              {COL_KEYS.map((k) => {
+                const meta = CELL_META[k]
+                return (
+                  <th key={k} className="text-left px-2 py-2 text-xs font-semibold text-gray-600 border-r border-gray-200 whitespace-nowrap overflow-hidden">
+                    <div className="flex items-center gap-1.5">
+                      <span>{COL_LABELS[k]}</span>
+                      {meta && (
+                        <span className={`text-[7px] font-black px-1 py-px rounded leading-none text-white ${meta.hintColor} opacity-70`}>
+                          {meta.hint}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                )
+              })}
               <th />
             </tr>
           </thead>
@@ -411,13 +433,21 @@ export function ManualTab() {
 
                     return (
                       <td key={key} className="border-r border-gray-100 p-0 relative">
+                        {/* IME 힌트 배지 — 포커스된 셀에만 표시 */}
+                        {focusedCell?.row === rowIdx && focusedCell?.col === colIdx && CELL_META[key] && (
+                          <span className={`absolute top-0 right-0 z-20 text-[7px] font-black px-1.5 py-px rounded-bl-md leading-none pointer-events-none select-none text-white ${CELL_META[key]!.hintColor}`}>
+                            {CELL_META[key]!.hint}
+                          </span>
+                        )}
                         {isAddr ? (
                           <div className="flex items-center gap-0.5 pr-1">
                             <input
                               ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                               className={cellCls + ' flex-1'}
                               value={row.delivery_address}
-                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                              lang="ko"
+                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                              onBlur={() => setFocusedCell(null)}
                               onChange={(e) => handleAddressChange(rowIdx, e.target.value)}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -474,9 +504,12 @@ export function ManualTab() {
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                             type="number"
                             min={1}
+                            inputMode="numeric"
+                            lang="en"
                             className={cellCls + ' text-center'}
                             value={row.quantity}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => updateCell(rowIdx, 'quantity', Number(e.target.value))}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -485,9 +518,12 @@ export function ManualTab() {
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                             type="tel"
+                            inputMode="tel"
+                            lang="en"
                             className={cellCls}
                             value={row.customer_phone}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => updateCell(rowIdx, 'customer_phone', formatPhone(e.target.value))}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -497,9 +533,11 @@ export function ManualTab() {
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                             type="text"
                             inputMode="numeric"
+                            lang="en"
                             className={cellCls + ' text-center font-mono'}
                             value={row.item_code}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => updateCell(rowIdx, 'item_code', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -509,8 +547,10 @@ export function ManualTab() {
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                             className={cellCls}
+                            lang={CELL_META[key]?.lang ?? 'ko'}
                             value={String(row[key] ?? '')}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => updateCell(rowIdx, key, e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
