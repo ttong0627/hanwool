@@ -27,7 +27,7 @@ function autoDetectMapping(headers: string[]): Mapping {
     물품: 'items_desc', 물품내역: 'items_desc', 상품: 'items_desc', 품목: 'items_desc',
     수량: 'quantity', 갯수: 'quantity',
     요청: 'request', 요청사항: 'request', 메모: 'request',
-    무게: 'weight_estimate', 중량: 'weight_estimate',
+    코드: 'item_code', 구분: 'item_code', 분류: 'item_code',
   }
   const result: Mapping = {}
   headers.forEach((h) => {
@@ -52,9 +52,9 @@ function buildRows(parsed: ParsedExcel, mapping: Mapping): StagingRow[] {
         dong: normalizeDong(get('dong')),
         delivery_address: get('delivery_address'),
         items_desc: get('items_desc'),
+        item_code: get('item_code'),
         quantity: Number(get('quantity')) || 1,
         request: get('request'),
-        weight_estimate: get('weight_estimate'),
       }
     })
     .filter((r) => r.customer_name || r.customer_phone || r.delivery_address)

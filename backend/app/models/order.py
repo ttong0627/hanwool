@@ -37,6 +37,7 @@ class Order(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     request: Mapped[str] = mapped_column(Text, nullable=True)
     weight_estimate: Mapped[str] = mapped_column(String(50), nullable=True)
+    item_code: Mapped[str] = mapped_column(String(50), nullable=True)
     delivery_photo_path: Mapped[str] = mapped_column(String(500), nullable=True)
     market_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Float, nullable=True)

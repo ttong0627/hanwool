@@ -11,6 +11,7 @@ class OrderCreate(BaseModel):
     delivery_address: str
     dong: str
     items_desc: Optional[str] = None
+    item_code: Optional[str] = None
     quantity: int = 1
     notes: Optional[str] = None
     request: Optional[str] = None
@@ -40,6 +41,7 @@ class OrderOut(BaseModel):
     delivery_address: str
     dong: str
     items_desc: Optional[str] = None
+    item_code: Optional[str] = None
     quantity: int
     notes: Optional[str] = None
     request: Optional[str] = None
@@ -81,6 +83,7 @@ class OrderEditRequest(BaseModel):
     delivery_address: Optional[str] = None
     dong: Optional[str] = None
     items_desc: Optional[str] = None
+    item_code: Optional[str] = None
     quantity: Optional[int] = None
     notes: Optional[str] = None
     request: Optional[str] = None

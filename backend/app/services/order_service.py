@@ -52,6 +52,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         delivery_address_enc=encrypt_field(data.delivery_address),
         dong=data.dong,
         items_desc=data.items_desc,
+        item_code=data.item_code,
         quantity=data.quantity,
         notes=data.notes,
         request=data.request,

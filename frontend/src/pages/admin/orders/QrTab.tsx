@@ -22,7 +22,7 @@ function parseQrData(raw: string): Partial<StagingRow> | null {
         items_desc: parsed.items ?? parsed.items_desc ?? '',
         quantity: Number(parsed.qty ?? parsed.quantity ?? 1),
         request: parsed.request ?? '',
-        weight_estimate: parsed.weight ?? parsed.weight_estimate ?? '',
+        item_code: parsed.code ?? parsed.item_code ?? '',
       }
     }
   } catch {

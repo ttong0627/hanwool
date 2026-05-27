@@ -632,6 +632,7 @@ async def batch_create_orders(
                 delivery_address=row.get("delivery_address", ""),
                 dong=row.get("dong", "경안동"),
                 items_desc=row.get("items_desc"),
+                item_code=row.get("item_code"),
                 quantity=int(row.get("quantity", 1)),
                 request=row.get("request"),
                 notes=row.get("notes"),
