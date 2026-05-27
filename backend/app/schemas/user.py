@@ -49,6 +49,7 @@ class UserUpdate(BaseModel):
     dong: Optional[str] = None
     address: Optional[str] = None
     is_active: Optional[bool] = None
+    is_driver: Optional[bool] = None
     birth_year: Optional[int] = None
 
     @field_validator("password")
@@ -111,6 +112,7 @@ class UserOut(BaseModel):
     age: Optional[int] = None
     is_elderly: Optional[bool] = None
     is_active: bool
+    is_driver: bool = False
     created_at: datetime
 
     class Config:

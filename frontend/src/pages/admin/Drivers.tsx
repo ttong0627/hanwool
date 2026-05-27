@@ -20,7 +20,6 @@ interface Driver {
   name: string
   phone: string
   dong?: string
-  role: string
   is_active: boolean
   created_at: string
 }
@@ -151,7 +150,7 @@ export function Drivers() {
 
   const { data: drivers = [], isLoading } = useQuery<Driver[]>({
     queryKey: ['drivers'],
-    queryFn: () => api.get('/users', { params: { role: 'driver,admin,super_admin' } }).then((r) => r.data),
+    queryFn: () => api.get('/users', { params: { role: 'driver' } }).then((r) => r.data),
   })
 
   const { data: driverStats = [] } = useQuery<DriverStat[]>({
@@ -180,8 +179,6 @@ export function Drivers() {
   }, {})
 
   const activeCount = drivers.filter((driver) => driver.is_active).length
-  const isAdminRole = (role: string) => role === 'admin' || role === 'super_admin'
-
   const confirmDelete = (driver: Driver) => {
     if (window.confirm(`${driver.name} 기사를 삭제할까요? 삭제된 기사는 배정 목록에 표시되지 않습니다.`)) {
       deleteMutation.mutate(driver.id)
@@ -230,11 +227,6 @@ export function Drivers() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <div className="font-semibold text-gray-900 truncate">{driver.name}</div>
-                      {isAdminRole(driver.role) && (
-                        <span className="text-[9px] font-bold px-1 py-px rounded bg-purple-100 text-purple-700 shrink-0">
-                          {driver.role === 'super_admin' ? '최고관리자' : '관리자'}
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs text-gray-500 truncate">{driver.phone}</div>
                   </div>
@@ -254,15 +246,13 @@ export function Drivers() {
                   >
                     {driver.is_active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
                   </button>
-                  {!isAdminRole(driver.role) && (
-                    <button
-                      onClick={() => confirmDelete(driver)}
-                      className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600"
-                      title="삭제"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => confirmDelete(driver)}
+                    className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600"
+                    title="삭제"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 

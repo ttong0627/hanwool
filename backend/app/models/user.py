@@ -37,5 +37,6 @@ class User(Base):
     address_enc: Mapped[str] = mapped_column(String(1024), nullable=True)
     birth_year_enc: Mapped[str] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_driver: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

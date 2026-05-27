@@ -8,7 +8,7 @@ import uuid
 import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -43,6 +43,11 @@ PHOTO_DIR = "photos"
 AUTO_ASSIGN_LIMIT = 40
 VALID_DONGS = {'경안동', '송정동', '쌍령동', '탄벌동'}
 DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
+
+
+def is_driver_capable(user) -> bool:
+    """role이 driver이거나 is_driver 플래그가 부여된 사용자"""
+    return user.role == "driver" or bool(getattr(user, "is_driver", False))
 
 
 def _today_start() -> datetime:
@@ -101,7 +106,7 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
     driver_result = await db.execute(
         select(User.id).where(
             User.id.in_(driver_ids),
-            User.role.in_(DRIVER_CAPABLE_ROLES),
+            or_(User.role == "driver", User.is_driver == True),
             User.is_active == True,
             User.deleted_at == None,
         )
@@ -245,7 +250,7 @@ async def get_today_orders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    driver_id = current_user.id if current_user.role in DRIVER_CAPABLE_ROLES else None
+    driver_id = current_user.id if is_driver_capable(current_user) else None
     return await order_service.get_orders_today(db, driver_id)
 
 
@@ -254,8 +259,8 @@ async def start_driver_work(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in DRIVER_CAPABLE_ROLES:
-        raise HTTPException(status_code=403, detail="기사 또는 관리자만 배송업무를 시작할 수 있습니다.")
+    if not is_driver_capable(current_user):
+        raise HTTPException(status_code=403, detail="기사 또는 기사 업무가 부여된 관리자만 배송업무를 시작할 수 있습니다.")
 
     today_start = _today_start()
     assigned_count = (await db.execute(
@@ -459,7 +464,7 @@ async def update_status(
         raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
     elif driver_id is not None:
         driver_result = await db.execute(
-            select(User).where(User.id == driver_id, User.role.in_(DRIVER_CAPABLE_ROLES), User.is_active == True)
+            select(User).where(User.id == driver_id, or_(User.role == "driver", User.is_driver == True), User.is_active == True)
         )
         if not driver_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="유효하지 않은 기사입니다.")
@@ -513,7 +518,7 @@ async def transfer_order(
         raise HTTPException(status_code=400, detail="완료·취소된 주문은 인계할 수 없습니다.")
 
     to_driver_result = await db.execute(
-        select(User).where(User.id == data.to_driver_id, User.role.in_(DRIVER_CAPABLE_ROLES), User.is_active == True)
+        select(User).where(User.id == data.to_driver_id, or_(User.role == "driver", User.is_driver == True), User.is_active == True)
     )
     to_driver = to_driver_result.scalar_one_or_none()
     if not to_driver:

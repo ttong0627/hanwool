@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil,
+  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil, Truck,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { toast } from '@/store/toastStore'
@@ -14,6 +14,7 @@ interface StaffUser {
   phone: string
   role: string
   is_active: boolean
+  is_driver: boolean
   created_at: string
 }
 
@@ -364,6 +365,16 @@ export function StaffUsers() {
     },
   })
 
+  const driverToggleMutation = useMutation({
+    mutationFn: ({ id, is_driver }: { id: number; is_driver: boolean }) =>
+      api.put(`/users/${id}`, { is_driver }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['staff-users'] })
+      qc.invalidateQueries({ queryKey: ['drivers'] })
+      toast.success(vars.is_driver ? '기사 업무가 부여되었습니다.' : '기사 업무가 해제되었습니다.')
+    },
+  })
+
   const filtered = roleFilter ? users.filter((u) => u.role === roleFilter) : users
 
   return (
@@ -441,9 +452,16 @@ export function StaffUsers() {
                   <td className="py-3 pr-4 font-medium text-gray-900">{u.name}</td>
                   <td className="py-3 pr-4 text-gray-600 tabular-nums">{u.phone}</td>
                   <td className="py-3 pr-4">
-                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                      {ROLE_LABELS[u.role] ?? u.role}
-                    </span>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                        {ROLE_LABELS[u.role] ?? u.role}
+                      </span>
+                      {u.is_driver && (
+                        <span className="text-[9px] font-bold px-1 py-px rounded bg-green-100 text-green-700 border border-green-200 flex items-center gap-0.5">
+                          <Truck className="w-2.5 h-2.5" />기사겸직
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-3 pr-4">
                     <span className={`text-xs font-medium ${u.is_active ? 'text-green-600' : 'text-gray-400'}`}>
@@ -470,6 +488,17 @@ export function StaffUsers() {
                       >
                         <KeyRound className="w-3.5 h-3.5" />
                       </button>
+
+                      {/* 기사 업무 부여 (admin/super_admin에게만 표시) */}
+                      {(u.role === 'admin' || u.role === 'super_admin') && (
+                        <button
+                          onClick={() => driverToggleMutation.mutate({ id: u.id, is_driver: !u.is_driver })}
+                          className={`p-1.5 rounded-lg transition-colors ${u.is_driver ? 'text-brand-500 hover:bg-brand-50' : 'text-gray-300 hover:bg-gray-100'}`}
+                          title={u.is_driver ? '기사 업무 해제' : '기사 업무 부여'}
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                        </button>
+                      )}
 
                       {/* 역할 변경 (super_admin 전용) */}
                       {currentUser?.role === 'super_admin' && (

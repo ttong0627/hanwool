@@ -19,7 +19,7 @@ interface Order {
   quantity: number; sequence?: number; created_at: string; driver_id?: number
   delivery_photo_url?: string | null; notes?: string; request?: string; weight_estimate?: string
 }
-interface Driver { id: number; name: string; phone: string; role?: string }
+interface Driver { id: number; name: string; phone: string }
 
 /* ── 기사 배정 모달 ─────────────────────────────────────────────────────────── */
 function AssignModal({ order, drivers, onConfirm, onClose }: {
@@ -43,9 +43,6 @@ function AssignModal({ order, drivers, onConfirm, onClose }: {
               <div className="text-left">
                 <div className="flex items-center gap-1.5">
                   <p className={`font-semibold text-sm ${selected === d.id ? 'text-brand-700' : 'text-gray-900'}`}>{d.name}</p>
-                  {d.role && d.role !== 'driver' && (
-                    <span className="text-[9px] font-bold px-1 py-px rounded bg-purple-100 text-purple-700">관리자</span>
-                  )}
                 </div>
                 <p className="text-xs text-gray-500">{d.phone}</p>
               </div>
@@ -200,7 +197,7 @@ function OrderListTab() {
 
   const { data: drivers = [] } = useQuery<Driver[]>({
     queryKey: ['drivers'],
-    queryFn: () => api.get('/users', { params: { role: 'driver,admin,super_admin' } }).then((r) => r.data),
+    queryFn: () => api.get('/users', { params: { role: 'driver' } }).then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   })
 

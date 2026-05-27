@@ -18,7 +18,7 @@ async def get_optimized_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    driver_id = current_user.id if current_user.role in {"driver", "admin", "super_admin"} else None
+    driver_id = current_user.id if (current_user.role == "driver" or bool(getattr(current_user, "is_driver", False))) else None
     orders = await get_orders_today(db, driver_id)
 
     enriched = []

@@ -2,7 +2,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -53,6 +53,7 @@ def _to_out(user: User) -> UserOut:
         age=age,
         is_elderly=is_elderly,
         is_active=user.is_active,
+        is_driver=bool(user.is_driver),
         created_at=user.created_at,
     )
 
@@ -108,6 +109,9 @@ async def list_users(
     q = select(User).where(User.deleted_at == None)
     if current_user.role == "receiver":
         q = q.where(User.role == "customer", User.is_active == True)
+    elif role == 'driver':
+        # 기사 역할이거나 기사 업무가 부여된 관리자 모두 포함
+        q = q.where(or_(User.role == 'driver', User.is_driver == True))
     elif role:
         roles = [r.strip() for r in role.split(',') if r.strip()]
         q = q.where(User.role.in_(roles)) if len(roles) > 1 else q.where(User.role == roles[0])
@@ -192,6 +196,8 @@ async def update_user(
         user.address_enc = encrypt_field(data.address)
     if data.is_active is not None:
         user.is_active = data.is_active
+    if data.is_driver is not None:
+        user.is_driver = data.is_driver
     if data.birth_year is not None:
         user.birth_year_enc = encrypt_field(str(data.birth_year))
     return _to_out(user)
