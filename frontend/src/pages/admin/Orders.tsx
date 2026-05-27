@@ -245,19 +245,18 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete }: {
           ? <span className="w-5 h-5 bg-brand-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">{order.sequence}</span>
           : null}
       </div>
-      {/* 접수번호 + 상태 */}
-      <div className="w-44 shrink-0">
-        <div className="flex items-center gap-1">
-          <span className="font-bold text-brand-700 text-xs">{order.order_no}</span>
-          <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full">{order.dong}</span>
-        </div>
-        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-          <StatusBadge status={order.status} />
-          <MatchIssueLabel order={order} />
-        </div>
+      {/* 접수번호 + 동 */}
+      <div className="w-36 shrink-0">
+        <span className="font-bold text-brand-700 text-xs block truncate">{order.order_no}</span>
+        <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full">{order.dong}</span>
+      </div>
+      {/* 상태 배지 — 독립 열 */}
+      <div className="w-24 shrink-0 flex flex-col gap-0.5 items-start">
+        <StatusBadge status={order.status} />
+        <MatchIssueLabel order={order} />
       </div>
       {/* 고객 */}
-      <div className="w-32 shrink-0">
+      <div className="w-28 shrink-0">
         <div className="font-semibold text-gray-900 truncate">{order.customer_name}</div>
         <div className="text-xs text-gray-400">{order.customer_phone}</div>
       </div>
@@ -274,7 +273,7 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete }: {
         <div className="w-14 shrink-0 text-xs text-brand-600 font-medium truncate text-center">{driverMap[order.driver_id]}</div>
       )}
       {/* 시간 */}
-      <div className="w-14 shrink-0 text-xs text-gray-400 text-right">{formatDate(order.created_at, 'MM/dd HH:mm')}</div>
+      <div className="w-20 shrink-0 text-xs text-gray-400 text-right">{formatDate(order.created_at, 'MM/dd HH:mm')}</div>
       {/* 액션 */}
       <div className="flex gap-1 shrink-0">
         {!['delivered', 'cancelled'].includes(order.status) && (
