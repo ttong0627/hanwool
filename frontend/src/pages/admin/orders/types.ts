@@ -37,6 +37,7 @@ export const COL_WIDTHS: Record<ColKey, string> = {
 }
 
 export type AddrStatus = 'idle' | 'validating' | 'valid' | 'invalid'
+export type DongStatus = 'valid' | 'out-of-zone'
 
 export interface StagingRow {
   _id: string
@@ -52,6 +53,9 @@ export interface StagingRow {
   lng?: number
   addrStatus: AddrStatus
   addrRefined?: string
+  dongStatus?: DongStatus
+  dongOverride?: boolean
+  savedOrderId?: number
   submitStatus?: 'pending' | 'success' | 'error'
   submitError?: string
 }

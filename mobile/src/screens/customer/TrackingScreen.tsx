@@ -184,6 +184,7 @@ const s = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 12 },
 
   emptyBox: { alignItems: 'center', paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 17, color: '#9ca3af', textAlign: 'center' },
   emptyIcon: { fontSize: 56 },
   emptyTitle: { fontSize: 22, fontWeight: 'bold', color: '#374151' },
   emptyMsg: { fontSize: 17, color: '#9ca3af', textAlign: 'center' },

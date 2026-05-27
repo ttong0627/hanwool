@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -38,6 +38,8 @@ class Order(Base):
     request: Mapped[str] = mapped_column(Text, nullable=True)
     weight_estimate: Mapped[str] = mapped_column(String(50), nullable=True)
     item_code: Mapped[str] = mapped_column(String(50), nullable=True)
+    dong_override: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
+    sequence_source: Mapped[str] = mapped_column(String(20), default='manual', nullable=True)
     delivery_photo_path: Mapped[str] = mapped_column(String(500), nullable=True)
     market_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Float, nullable=True)

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Camera, CameraOff, CheckCircle, AlertCircle, QrCode } from 'lucide-react'
-import type { StagingRow } from './types'
+import { Camera, CameraOff, CheckCircle, AlertCircle, QrCode, AlertTriangle } from 'lucide-react'
+import { useAuthStore } from '@/store/authStore'
+import type { StagingRow, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST } from './types'
+
+const VALID_DONGS = new Set<string>(DONG_LIST)
 
 interface Props {
   onAdd: (row: StagingRow) => void
@@ -17,7 +20,7 @@ function parseQrData(raw: string): Partial<StagingRow> | null {
       return {
         customer_name: parsed.name ?? parsed.customer_name ?? '',
         customer_phone: parsed.phone ?? parsed.customer_phone ?? '',
-        dong: DONG_LIST.includes(parsed.dong) ? parsed.dong : '경안동',
+        dong: DONG_LIST.includes(parsed.dong as never) ? parsed.dong : '경안동',
         delivery_address: parsed.address ?? parsed.delivery_address ?? '',
         items_desc: parsed.items ?? parsed.items_desc ?? '',
         quantity: Number(parsed.qty ?? parsed.quantity ?? 1),
@@ -43,6 +46,9 @@ function parseQrData(raw: string): Partial<StagingRow> | null {
 }
 
 export function QrTab({ onAdd }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -53,6 +59,10 @@ export function QrTab({ onAdd }: Props) {
   const [scannedRows, setScannedRows] = useState<StagingRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<Partial<StagingRow> | null>(null)
+  const [dongOverride, setDongOverride] = useState(false)
+
+  // form 바뀔 때마다 override 초기화
+  const dongStatus: DongStatus = form?.dong ? (VALID_DONGS.has(form.dong) ? 'valid' : 'out-of-zone') : 'valid'
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(rafRef.current)
@@ -125,16 +135,24 @@ export function QrTab({ onAdd }: Props) {
 
   const confirmAdd = () => {
     if (!form) return
-    const row: StagingRow = { ...EMPTY_ROW(), ...form, addrStatus: 'idle' }
+    if (dongStatus === 'out-of-zone' && !dongOverride) return
+    const row: StagingRow = {
+      ...EMPTY_ROW(), ...form,
+      addrStatus: 'idle',
+      dongStatus,
+      dongOverride: dongStatus === 'out-of-zone' ? dongOverride : undefined,
+    }
     setScannedRows((prev) => [row, ...prev])
     onAdd(row)
     setForm(null)
+    setDongOverride(false)
     setLastResult(null)
     setScanState('scanning')
   }
 
   const skipScan = () => {
     setForm(null)
+    setDongOverride(false)
     setLastResult(null)
     setScanState('scanning')
   }
@@ -189,11 +207,39 @@ export function QrTab({ onAdd }: Props) {
                 {form.customer_name && <div><span className="text-gray-400">이름</span> <strong>{form.customer_name}</strong></div>}
                 {form.customer_phone && <div><span className="text-gray-400">전화</span> <strong>{form.customer_phone}</strong></div>}
                 {form.delivery_address && <div><span className="text-gray-400">주소</span> <strong className="text-xs">{form.delivery_address}</strong></div>}
-                {form.dong && <div><span className="text-gray-400">동</span> <strong>{form.dong}</strong></div>}
+                {form.dong && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400">동</span>
+                    <strong className={dongStatus === 'out-of-zone' ? 'text-amber-700' : ''}>{form.dong}</strong>
+                    {dongStatus === 'out-of-zone' && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
+                  </div>
+                )}
               </div>
+
+              {dongStatus === 'out-of-zone' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                  <div className="flex items-center gap-1 mb-1 font-semibold">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    서비스 지역 외 배송동입니다
+                  </div>
+                  {isAdmin ? (
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={dongOverride} onChange={(e) => setDongOverride(e.target.checked)} className="w-3 h-3 accent-amber-500" />
+                      강제 등록 허용 (관리자)
+                    </label>
+                  ) : (
+                    <p>관리자에게 문의하세요.</p>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button onClick={skipScan} className="btn-secondary flex-1 text-sm py-2">다시 스캔</button>
-                <button onClick={confirmAdd} className="btn-primary flex-1 text-sm py-2">추가</button>
+                <button
+                  onClick={confirmAdd}
+                  disabled={dongStatus === 'out-of-zone' && !dongOverride}
+                  className="btn-primary flex-1 text-sm py-2 disabled:opacity-40"
+                >추가</button>
               </div>
             </div>
           </div>

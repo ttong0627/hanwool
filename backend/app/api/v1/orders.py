@@ -25,6 +25,7 @@ from app.schemas.order import (
     OrderEditRequest,
     OrderTransferOut,
     OrderTransferRequest,
+    SingleOrderCreate,
 )
 from app.services import order_service, sms_service
 from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
@@ -34,11 +35,13 @@ from app.services.route_service import (
     optimize_route,
 )
 from app.utils.market_day import is_market_day, is_reception_open
+from app.websocket.handler import manager
 
 router = APIRouter(prefix="/orders", tags=["주문"])
 
 PHOTO_DIR = "photos"
 AUTO_ASSIGN_LIMIT = 40
+VALID_DONGS = {'경안동', '송정동', '쌍령동', '탄벌동'}
 
 
 def _today_start() -> datetime:
@@ -55,6 +58,37 @@ async def _get_today_orders_for_dispatch(db: AsyncSession) -> list[Order]:
         .order_by(Order.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def _push_route_to_drivers(today_orders: list[Order]) -> None:
+    """배차/순번 계산 후 각 기사 WS 채널에 route_updated 푸시"""
+    from app.core.security import decrypt_field
+
+    driver_map: dict[int, list[dict]] = {}
+    for o in today_orders:
+        if not o.driver_id:
+            continue
+        driver_map.setdefault(o.driver_id, []).append({
+            "id": o.id,
+            "order_no": o.order_no,
+            "customer_name": decrypt_field(o.customer_name_enc),
+            "dong": o.dong,
+            "delivery_address": decrypt_field(o.delivery_address_enc),
+            "sequence": o.sequence,
+            "status": o.status,
+            "quantity": o.quantity,
+            "lat": o.lat,
+            "lng": o.lng,
+        })
+
+    for driver_id, orders_list in driver_map.items():
+        await manager.broadcast(
+            f"driver-{driver_id}",
+            {
+                "type": "route_updated",
+                "orders": sorted(orders_list, key=lambda x: x.get("sequence") or 999),
+            },
+        )
 
 
 async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dict:
@@ -109,12 +143,58 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
             if db_order:
                 db_order.driver_id = group.driver_id
                 db_order.sequence = dispatch_item.sequence
+                db_order.sequence_source = "auto"
                 if db_order.status == OrderStatus.pending:
                     db_order.status = OrderStatus.assigned
                     db_order.assigned_at = now
 
     await db.flush()
+    await _push_route_to_drivers(today_orders)
     return {"groups": group_summary(groups), "total": len(today_orders)}
+
+
+# ── 단건 자동저장 ────────────────────────────────────────────────────────────
+
+@router.post("/single", response_model=dict, status_code=201)
+async def create_single_order(
+    data: SingleOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_receiver_or_above),
+):
+    """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
+    if data.dong not in VALID_DONGS:
+        if not data.dong_override:
+            raise HTTPException(status_code=400, detail=f"서비스 지역 외 배송동입니다: {data.dong}")
+        if current_user.role not in {"admin", "super_admin"}:
+            raise HTTPException(status_code=403, detail="지역 외 배송은 관리자 이상만 강제 등록 가능합니다.")
+
+    lat, lng = data.lat, data.lng
+    if not lat or not lng:
+        coord = await get_kakao_coordinates(data.delivery_address)
+        if coord:
+            lat, lng = coord["lat"], coord["lng"]
+
+    order_data = OrderCreate(
+        customer_name=data.customer_name,
+        customer_phone=data.customer_phone,
+        delivery_address=data.delivery_address,
+        dong=data.dong,
+        items_desc=data.items_desc,
+        item_code=data.item_code,
+        quantity=data.quantity,
+        request=data.request,
+        dong_override=data.dong_override,
+    )
+    order = await order_service.create_order(db, order_data, current_user.id)
+    if lat and lng:
+        order.lat = lat
+        order.lng = lng
+    order.dong_override = data.dong_override
+    await db.flush()
+
+    result = order_service.decrypt_order(order)
+    result.update({"lat": order.lat, "lng": order.lng})
+    return result
 
 
 @router.post("/", response_model=dict, status_code=201)
@@ -125,14 +205,13 @@ async def create_order(
 ):
     from app.core.security import decrypt_field
 
-    # 장날·접수시간 서버 강제 검증 (admin/super_admin은 bypass — 비장날 테스트·긴급 접수 허용)
+    # 장날·접수시간 서버 강제 검증 (admin/super_admin은 bypass)
     if current_user.role not in {"admin", "super_admin"}:
         if not is_market_day():
             raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
         if not is_reception_open():
             raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
 
-    # 고객이 직접 접수하는 경우 본인 정보 자동 주입
     if current_user.role == "customer":
         data.customer_id = current_user.id
         data.customer_name = decrypt_field(current_user.name_enc)
@@ -339,14 +418,14 @@ async def edit_order(
         order.dong = data.dong
     if data.items_desc is not None:
         order.items_desc = data.items_desc
+    if data.item_code is not None:
+        order.item_code = data.item_code
     if data.quantity is not None:
         order.quantity = data.quantity
     if data.notes is not None:
         order.notes = data.notes
     if data.request is not None:
         order.request = data.request
-    if data.weight_estimate is not None:
-        order.weight_estimate = data.weight_estimate
 
     await db.flush()
     return order_service.decrypt_order(order)
@@ -496,7 +575,6 @@ async def upload_delivery_photo(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    # 확장자 화이트리스트
     if current_user.role == "driver" and order.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
 
@@ -504,16 +582,13 @@ async def upload_delivery_photo(
     if raw_ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="jpg, jpeg, png, webp 파일만 업로드 가능합니다.")
 
-    # MIME 타입 검증
     if file.content_type not in _ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=400, detail="허용되지 않는 파일 형식입니다.")
 
-    # 파일 크기 제한 (5MB)
     content = await file.read()
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
 
-    # UUID 기반 안전한 파일명 생성 (원본 파일명 사용 안 함)
     try:
         Image.open(BytesIO(content)).verify()
     except (UnidentifiedImageError, OSError):
@@ -540,14 +615,7 @@ async def auto_sequence(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_receiver_or_above),
 ):
-    """
-    오늘 접수된 주문의 배송순번을 기사별로 자동 계산하고 저장합니다.
-    - 도로명 정보가 있으면 roadAwareTSP
-    - 없으면 nearestNeighborTSP (좌표 기반)
-    - 좌표 없는 주문은 Kakao API로 실시간 geocoding 시도
-    """
-    from datetime import date
-
+    """오늘 접수된 주문의 배송순번을 기사별로 자동 계산하고 저장 + WS 푸시"""
     today_start = datetime.combine(date.today(), datetime.min.time())
     q = select(Order).where(
         Order.created_at >= today_start,
@@ -560,7 +628,6 @@ async def auto_sequence(
     if not today_orders:
         return {"updated": 0, "quality": {"drivers": []}}
 
-    # 좌표 없는 주문은 Kakao geocoding 시도
     from app.core.security import decrypt_field
     for order in today_orders:
         if not order.lat or not order.lng:
@@ -570,7 +637,6 @@ async def auto_sequence(
                 order.lat = coord["lat"]
                 order.lng = coord["lng"]
 
-    # optimize_route용 dict 변환
     order_dicts = [
         {
             "id": o.id,
@@ -585,18 +651,48 @@ async def auto_sequence(
     ]
 
     optimized = optimize_route(order_dicts)
-
-    # sequence 저장
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
     for order in today_orders:
         new_seq = seq_map.get(order.id)
         if new_seq is not None:
             order.sequence = new_seq
+            order.sequence_source = "auto"
 
     await db.flush()
+    await _push_route_to_drivers(list(today_orders))
 
     quality = analyze_sequence_quality(optimized)
     return {"updated": len(today_orders), "quality": quality}
+
+
+@router.put("/resequence")
+async def resequence_orders(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """기사가 본인 배송 순번 수동 재정렬 (드래그 앤 드롭 결과 저장)"""
+    sequences: list[dict] = body.get("sequences", [])
+    if not sequences:
+        raise HTTPException(status_code=400, detail="sequences 필드가 필요합니다.")
+
+    order_ids = [s["order_id"] for s in sequences]
+    result = await db.execute(select(Order).where(Order.id.in_(order_ids)))
+    orders_map = {o.id: o for o in result.scalars().all()}
+
+    for seq_item in sequences:
+        oid = seq_item.get("order_id")
+        seq = seq_item.get("sequence")
+        order = orders_map.get(oid)
+        if not order:
+            continue
+        if current_user.role == "driver" and order.driver_id != current_user.id:
+            raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 순번 변경 가능합니다.")
+        order.sequence = seq
+        order.sequence_source = "manual"
+
+    await db.flush()
+    return {"updated": len(sequences)}
 
 
 @router.get("/geocode")
@@ -625,21 +721,30 @@ async def batch_create_orders(
     results = []
     for row in rows:
         try:
-            from app.schemas.order import OrderCreate
+            dong = row.get("dong", "경안동")
+            dong_override = bool(row.get("dong_override", False))
+
+            if dong not in VALID_DONGS and not dong_override:
+                results.append({"ok": False, "error": f"서비스 지역 외 배송동: {dong}"})
+                continue
+            if dong not in VALID_DONGS and dong_override:
+                if current_user.role not in {"admin", "super_admin"}:
+                    results.append({"ok": False, "error": "지역 외 배송은 관리자만 가능합니다."})
+                    continue
+
             order_data = OrderCreate(
                 customer_name=row.get("customer_name", ""),
                 customer_phone=row.get("customer_phone", ""),
                 delivery_address=row.get("delivery_address", ""),
-                dong=row.get("dong", "경안동"),
+                dong=dong,
                 items_desc=row.get("items_desc"),
                 item_code=row.get("item_code"),
                 quantity=int(row.get("quantity", 1)),
                 request=row.get("request"),
                 notes=row.get("notes"),
-                weight_estimate=row.get("weight_estimate"),
+                dong_override=dong_override,
             )
-            order = await order_service.create_order(db, order_data, current_user)
-            # lat/lng 저장
+            order = await order_service.create_order(db, order_data, current_user.id)
             if row.get("lat") and row.get("lng"):
                 order.lat = float(row["lat"])
                 order.lng = float(row["lng"])
@@ -650,113 +755,3 @@ async def batch_create_orders(
 
     success = sum(1 for r in results if r.get("ok"))
     return {"total": len(rows), "success": success, "results": results}
-
-
-@router.post("/dispatch")
-async def dispatch_orders(
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_receiver_or_above),
-):
-    """
-    기사 배차 + 배송순번 일괄 할당
-
-    body: { "driver_ids": [int, ...] }  — 1~4명
-    규칙:
-      1명: 경안동→송정동→쌍령동→탄벌동 순
-      2명: [경안동+쌍령동] / [송정동+탄벌동]
-      3명: 수량 최소 2개동 묶어 1명, 나머지 각 1명
-      4명: 동별 1:1, 불균형 시 이관 허용 플래그
-    """
-    from datetime import date
-    from app.core.security import decrypt_field
-
-    driver_ids: list[int] = body.get("driver_ids", [])
-    return await _dispatch_today_orders(db, driver_ids)
-    if not driver_ids or not (1 <= len(driver_ids) <= 4):
-        raise HTTPException(status_code=400, detail="driver_ids는 1~4명이어야 합니다.")
-
-    today_start = datetime.combine(date.today(), datetime.min.time())
-    q = select(Order).where(
-        Order.created_at >= today_start,
-        Order.status.notin_([OrderStatus.cancelled]),
-    )
-    result = await db.execute(q)
-    today_orders = result.scalars().all()
-
-    if not today_orders:
-        return {"groups": [], "total": 0}
-
-    # 좌표 없는 주문 geocoding
-    for order in today_orders:
-        if not order.lat or not order.lng:
-            addr = decrypt_field(order.delivery_address_enc)
-            coord = await get_kakao_coordinates(addr)
-            if coord:
-                order.lat = coord["lat"]
-                order.lng = coord["lng"]
-
-    dispatch_orders_list = [
-        DispatchOrder(
-            id=o.id,
-            dong=o.dong,
-            sequence=o.sequence,
-            customer_name=decrypt_field(o.customer_name_enc),
-            delivery_address=decrypt_field(o.delivery_address_enc),
-            quantity=o.quantity or 1,
-            status=o.status,
-        )
-        for o in today_orders
-    ]
-
-    groups = run_dispatch(dispatch_orders_list, driver_ids)
-
-    # driver_id + sequence DB 저장
-    id_to_order = {o.id: o for o in today_orders}
-    for g in groups:
-        for dispatch_item in g.orders:
-            db_order = id_to_order.get(dispatch_item.id)
-            if db_order:
-                db_order.driver_id = g.driver_id
-                db_order.sequence = dispatch_item.sequence
-                if db_order.status == OrderStatus.pending:
-                    db_order.status = OrderStatus.assigned
-
-    await db.flush()
-
-    return {"groups": group_summary(groups), "total": len(today_orders)}
-
-
-@router.post("/{order_id}/transfer")
-async def transfer_order(
-    order_id: int,
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_receiver_or_above),
-):
-    """단건 주문 이관 — 기사 간 재배정 (4명 모드 불균형 조정)"""
-    raw_to = body.get("to_driver_id")
-    if not isinstance(raw_to, (int, str)) or not raw_to:
-        raise HTTPException(status_code=400, detail="to_driver_id 필수")
-    to_driver_id: int = int(raw_to)
-    reason: str = body.get("reason", "배송 부하 조정")
-
-    order = await db.get(Order, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    if order.status in {OrderStatus.delivered, OrderStatus.cancelled}:
-        raise HTTPException(status_code=400, detail="완료·취소된 주문은 이관할 수 없습니다.")
-
-    from_driver_id: int = order.driver_id or 0
-    order.driver_id = to_driver_id
-
-    transfer = OrderTransfer(
-        order_id=order_id,
-        from_driver_id=from_driver_id,
-        to_driver_id=to_driver_id,
-        reason=reason,
-    )
-    db.add(transfer)
-    await db.flush()
-
-    return {"ok": True, "order_id": order_id, "to_driver_id": to_driver_id}

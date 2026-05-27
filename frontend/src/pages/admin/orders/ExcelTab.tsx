@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { Upload, FileSpreadsheet, ArrowRight, CheckCircle, AlertTriangle, X, Table } from 'lucide-react'
-import type { StagingRow, ColKey } from './types'
+import type { StagingRow, ColKey, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, EXCEL_FIELD_OPTIONS } from './types'
 
 interface Props {
@@ -13,6 +13,8 @@ interface ParsedExcel {
 }
 
 type Mapping = Record<string, ColKey | ''>
+
+const VALID_DONGS = new Set<string>(DONG_LIST)
 
 function normalizeDong(val: string): string {
   return DONG_LIST.find((d) => val.includes(d)) ?? '경안동'
@@ -45,12 +47,19 @@ function buildRows(parsed: ParsedExcel, mapping: Mapping): StagingRow[] {
         const headerIdx = parsed.headers.findIndex((h) => mapping[h] === key)
         return headerIdx >= 0 ? (row[headerIdx] ?? '').trim() : ''
       }
+      const dong = normalizeDong(get('dong'))
+      const addrVal = get('delivery_address')
+      // 주소에서 동 감지 — 감지 못하면 out-of-zone
+      const addrHasDong = DONG_LIST.some((d) => addrVal.includes(d))
+      const dongStatus: DongStatus = VALID_DONGS.has(dong) && (get('dong') || addrHasDong) ? 'valid' : 'out-of-zone'
+
       return {
         ...EMPTY_ROW(),
         customer_name: get('customer_name'),
         customer_phone: get('customer_phone'),
-        dong: normalizeDong(get('dong')),
-        delivery_address: get('delivery_address'),
+        dong,
+        dongStatus,
+        delivery_address: addrVal,
         items_desc: get('items_desc'),
         item_code: get('item_code'),
         quantity: Number(get('quantity')) || 1,
@@ -70,7 +79,6 @@ export function ExcelTab({ onAddRows }: Props) {
   const [imported, setImported] = useState(false)
 
   const parseFile = useCallback(async (file: File) => {
-    // 파일 타입 검증
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (!['xlsx', 'xls', 'csv'].includes(ext ?? '')) {
       setError('xlsx, xls, csv 파일만 지원합니다.')
@@ -83,8 +91,6 @@ export function ExcelTab({ onAddRows }: Props) {
 
     try {
       const buf = await file.arrayBuffer()
-
-      // 비동기 파싱 (메인 스레드 블로킹 방지)
       const XLSX = await import('xlsx')
       const wb = XLSX.read(buf, { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
@@ -131,10 +137,13 @@ export function ExcelTab({ onAddRows }: Props) {
   const requiredMapped = (['customer_name', 'customer_phone', 'delivery_address'] as ColKey[])
     .every((k) => Object.values(mapping).includes(k))
 
+  // 미리보기용 out-of-zone 건수
+  const previewRows = parsed ? buildRows(parsed, mapping) : []
+  const outOfZoneCount = previewRows.filter((r) => r.dongStatus === 'out-of-zone').length
+
   return (
     <div className="space-y-5">
       {!parsed ? (
-        /* ── 드래그 & 드롭 업로드 영역 ── */
         <div
           onDrop={handleDrop}
           onDragOver={(e) => e.preventDefault()}
@@ -156,7 +165,6 @@ export function ExcelTab({ onAddRows }: Props) {
             onChange={(e) => e.target.files?.[0] && parseFile(e.target.files[0])} />
         </div>
       ) : (
-        /* ── 컬럼 매핑 UI ── */
         <div className="space-y-4">
           {/* 파일 정보 헤더 */}
           <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
@@ -169,6 +177,17 @@ export function ExcelTab({ onAddRows }: Props) {
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* 서비스 지역 외 경고 */}
+          {outOfZoneCount > 0 && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>
+                서비스 지역 외(경안동·송정동·쌍령동·탄벌동 미해당) 주소 <strong>{outOfZoneCount}건</strong>이 포함됩니다.
+                스테이징 등록 후 관리자가 강제 등록 여부를 결정합니다.
+              </span>
+            </div>
+          )}
 
           {/* 매핑 테이블 */}
           <div>
@@ -203,7 +222,6 @@ export function ExcelTab({ onAddRows }: Props) {
               </div>
             </div>
 
-            {/* 필수 매핑 경고 */}
             {!requiredMapped && (
               <div className="flex items-center gap-2 mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -245,6 +263,9 @@ export function ExcelTab({ onAddRows }: Props) {
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3">
               <CheckCircle className="w-5 h-5" />
               <span className="font-semibold">{buildRows(parsed, mapping).length}건을 스테이징 목록에 추가했습니다.</span>
+              {outOfZoneCount > 0 && (
+                <span className="text-amber-700 text-sm ml-1">({outOfZoneCount}건 지역 외)</span>
+              )}
               <button onClick={reset} className="ml-auto text-sm underline">다른 파일 업로드</button>
             </div>
           ) : (
@@ -255,6 +276,7 @@ export function ExcelTab({ onAddRows }: Props) {
             >
               <CheckCircle className="w-4 h-4" />
               {parsed.rows.length}건 스테이징으로 가져오기
+              {outOfZoneCount > 0 && <span className="text-xs opacity-80">({outOfZoneCount}건 지역 외 포함)</span>}
             </button>
           )}
         </div>
@@ -267,11 +289,10 @@ export function ExcelTab({ onAddRows }: Props) {
         </div>
       )}
 
-      {/* 엑셀 템플릿 양식 안내 */}
       {!parsed && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
           <p className="font-semibold mb-1">권장 엑셀 열 이름 (자동 매핑됨)</p>
-          <p className="text-xs text-blue-600">이름 · 전화번호 · 동 · 주소 · 물품내역 · 수량 · 요청사항 · 무게</p>
+          <p className="text-xs text-blue-600">이름 · 전화번호 · 동 · 주소 · 물품내역 · 수량 · 요청사항 · 코드</p>
         </div>
       )}
     </div>

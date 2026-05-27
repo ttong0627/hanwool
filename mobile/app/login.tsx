@@ -20,6 +20,7 @@ export default function LoginScreen() {
       const { access_token, user } = res.data
       setAuth(user, access_token)
       if (user.role === 'driver') router.replace('/(driver)')
+      else if (user.role === 'super_admin') router.replace('/(admin)')
       else router.replace('/(customer)')
     },
     onError: () => Alert.alert('로그인 실패', '전화번호 또는 비밀번호를 확인해주세요.'),

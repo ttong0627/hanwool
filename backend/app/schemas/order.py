@@ -15,8 +15,23 @@ class OrderCreate(BaseModel):
     quantity: int = 1
     notes: Optional[str] = None
     request: Optional[str] = None
-    weight_estimate: Optional[str] = None
+    dong_override: bool = False
     pickup_location: str = "경안시장"
+
+
+class SingleOrderCreate(BaseModel):
+    """ManualTab / QR / Excel 단건 자동저장용"""
+    customer_name: str
+    customer_phone: str
+    delivery_address: str
+    dong: str
+    items_desc: Optional[str] = None
+    item_code: Optional[str] = None
+    quantity: int = 1
+    request: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    dong_override: bool = False
 
 
 class OrderUpdate(BaseModel):
@@ -45,7 +60,7 @@ class OrderOut(BaseModel):
     quantity: int
     notes: Optional[str] = None
     request: Optional[str] = None
-    weight_estimate: Optional[str] = None
+    dong_override: bool = False
     created_at: datetime
     assigned_at: Optional[datetime] = None
     picked_up_at: Optional[datetime] = None
@@ -87,4 +102,3 @@ class OrderEditRequest(BaseModel):
     quantity: Optional[int] = None
     notes: Optional[str] = None
     request: Optional[str] = None
-    weight_estimate: Optional[str] = None

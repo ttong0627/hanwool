@@ -1,20 +1,24 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
-  ClipboardPaste, MapPin,
+  ClipboardPaste, MapPin, AlertTriangle, Save,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
-import type { StagingRow, ColKey, AddrStatus } from './types'
+import { useAuthStore } from '@/store/authStore'
+import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
 import { formatPhone, detectDong } from '@/lib/utils'
 
 interface Props {
   rows: StagingRow[]
-  onChange: (rows: StagingRow[]) => void
+  onChange: Dispatch<SetStateAction<StagingRow[]>>
 }
 
 type CellRef = HTMLInputElement | HTMLSelectElement | null
+
+const VALID_DONGS = new Set<string>(DONG_LIST)
 
 function AddrIcon({ status }: { status: AddrStatus }) {
   if (status === 'validating') return <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
@@ -23,11 +27,23 @@ function AddrIcon({ status }: { status: AddrStatus }) {
   return null
 }
 
+function RowStatusDot({ row }: { row: StagingRow }) {
+  if (row.savedOrderId) return <span title="저장 완료" className="text-green-500 text-xs">✓</span>
+  if (row.submitStatus === 'pending') return <Loader2 className="w-3 h-3 text-orange-400 animate-spin" />
+  if (row.submitStatus === 'error') return <span title={row.submitError} className="text-red-400 text-xs">!</span>
+  return <span className="text-gray-300 text-xs">●</span>
+}
+
 const addrTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 
 export function ManualTab({ rows, onChange }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
   const cellRefs = useRef<CellRef[][]>([])
   const [kakaoRow, setKakaoRow] = useState<number | null>(null)
+  const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
 
   const focusCell = useCallback((row: number, col: number) => {
     const el = cellRefs.current[row]?.[col]
@@ -46,17 +62,79 @@ export function ManualTab({ rows, onChange }: Props) {
     onChange(rows.filter((_, i) => i !== rowIdx))
   }, [rows, onChange])
 
-  // 주소 변경 — 즉시 dong 감지 + geocoding debounce
+  // ── 자동저장 (행 완성 즉시) ────────────────────────────────────────────────
+  const autoSaveRow = useCallback(async (rowIdx: number) => {
+    const row = rows[rowIdx]
+    if (!row) return
+    if (row.savedOrderId) return
+    if (!row.customer_name || !row.customer_phone || !row.delivery_address || !row.dong) return
+    if (row.addrStatus !== 'valid') return
+    if (row.dongStatus === 'out-of-zone' && !row.dongOverride) return
+
+    // pending 표시
+    onChange(rows.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
+    try {
+      const res = await api.post('/orders/single', {
+        customer_name: row.customer_name,
+        customer_phone: row.customer_phone,
+        delivery_address: row.delivery_address,
+        dong: row.dong,
+        items_desc: row.items_desc || undefined,
+        item_code: row.item_code || undefined,
+        quantity: row.quantity,
+        request: row.request || undefined,
+        lat: row.lat,
+        lng: row.lng,
+        dong_override: row.dongOverride ?? false,
+      })
+      onChange((prev) =>
+        prev.map((r, i) =>
+          i === rowIdx
+            ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined }
+            : r
+        )
+      )
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
+      onChange((prev) =>
+        prev.map((r, i) =>
+          i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
+        )
+      )
+    }
+  }, [rows, onChange])
+
+  // 행 상태 감시 → 완성되면 1200ms 디바운스 후 자동저장
+  useEffect(() => {
+    rows.forEach((row, rowIdx) => {
+      if (row.savedOrderId) return
+      const isReady =
+        row.customer_name &&
+        row.customer_phone &&
+        row.delivery_address &&
+        row.dong &&
+        row.addrStatus === 'valid' &&
+        (row.dongStatus !== 'out-of-zone' || row.dongOverride)
+
+      if (!isReady) return
+      if (row.submitStatus === 'pending' || row.submitStatus === 'success') return
+
+      clearTimeout(saveTimers[row._id])
+      saveTimers[row._id] = setTimeout(() => autoSaveRow(rowIdx), 1200)
+    })
+  }, [rows]) // eslint-disable-line
+
+  // ── 주소 변경 — 즉시 dong 감지 + geocoding debounce ─────────────────────
   const handleAddressChange = useCallback((rowIdx: number, value: string) => {
     const detected = detectDong(value)
-    const updates: Partial<StagingRow> = { delivery_address: value }
+    const updates: Partial<StagingRow> = { delivery_address: value, savedOrderId: undefined, submitStatus: undefined }
     if (detected) updates.dong = detected
 
     const rowId = rows[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
 
     if (!value || value.length < 5) {
-      onChange(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle' } : r))
+      onChange(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined } : r))
       return
     }
 
@@ -67,6 +145,7 @@ export function ManualTab({ rows, onChange }: Props) {
         const res = await api.get('/orders/geocode', { params: { address: value } })
         const { lat, lng, address_name } = res.data
         const refinedDong = detectDong(address_name ?? value)
+        const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
         onChange(
           rows.map((r, i) =>
             i === rowIdx
@@ -76,7 +155,10 @@ export function ManualTab({ rows, onChange }: Props) {
                   lat, lng,
                   delivery_address: address_name ?? value,
                   addrRefined: address_name,
+                  dongStatus,
                   ...(refinedDong ? { dong: refinedDong } : {}),
+                  savedOrderId: undefined,
+                  submitStatus: undefined,
                 }
               : r
           )
@@ -90,9 +172,10 @@ export function ManualTab({ rows, onChange }: Props) {
   // 카카오 주소 검색 결과
   const handleAddressSelect = useCallback((rowIdx: number, addr: string) => {
     const dong = detectDong(addr) ?? rows[rowIdx].dong
+    const dongStatus: DongStatus = detectDong(addr) ? 'valid' : 'out-of-zone'
     onChange(rows.map((r, i) =>
       i === rowIdx
-        ? { ...r, delivery_address: addr, addrStatus: 'valid', dong }
+        ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined }
         : r
     ))
     setKakaoRow(null)
@@ -174,9 +257,13 @@ export function ManualTab({ rows, onChange }: Props) {
           newRows[rowIdx] = { ...newRows[rowIdx], dong: detected }
         } else if (key === 'delivery_address') {
           const detected = detectDong(val)
+          const dongStatus: DongStatus = detected ? 'valid' : 'out-of-zone'
           newRows[rowIdx] = {
             ...newRows[rowIdx],
             delivery_address: val,
+            dongStatus,
+            savedOrderId: undefined,
+            submitStatus: undefined,
             ...(detected ? { dong: detected } : {}),
           }
         } else {
@@ -187,7 +274,6 @@ export function ManualTab({ rows, onChange }: Props) {
     onChange(newRows)
   }, [rows, onChange])
 
-  // 셀 레벨 붙여넣기
   const handlePaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
     const text = e.clipboardData.getData('text')
     if (!text.includes('\t') && !text.includes('\n')) return
@@ -195,15 +281,11 @@ export function ManualTab({ rows, onChange }: Props) {
     applyTsvPaste(text, startRow, startCol)
   }, [applyTsvPaste])
 
-  // 클립보드 버튼 — 현재 포커스 셀 위치 기준, 없으면 (0,0)
-  const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
   const handleClipboardPaste = async () => {
     try {
       const text = await navigator.clipboard.readText()
       applyTsvPaste(text, activeCell.current.row, activeCell.current.col)
-    } catch {
-      // 권한 거부 — 셀 클릭 후 Ctrl+V 안내
-    }
+    } catch { /* 권한 거부 */ }
   }
 
   const addBatch = () => {
@@ -239,14 +321,14 @@ export function ManualTab({ rows, onChange }: Props) {
       {/* 툴바 */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 text-xs text-gray-500">
-          <ClipboardPaste className="w-3.5 h-3.5" />
-          <span>엑셀에서 복사 후 셀에 Ctrl+V로 붙여넣기 가능 | Enter/방향키로 셀 이동 | Ctrl+Delete로 행 삭제</span>
+          <Save className="w-3.5 h-3.5 text-green-500" />
+          <span>필수 항목 입력 + 주소 확인 완료 시 자동 저장 | Ctrl+V 붙여넣기</span>
         </div>
         <button
           type="button"
           onClick={handleClipboardPaste}
           className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors shrink-0"
-          title="클립보드에서 엑셀 데이터 붙여넣기 (1행 1열부터 채움)"
+          title="클립보드에서 엑셀 데이터 붙여넣기"
         >
           <ClipboardPaste className="w-3.5 h-3.5" />
           클립보드 붙여넣기
@@ -277,16 +359,23 @@ export function ManualTab({ rows, onChange }: Props) {
           <tbody>
             {rows.map((row, rowIdx) => {
               if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = []
+              const isOutOfZone = row.dongStatus === 'out-of-zone' && !row.dongOverride
+
               return (
                 <tr
                   key={row._id}
                   className={`border-b border-gray-100 ${
-                    row.submitStatus === 'success' ? 'bg-green-50' :
+                    row.savedOrderId ? 'bg-green-50' :
+                    isOutOfZone ? 'bg-amber-50/40' :
                     row.submitStatus === 'error' ? 'bg-red-50' : 'hover:bg-brand-50/30'
                   }`}
                 >
+                  {/* 행 번호 + 저장 상태 */}
                   <td className="text-center text-xs text-gray-400 border-r border-gray-200 py-0.5 select-none">
-                    {rowIdx + 1}
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span>{rowIdx + 1}</span>
+                      <RowStatusDot row={row} />
+                    </div>
                   </td>
 
                   {COL_KEYS.map((key, colIdx) => {
@@ -295,12 +384,14 @@ export function ManualTab({ rows, onChange }: Props) {
                     const isQty = key === 'quantity'
                     const isPhone = key === 'customer_phone'
                     const isCode = key === 'item_code'
+                    const dongWarn = isDong && row.dongStatus === 'out-of-zone'
 
                     const cellCls = `
                       w-full h-full px-1.5 py-1 text-sm bg-transparent outline-none
                       focus:ring-2 focus:ring-brand-400 focus:ring-inset
                       ${isAddr && row.addrStatus === 'valid' ? 'text-green-700' : ''}
                       ${isAddr && row.addrStatus === 'invalid' ? 'text-red-600' : ''}
+                      ${dongWarn ? 'ring-1 ring-amber-400 ring-inset' : ''}
                     `
 
                     return (
@@ -329,16 +420,27 @@ export function ManualTab({ rows, onChange }: Props) {
                             <AddrIcon status={row.addrStatus} />
                           </div>
                         ) : isDong ? (
-                          <select
-                            ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            className={cellCls}
-                            value={row.dong}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => updateCell(rowIdx, 'dong', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
-                          >
-                            {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
-                          </select>
+                          <div className="relative">
+                            <select
+                              ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                              className={cellCls + (dongWarn ? ' pr-5' : '')}
+                              value={row.dong}
+                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                              onChange={(e) => {
+                                const newDong = e.target.value
+                                const dongStatus = VALID_DONGS.has(newDong) ? 'valid' : 'out-of-zone'
+                                onChange(rows.map((r, i) =>
+                                  i === rowIdx ? { ...r, dong: newDong, dongStatus, savedOrderId: undefined, submitStatus: undefined } : r
+                                ))
+                              }}
+                              onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
+                            >
+                              {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                            {dongWarn && (
+                              <AlertTriangle className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-500 pointer-events-none" />
+                            )}
+                          </div>
                         ) : isQty ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
@@ -386,6 +488,23 @@ export function ManualTab({ rows, onChange }: Props) {
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
                         )}
+
+                        {/* 동 경고 — 관리자 강제 등록 체크박스 */}
+                        {isDong && row.dongStatus === 'out-of-zone' && isAdmin && (
+                          <div className="absolute left-0 top-full z-20 bg-amber-50 border border-amber-300 rounded-b-lg px-2 py-1 text-xs shadow-md whitespace-nowrap">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-amber-800">
+                              <input
+                                type="checkbox"
+                                checked={row.dongOverride ?? false}
+                                onChange={(e) => onChange(rows.map((r, i) =>
+                                  i === rowIdx ? { ...r, dongOverride: e.target.checked, submitStatus: undefined, savedOrderId: undefined } : r
+                                ))}
+                                className="w-3 h-3 accent-amber-500"
+                              />
+                              강제 등록 (관리자)
+                            </label>
+                          </div>
+                        )}
                       </td>
                     )
                   })}
@@ -406,6 +525,17 @@ export function ManualTab({ rows, onChange }: Props) {
           </tbody>
         </table>
       </div>
+
+      {/* 지역 외 경고 배너 */}
+      {rows.some((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride) && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span>
+            서비스 지역 외 주소가 {rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).length}건 있습니다.
+            {isAdmin ? ' 배송동 열의 "강제 등록" 체크박스로 허용할 수 있습니다.' : ' 관리자에게 문의하세요.'}
+          </span>
+        </div>
+      )}
 
       {/* 행 추가 버튼 */}
       <div className="flex gap-2">

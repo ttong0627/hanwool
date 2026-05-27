@@ -19,6 +19,7 @@ function AuthGuard() {
       router.replace('/login')
     } else if (user && inAuth) {
       if (user.role === 'driver') router.replace('/(driver)')
+      else if (user.role === 'super_admin') router.replace('/(admin)')
       else router.replace('/(customer)')
     }
   }, [user, segments])

@@ -170,6 +170,8 @@ function StagingPanel({
   const successCount = results.filter((r) => r.ok).length
   const errorCount = results.filter((r) => !r.ok).length
   const isDone = results.length > 0 && results.length === rows.length
+  const outOfZoneCount = rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).length
+  const hasBlocker = rows.some((r) => !r.customer_name || !r.delivery_address)
 
   return (
     <div className="fixed bottom-6 right-6 z-40 w-96 bg-white rounded-2xl shadow-2xl border border-brand-200 overflow-hidden">
@@ -183,24 +185,39 @@ function StagingPanel({
         {!submitting && <button onClick={onClear} className="text-white/70 hover:text-white"><X className="w-4 h-4" /></button>}
       </div>
 
+      {/* 지역 외 경고 */}
+      {outOfZoneCount > 0 && !isDone && (
+        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          서비스 지역 외 {outOfZoneCount}건 — 직접입력 탭에서 "강제 등록" 체크 후 제출 가능
+        </div>
+      )}
+
       {/* 목록 */}
       <div className="max-h-48 overflow-y-auto divide-y divide-gray-100">
         {rows.map((row, i) => {
           const res = results[i]
+          const isOutZone = row.dongStatus === 'out-of-zone' && !row.dongOverride
           return (
             <div key={row._id} className={`flex items-center gap-2 px-4 py-2.5 text-sm ${
-              res?.ok ? 'bg-green-50' : res && !res.ok ? 'bg-red-50' : ''
+              res?.ok ? 'bg-green-50' :
+              res && !res.ok ? 'bg-red-50' :
+              row.savedOrderId ? 'bg-green-50/60' :
+              isOutZone ? 'bg-amber-50' : ''
             }`}>
               {res?.ok ? <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                 : res && !res.ok ? <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                : row.savedOrderId ? <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                : isOutZone ? <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
                 : <div className="w-4 h-4 rounded-full bg-gray-200 flex-shrink-0 text-center text-xs leading-4">{i + 1}</div>}
               <div className="flex-1 min-w-0">
                 <span className="font-semibold text-gray-800">{row.customer_name || '(미입력)'}</span>
                 <span className="text-gray-400 ml-1.5 text-xs">{row.customer_phone}</span>
               </div>
-              <span className="text-xs text-gray-400 flex-shrink-0">{row.dong}</span>
+              <span className={`text-xs flex-shrink-0 ${isOutZone ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>{row.dong}</span>
               {res?.ok && <span className="text-xs text-green-600">{res.order_no}</span>}
               {res && !res.ok && <span className="text-xs text-red-600 truncate max-w-20">{res.error}</span>}
+              {row.savedOrderId && !res && <span className="text-xs text-green-500">자동저장</span>}
             </div>
           )
         })}
@@ -220,8 +237,9 @@ function StagingPanel({
         <div className="px-4 py-3 border-t border-gray-100 flex gap-2">
           <button
             onClick={onSubmit}
-            disabled={submitting || rows.some((r) => !r.customer_name || !r.delivery_address)}
+            disabled={submitting || hasBlocker || outOfZoneCount > 0}
             className="btn-primary flex-1 py-2.5 text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+            title={outOfZoneCount > 0 ? '지역 외 주소를 먼저 처리해주세요' : undefined}
           >
             {submitting
               ? <><Loader2 className="w-4 h-4 animate-spin" /> 등록 중...</>
@@ -394,7 +412,7 @@ const TABS: { key: TabKey; icon: React.ElementType; label: string; desc: string 
 
 export function Orders() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<TabKey>('list')
+  const [tab, setTab] = useState<TabKey>('manual')
   const [stagingRows, setStagingRows] = useState<StagingRow[]>([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
   const [submitResults, setSubmitResults] = useState<{ ok: boolean; order_no?: string; error?: string }[]>([])
   const [submitting, setSubmitting] = useState(false)

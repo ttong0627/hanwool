@@ -193,6 +193,15 @@ export function DriverHomeScreen() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const startWorkMutation = useMutation({
+    mutationFn: () => api.post('/orders/dispatch/start-work').then((r) => r.data),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      Alert.alert('배송업무 시작', data.message || '배송업무 요청이 처리되었습니다.')
+    },
+    onError: () => Alert.alert('오류', '배송업무 시작 요청 중 문제가 발생했습니다.'),
+  })
+
   const updateMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: number; status: string }) =>
       api.put<StatusResponse>(`/orders/${orderId}/status`, null, { params: { status } }).then((r) => r.data),
@@ -352,6 +361,16 @@ export function DriverHomeScreen() {
       </View>
 
       {/* 주문 목록 */}
+      <TouchableOpacity
+        style={[styles.startWorkBtn, startWorkMutation.isPending && styles.startWorkBtnDisabled]}
+        onPress={() => startWorkMutation.mutate()}
+        disabled={startWorkMutation.isPending}
+      >
+        <Text style={styles.startWorkBtnText}>
+          {startWorkMutation.isPending ? '업무 시작 요청 중...' : '배송업무 시작'}
+        </Text>
+      </TouchableOpacity>
+
       <FlatList
         data={orders || []}
         keyExtractor={(item) => String(item.id)}
@@ -465,6 +484,9 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: '#6b7280' },
   smsBanner: { backgroundColor: '#FFF7ED', paddingVertical: 8, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#fed7aa' },
   smsBannerText: { fontSize: 12, color: '#9a3412', textAlign: 'center' },
+  startWorkBtn: { margin: 12, marginBottom: 0, backgroundColor: '#111827', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  startWorkBtnDisabled: { backgroundColor: '#9ca3af' },
+  startWorkBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },
   list: { padding: 12, gap: 10 },
   orderCard: { backgroundColor: 'white', borderRadius: 12, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   orderCardDone: { opacity: 0.6 },
