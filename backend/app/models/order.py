@@ -45,12 +45,23 @@ class Order(Base):
     lat: Mapped[float] = mapped_column(Float, nullable=True)
     lng: Mapped[float] = mapped_column(Float, nullable=True)
     # ── 행안부 표준 주소 키 (주소 정규화 후 저장) ─────────────────────────────
+    raw_address: Mapped[str] = mapped_column(Text, nullable=True)
+    standard_road_address: Mapped[str] = mapped_column(Text, nullable=True)
+    jibun_address: Mapped[str] = mapped_column(Text, nullable=True)
+    detail_address: Mapped[str] = mapped_column(Text, nullable=True)
     legal_emd: Mapped[str] = mapped_column(String(50), nullable=True, index=True)    # 법정동 (경안동 등)
+    admin_emd: Mapped[str] = mapped_column(String(50), nullable=True)
     service_dong: Mapped[str] = mapped_column(String(50), nullable=True)             # 실제 배송동 (dong_override 반영)
+    adm_cd: Mapped[str] = mapped_column(String(10), nullable=True)
+    rn_mgt_sn: Mapped[str] = mapped_column(String(20), nullable=True)
     bd_mgt_sn: Mapped[str] = mapped_column(String(25), nullable=True)               # 건물관리번호 (행안부 PK)
+    udrt_yn: Mapped[str] = mapped_column(String(1), nullable=True)
+    buld_mnnm: Mapped[int] = mapped_column(Integer, nullable=True)
+    buld_slno: Mapped[int] = mapped_column(Integer, nullable=True)
     match_status: Mapped[str] = mapped_column(String(20), nullable=True)             # matched/ambiguous/not_found/needs_review
     match_score: Mapped[float] = mapped_column(Float, nullable=True)                # 매칭 신뢰도 0~1
     coord_source: Mapped[str] = mapped_column(String(20), nullable=True)             # nexus/kakao/cache/manual
+    address_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_up_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

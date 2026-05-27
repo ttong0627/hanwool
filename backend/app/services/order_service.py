@@ -26,6 +26,14 @@ async def _next_sequence(db: AsyncSession) -> int:
 
 async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) -> Order:
     from app.services.customer_service import upsert_customer
+    from app.services.address_resolver import (
+        apply_resolution_to_order,
+        log_address_resolution,
+        resolve_address,
+    )
+
+    address_resolution = await resolve_address(data.delivery_address or "", db)
+    resolved_dong = address_resolution.service_dong or data.dong
 
     # 전화번호가 있으면 고객 upsert (신규 생성 or 정보 업데이트)
     customer_id = data.customer_id
@@ -34,7 +42,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
             db,
             name=data.customer_name or "",
             phone=data.customer_phone,
-            dong=data.dong or "경안동",
+            dong=resolved_dong or "경안동",
             address=data.delivery_address or "",
         )
         if customer and not customer_id:
@@ -50,7 +58,7 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         receiver_id=receiver_id,
         sequence=seq,
         delivery_address_enc=encrypt_field(data.delivery_address),
-        dong=data.dong,
+        dong=resolved_dong or data.dong,
         items_desc=data.items_desc,
         item_code=data.item_code,
         quantity=data.quantity,
@@ -61,6 +69,9 @@ async def create_order(db: AsyncSession, data: OrderCreate, receiver_id: int) ->
         market_date=today if is_market_day(today) else None,
     )
     db.add(order)
+    await db.flush()
+    apply_resolution_to_order(order, address_resolution, fallback_dong=data.dong)
+    await log_address_resolution(db, address_resolution, order_id=order.id)
     await db.flush()
     return order
 
@@ -79,6 +90,25 @@ def decrypt_order(order: Order) -> dict:
         "pickup_location": order.pickup_location,
         "delivery_address": decrypt_field(order.delivery_address_enc),
         "dong": order.dong,
+        "raw_address": order.raw_address,
+        "standard_road_address": order.standard_road_address,
+        "jibun_address": order.jibun_address,
+        "detail_address": order.detail_address,
+        "legal_emd": order.legal_emd,
+        "admin_emd": order.admin_emd,
+        "service_dong": order.service_dong,
+        "adm_cd": order.adm_cd,
+        "rn_mgt_sn": order.rn_mgt_sn,
+        "bd_mgt_sn": order.bd_mgt_sn,
+        "udrt_yn": order.udrt_yn,
+        "buld_mnnm": order.buld_mnnm,
+        "buld_slno": order.buld_slno,
+        "match_status": order.match_status,
+        "match_score": order.match_score,
+        "coord_source": order.coord_source,
+        "address_verified_at": order.address_verified_at.isoformat() if order.address_verified_at else None,
+        "lat": order.lat,
+        "lng": order.lng,
         "items_desc": order.items_desc,
         "quantity": order.quantity,
         "notes": order.notes,

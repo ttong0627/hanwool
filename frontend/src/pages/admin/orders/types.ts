@@ -53,6 +53,12 @@ export interface StagingRow {
   lng?: number
   addrStatus: AddrStatus
   addrRefined?: string
+  standardRoadAddress?: string
+  legalEmd?: string
+  serviceDong?: string
+  matchStatus?: 'matched' | 'needs_review' | 'not_found'
+  matchScore?: number
+  coordSource?: string
   dongStatus?: DongStatus
   dongOverride?: boolean
   savedOrderId?: number

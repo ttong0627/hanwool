@@ -117,7 +117,12 @@ async def resolve_dispatch_request(
     if request.status != DispatchRequestStatus.pending:
         raise HTTPException(status_code=400, detail="이미 처리된 배정 요청입니다.")
 
-    dispatch_result = await _dispatch_today_orders(db, [int(driver_id) for driver_id in driver_ids])
+    dispatch_result = await _dispatch_today_orders(
+        db,
+        [int(driver_id) for driver_id in driver_ids],
+        executed_by_id=current_user.id,
+        is_auto=False,
+    )
     request.status = DispatchRequestStatus.approved
     request.resolved_by_admin_id = current_user.id
     request.resolved_driver_ids = ",".join(str(driver_id) for driver_id in driver_ids)

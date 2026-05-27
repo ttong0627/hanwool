@@ -168,16 +168,39 @@ export function ManualTab() {
     } : r))
     addrTimers[rowId] = setTimeout(async () => {
       try {
-        const res = await api.get('/orders/geocode', { params: { address: value } })
-        const { lat, lng, address_name, dong_name } = res.data
-        const detectedFromAddr = detectDong(address_name ?? '') ?? detectDong(value)
-        const refinedDong = (dong_name && VALID_DONGS.has(dong_name))
-          ? dong_name
+        const res = await api.post('/addresses/resolve', { address: value })
+        const {
+          lat,
+          lng,
+          standard_road_address,
+          legal_emd,
+          service_dong,
+          match_status,
+          match_score,
+          coord_source,
+        } = res.data
+        const displayAddress = standard_road_address ?? value
+        const detectedFromAddr = detectDong(displayAddress) ?? detectDong(value)
+        const refinedDong = (service_dong && VALID_DONGS.has(service_dong))
+          ? service_dong
+          : (legal_emd && VALID_DONGS.has(legal_emd))
+            ? legal_emd
           : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr)) ? detectedFromAddr : null
-        const anyDong = dong_name ?? (address_name ?? value).match(/([가-힣]+동)/)?.[1] ?? null
+        const anyDong = service_dong ?? legal_emd ?? (displayAddress ?? value).match(/([가-힣]+동)/)?.[1] ?? null
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
+        const addrStatus: AddrStatus = match_status === 'not_found' ? 'invalid' : 'valid'
         setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r, addrStatus: 'valid' as AddrStatus, lat, lng, addrRefined: address_name,
+          ...r,
+          addrStatus,
+          lat,
+          lng,
+          addrRefined: displayAddress,
+          standardRoadAddress: standard_road_address,
+          legalEmd: legal_emd,
+          serviceDong: service_dong,
+          matchStatus: match_status,
+          matchScore: match_score,
+          coordSource: coord_source,
           dongStatus, dong: refinedDong ?? anyDong ?? r.dong, savedOrderId: undefined, submitStatus: undefined,
         } : r))
       } catch {
@@ -191,13 +214,51 @@ export function ManualTab() {
     }, 600)
   }, [rows])
 
-  const handleAddressSelect = useCallback((rowIdx: number, result: AddressResult) => {
+  const handleAddressSelect = useCallback(async (rowIdx: number, result: AddressResult) => {
     const addr = result.road_address || result.address_name
-    const detectedDong = result.dong_name ? DONG_LIST.find((d) => result.dong_name === d) ?? null : null
-    const dong = detectedDong ?? detectDong(addr) ?? rows[rowIdx].dong ?? ''
+    let lat = result.lat ?? undefined
+    let lng = result.lng ?? undefined
+    let refinedAddress = addr
+    let matchStatus: StagingRow['matchStatus'] = undefined
+    let matchScore: number | undefined = undefined
+    let coordSource: string | undefined = undefined
+    let legalEmd: string | undefined = result.dong_name ?? undefined
+    let serviceDong: string | undefined = result.dong_name ?? undefined
+    try {
+      const res = await api.post('/addresses/resolve', { address: addr })
+      refinedAddress = res.data.standard_road_address ?? addr
+      lat = res.data.lat ?? lat
+      lng = res.data.lng ?? lng
+      legalEmd = res.data.legal_emd ?? legalEmd
+      serviceDong = res.data.service_dong ?? serviceDong
+      matchStatus = res.data.match_status
+      matchScore = res.data.match_score
+      coordSource = res.data.coord_source
+    } catch {
+      // 검색 결과 자체는 유지하고 자동 저장 검증에서 다시 확인한다.
+    }
+    const detectedDong = serviceDong ? DONG_LIST.find((d) => serviceDong === d) ?? null : null
+    const dong = detectedDong ?? detectDong(refinedAddress) ?? rows[rowIdx].dong ?? ''
     const dongStatus: DongStatus = dong && VALID_DONGS.has(dong) ? 'valid' : 'out-of-zone'
     setRows(prev => prev.map((r, i) =>
-      i === rowIdx ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined } : r
+      i === rowIdx ? {
+        ...r,
+        delivery_address: refinedAddress,
+        addrStatus: matchStatus === 'not_found' ? 'invalid' : 'valid',
+        lat,
+        lng,
+        addrRefined: refinedAddress,
+        standardRoadAddress: refinedAddress,
+        legalEmd,
+        serviceDong,
+        matchStatus,
+        matchScore,
+        coordSource,
+        dong,
+        dongStatus,
+        savedOrderId: undefined,
+        submitStatus: undefined,
+      } : r
     ))
     setKakaoRow(null)
     const colIdx = COL_KEYS.indexOf('delivery_address')
@@ -560,6 +621,22 @@ export function ManualTab() {
                               <Search className="w-3.5 h-3.5" />
                             </button>
                             <AddrIcon status={row.addrStatus} />
+                            {row.matchStatus === 'needs_review' && (
+                              <span
+                                className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded"
+                                title="주소는 매칭됐지만 좌표나 부번 확인이 필요합니다."
+                              >
+                                확인
+                              </span>
+                            )}
+                            {row.matchStatus === 'matched' && row.coordSource && (
+                              <span
+                                className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded"
+                                title={`표준주소 매칭 완료 · 좌표출처: ${row.coordSource}`}
+                              >
+                                표준
+                              </span>
+                            )}
                           </div>
                         ) : isDong ? (
                           <div className="flex flex-col items-center justify-center px-1 py-1 gap-0.5 min-h-[36px]">

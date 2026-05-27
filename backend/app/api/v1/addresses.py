@@ -22,12 +22,14 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_receiver_or_above
 from app.core.config import settings
 from app.core.database import get_db
+from app.services.address_resolver import resolve_address
 
 router = APIRouter(prefix="/addresses", tags=["주소"])
 
@@ -36,6 +38,14 @@ _PREFIX = "경기도 광주시 "
 
 # 4개 배송 동 road_code prefix (경기도 광주시 행정동)
 _DELIVERY_DONG_EMD = {"경안동", "송정동", "쌍령동", "탄벌동"}
+
+
+class AddressResolveIn(BaseModel):
+    address: str
+
+
+class AddressBatchResolveIn(BaseModel):
+    addresses: list[str]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -446,3 +456,59 @@ async def search_addresses(
         await _save_to_cache(results, db)
 
     return results[:limit]
+
+
+@router.post("/resolve")
+async def resolve_address_endpoint(
+    body: AddressResolveIn,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """입력 주소를 행안부 표준키/배송동/좌표로 정규화한다."""
+    result = await resolve_address(body.address, db)
+    return result.to_public_dict()
+
+
+@router.post("/resolve-batch")
+async def resolve_address_batch_endpoint(
+    body: AddressBatchResolveIn,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """직접입력/엑셀 업로드 전 여러 주소를 한 번에 검증한다."""
+    addresses = [address for address in body.addresses if address and address.strip()]
+    addresses = addresses[:200]
+    results = []
+    for address in addresses:
+        result = await resolve_address(address, db)
+        results.append(result.to_public_dict())
+    return {"total": len(results), "items": results}
+
+
+@router.get("/test-samples")
+async def address_test_samples(
+    dong: Optional[str] = Query(None, description="경안동/송정동/쌍령동/탄벌동 중 하나"),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """로컬 행안부 DB에서 테스트에 쓸 실제 주소 샘플을 추출한다."""
+    allowed = {"경안동", "송정동", "쌍령동", "탄벌동"}
+    dongs = [dong] if dong in allowed else sorted(allowed)
+    rows = await db.execute(
+        text(
+            "SELECT legal_emd, road_address, building_name "
+            "FROM nexus_address.buildings "
+            "WHERE legal_emd = ANY(:dongs) AND road_address <> '' "
+            "ORDER BY legal_emd, road_address "
+            "LIMIT :limit"
+        ),
+        {"dongs": dongs, "limit": limit},
+    )
+    items = []
+    for row in rows.all():
+        road_address = row.road_address
+        if row.building_name and row.building_name not in road_address:
+            road_address = f"{road_address} ({row.building_name})"
+        items.append({"dong": row.legal_emd, "address": road_address})
+    return {"total": len(items), "items": items}

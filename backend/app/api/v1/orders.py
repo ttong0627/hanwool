@@ -18,6 +18,7 @@ from app.api.v1.deps import (
 )
 from app.core.database import get_db
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
+from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunStatus
 from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.user import User
 from app.schemas.order import (
@@ -29,6 +30,7 @@ from app.schemas.order import (
 )
 from app.services import order_service, sms_service
 from app.services.address_service import geocode_address as _geocode_address
+from app.services.address_resolver import apply_resolution_to_order, log_address_resolution, resolve_address
 from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
 from app.services.route_service import (
     analyze_sequence_quality,
@@ -97,7 +99,12 @@ async def _push_route_to_drivers(today_orders: list[Order]) -> None:
         )
 
 
-async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dict:
+async def _dispatch_today_orders(
+    db: AsyncSession,
+    driver_ids: list[int],
+    executed_by_id: Optional[int] = None,
+    is_auto: bool = True,
+) -> dict:
     from app.core.security import decrypt_field
 
     if not driver_ids or not (1 <= len(driver_ids) <= 4):
@@ -122,10 +129,9 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
     for order in today_orders:
         if not order.lat or not order.lng:
             addr = decrypt_field(order.delivery_address_enc)
-            coord = await _geocode_address(addr, db)
-            if coord:
-                order.lat = coord["lat"]
-                order.lng = coord["lng"]
+            address_resolution = await resolve_address(addr, db)
+            apply_resolution_to_order(order, address_resolution, fallback_dong=order.dong)
+            await log_address_resolution(db, address_resolution, order_id=order.id)
 
     dispatch_orders_list = [
         DispatchOrder(
@@ -141,6 +147,22 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
     ]
 
     groups = run_dispatch(dispatch_orders_list, driver_ids)
+    dispatch_run = DispatchRun(
+        market_date=date.today(),
+        executed_by_id=executed_by_id,
+        driver_count=len(driver_ids),
+        order_count=len(today_orders),
+        is_auto=is_auto,
+        split_applied=len(today_orders) >= 60 and len(driver_ids) > 1,
+        status=DispatchRunStatus.confirmed,
+        notes=(
+            f"{len(today_orders)}건을 {len(driver_ids)}명에게 배차"
+            + ("; 60건 이상 분리 검토 적용" if len(today_orders) >= 60 else "")
+        ),
+    )
+    db.add(dispatch_run)
+    await db.flush()
+
     id_to_order = {o.id: o for o in today_orders}
     now = datetime.now(timezone.utc)
     for group in groups:
@@ -153,10 +175,22 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
                 if db_order.status == OrderStatus.pending:
                     db_order.status = OrderStatus.assigned
                     db_order.assigned_at = now
+                db.add(
+                    DispatchRunItem(
+                        dispatch_run_id=dispatch_run.id,
+                        order_id=db_order.id,
+                        driver_id=group.driver_id,
+                        sequence=dispatch_item.sequence,
+                        service_dong=db_order.service_dong or db_order.dong,
+                        lat=db_order.lat,
+                        lng=db_order.lng,
+                        sequence_source="auto",
+                    )
+                )
 
     await db.flush()
     await _push_route_to_drivers(today_orders)
-    return {"groups": group_summary(groups), "total": len(today_orders)}
+    return {"groups": group_summary(groups), "total": len(today_orders), "dispatch_run_id": dispatch_run.id}
 
 
 # ── 단건 자동저장 ────────────────────────────────────────────────────────────
@@ -168,23 +202,24 @@ async def create_single_order(
     current_user: User = Depends(require_receiver_or_above),
 ):
     """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
-    if data.dong not in VALID_DONGS:
+    address_resolution = await resolve_address(data.delivery_address, db)
+    effective_dong = address_resolution.service_dong or data.dong
+
+    if effective_dong not in VALID_DONGS:
         if not data.dong_override:
-            raise HTTPException(status_code=400, detail=f"서비스 지역 외 배송동입니다: {data.dong}")
+            await log_address_resolution(db, address_resolution)
+            raise HTTPException(status_code=400, detail=f"서비스 지역 외 배송동입니다: {effective_dong}")
         if current_user.role not in {"admin", "super_admin"}:
             raise HTTPException(status_code=403, detail="지역 외 배송은 관리자 이상만 강제 등록 가능합니다.")
 
-    lat, lng = data.lat, data.lng
-    if not lat or not lng:
-        coord = await _geocode_address(data.delivery_address, db)
-        if coord:
-            lat, lng = coord["lat"], coord["lng"]
+    lat = data.lat or address_resolution.lat
+    lng = data.lng or address_resolution.lng
 
     order_data = OrderCreate(
         customer_name=data.customer_name,
         customer_phone=data.customer_phone,
         delivery_address=data.delivery_address,
-        dong=data.dong,
+        dong=effective_dong,
         items_desc=data.items_desc,
         item_code=data.item_code,
         quantity=data.quantity,
@@ -335,7 +370,12 @@ async def start_driver_work(
             "message": "배송 수량이 40건을 초과했습니다. 총관리자에게 기사 추가/분배 요청을 보냈습니다.",
         }
 
-    dispatch_result = await _dispatch_today_orders(db, [current_user.id])
+    dispatch_result = await _dispatch_today_orders(
+        db,
+        [current_user.id],
+        executed_by_id=current_user.id,
+        is_auto=True,
+    )
     return {
         "status": "assigned",
         "assigned_count": dispatch_result["total"],
@@ -348,10 +388,15 @@ async def start_driver_work(
 async def dispatch_orders_priority(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
     driver_ids: list[int] = body.get("driver_ids", [])
-    return await _dispatch_today_orders(db, driver_ids)
+    return await _dispatch_today_orders(
+        db,
+        driver_ids,
+        executed_by_id=current_user.id,
+        is_auto=False,
+    )
 
 
 @router.get("/")
@@ -420,6 +465,9 @@ async def edit_order(
     from app.core.security import encrypt_field
     if data.delivery_address is not None:
         order.delivery_address_enc = encrypt_field(data.delivery_address)
+        address_resolution = await resolve_address(data.delivery_address, db)
+        apply_resolution_to_order(order, address_resolution, fallback_dong=data.dong or order.dong)
+        await log_address_resolution(db, address_resolution, order_id=order.id)
     if data.dong is not None:
         order.dong = data.dong
     if data.items_desc is not None:
@@ -638,10 +686,9 @@ async def auto_sequence(
     for order in today_orders:
         if not order.lat or not order.lng:
             addr = decrypt_field(order.delivery_address_enc)
-            coord = await _geocode_address(addr, db)
-            if coord:
-                order.lat = coord["lat"]
-                order.lng = coord["lng"]
+            address_resolution = await resolve_address(addr, db)
+            apply_resolution_to_order(order, address_resolution, fallback_dong=order.dong)
+            await log_address_resolution(db, address_resolution, order_id=order.id)
 
     order_dicts = [
         {
@@ -728,10 +775,13 @@ async def batch_create_orders(
     results = []
     for row in rows:
         try:
-            dong = row.get("dong", "경안동")
+            address = row.get("delivery_address", "")
+            address_resolution = await resolve_address(address, db)
+            dong = address_resolution.service_dong or row.get("dong", "경안동")
             dong_override = bool(row.get("dong_override", False))
 
             if dong not in VALID_DONGS and not dong_override:
+                await log_address_resolution(db, address_resolution)
                 results.append({"ok": False, "error": f"서비스 지역 외 배송동: {dong}"})
                 continue
             if dong not in VALID_DONGS and dong_override:
@@ -742,7 +792,7 @@ async def batch_create_orders(
             order_data = OrderCreate(
                 customer_name=row.get("customer_name", ""),
                 customer_phone=row.get("customer_phone", ""),
-                delivery_address=row.get("delivery_address", ""),
+                delivery_address=address,
                 dong=dong,
                 items_desc=row.get("items_desc"),
                 item_code=row.get("item_code"),
