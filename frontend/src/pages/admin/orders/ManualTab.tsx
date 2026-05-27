@@ -78,8 +78,8 @@ export function ManualTab() {
     if (row.addrStatus !== 'valid') return
     if (row.dongStatus === 'out-of-zone' && !row.dongOverride) return
 
-    // pending 표시
-    setRows(rows.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
+    // pending 표시 (함수형 업데이트)
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
     try {
       const res = await api.post('/orders/single', {
         customer_name: row.customer_name,
@@ -134,24 +134,37 @@ export function ManualTab() {
   // ── 주소 변경 — 즉시 dong 감지 + geocoding debounce ─────────────────────
   const handleAddressChange = useCallback((rowIdx: number, value: string) => {
     const detected = detectDong(value)
-    const updates: Partial<StagingRow> = { delivery_address: value, savedOrderId: undefined, submitStatus: undefined }
-    if (detected) updates.dong = detected
-
     const rowId = rows[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
 
     if (!value || value.length < 5) {
-      setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined, dong: '경안동' } : r))
+      // 함수형 업데이트: 항상 최신 state 기준으로 병합
+      setRows(prev => prev.map((r, i) => i === rowIdx ? {
+        ...r,
+        delivery_address: value,
+        savedOrderId: undefined,
+        submitStatus: undefined,
+        addrStatus: 'idle',
+        dongStatus: undefined,
+        dong: detected ?? '경안동',
+      } : r))
       return
     }
 
-    setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'validating' } : r))
+    setRows(prev => prev.map((r, i) => i === rowIdx ? {
+      ...r,
+      delivery_address: value,
+      savedOrderId: undefined,
+      submitStatus: undefined,
+      addrStatus: 'validating',
+      ...(detected ? { dong: detected } : {}),
+    } : r))
 
     addrTimers[rowId] = setTimeout(async () => {
       try {
         const res = await api.get('/orders/geocode', { params: { address: value } })
         const { lat, lng, address_name, dong_name } = res.data
-        // dong_name: 백엔드가 region_3depth_name으로 추출 (도로명 주소에도 정확)
+        // dong_name: 백엔드 region_3depth_name (도로명 주소에도 정확한 동 반환)
         const detectedFromAddr = detectDong(address_name ?? '') ?? detectDong(value)
         const refinedDong = (dong_name && VALID_DONGS.has(dong_name))
           ? dong_name
@@ -160,32 +173,22 @@ export function ManualTab() {
             : null
         const anyDong = dong_name ?? (address_name ?? value).match(/([가-힣]+동)/)?.[1] ?? null
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
-        setRows(
-          rows.map((r, i) =>
-            i === rowIdx
-              ? {
-                  ...r,
-                  addrStatus: 'valid' as AddrStatus,
-                  lat, lng,
-                  addrRefined: address_name, // 정제 주소는 저장용, 표시는 입력값 유지
-                  dongStatus,
-                  dong: refinedDong ?? anyDong ?? r.dong,
-                  savedOrderId: undefined,
-                  submitStatus: undefined,
-                }
-              : r
-          )
-        )
+        // 함수형 업데이트: 타이머 지연 후에도 최신 delivery_address 보존
+        setRows(prev => prev.map((r, i) => i === rowIdx ? {
+          ...r,
+          addrStatus: 'valid' as AddrStatus,
+          lat, lng,
+          addrRefined: address_name,
+          dongStatus,
+          dong: refinedDong ?? anyDong ?? r.dong,
+          savedOrderId: undefined,
+          submitStatus: undefined,
+        } : r))
       } catch {
-        // 주소 그대로 유지, 입력값에서 동 감지 시도
-        const typedDong = detectDong(value)
-        const anyDong = value.match(/([가-힣]+동)/)?.[1] ?? null
-        const dongStatus: DongStatus = typedDong ? 'valid' : 'out-of-zone'
-        setRows(rows.map((r, i) => i === rowIdx ? {
+        // geocode 실패: 주소 그대로 유지, dongStatus 변경 없음
+        setRows(prev => prev.map((r, i) => i === rowIdx ? {
           ...r,
           addrStatus: 'invalid' as AddrStatus,
-          dongStatus,
-          dong: typedDong ?? anyDong ?? r.dong,
         } : r))
       }
     }, 600)
@@ -428,7 +431,7 @@ export function ManualTab() {
       </div>
 
       {/* 스프레드시트 그리드 */}
-      <div className="border border-gray-200 rounded-xl overflow-auto" style={{ maxHeight: 480 }}>
+      <div className="border border-gray-200 rounded-xl overflow-auto">
         <table className="w-full border-collapse text-sm" style={{ tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 36 }} />
