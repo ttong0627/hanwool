@@ -26,6 +26,7 @@ from app.schemas.order import (
     OrderTransferRequest,
 )
 from app.services import order_service, sms_service
+from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
 from app.services.route_service import (
     analyze_sequence_quality,
     get_kakao_coordinates,
@@ -418,3 +419,112 @@ async def auto_sequence(
 
     quality = analyze_sequence_quality(optimized)
     return {"updated": len(today_orders), "quality": quality}
+
+
+@router.post("/dispatch")
+async def dispatch_orders(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """
+    기사 배차 + 배송순번 일괄 할당
+
+    body: { "driver_ids": [int, ...] }  — 1~4명
+    규칙:
+      1명: 경안동→송정동→쌍령동→탄벌동 순
+      2명: [경안동+쌍령동] / [송정동+탄벌동]
+      3명: 수량 최소 2개동 묶어 1명, 나머지 각 1명
+      4명: 동별 1:1, 불균형 시 이관 허용 플래그
+    """
+    from datetime import date
+    from app.core.security import decrypt_field
+
+    driver_ids: list[int] = body.get("driver_ids", [])
+    if not driver_ids or not (1 <= len(driver_ids) <= 4):
+        raise HTTPException(status_code=400, detail="driver_ids는 1~4명이어야 합니다.")
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    q = select(Order).where(
+        Order.created_at >= today_start,
+        Order.status.notin_([OrderStatus.cancelled]),
+    )
+    result = await db.execute(q)
+    today_orders = result.scalars().all()
+
+    if not today_orders:
+        return {"groups": [], "total": 0}
+
+    # 좌표 없는 주문 geocoding
+    for order in today_orders:
+        if not order.lat or not order.lng:
+            addr = decrypt_field(order.delivery_address_enc)
+            coord = await get_kakao_coordinates(addr)
+            if coord:
+                order.lat = coord["lat"]
+                order.lng = coord["lng"]
+
+    dispatch_orders_list = [
+        DispatchOrder(
+            id=o.id,
+            dong=o.dong,
+            sequence=o.sequence,
+            customer_name=decrypt_field(o.customer_name_enc),
+            delivery_address=decrypt_field(o.delivery_address_enc),
+            quantity=o.quantity or 1,
+            status=o.status,
+        )
+        for o in today_orders
+    ]
+
+    groups = run_dispatch(dispatch_orders_list, driver_ids)
+
+    # driver_id + sequence DB 저장
+    id_to_order = {o.id: o for o in today_orders}
+    for g in groups:
+        for dispatch_item in g.orders:
+            db_order = id_to_order.get(dispatch_item.id)
+            if db_order:
+                db_order.driver_id = g.driver_id
+                db_order.sequence = dispatch_item.sequence
+                if db_order.status == OrderStatus.pending:
+                    db_order.status = OrderStatus.assigned
+
+    await db.flush()
+
+    return {"groups": group_summary(groups), "total": len(today_orders)}
+
+
+@router.post("/{order_id}/transfer")
+async def transfer_order(
+    order_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """단건 주문 이관 — 기사 간 재배정 (4명 모드 불균형 조정)"""
+    raw_to = body.get("to_driver_id")
+    if not isinstance(raw_to, (int, str)) or not raw_to:
+        raise HTTPException(status_code=400, detail="to_driver_id 필수")
+    to_driver_id: int = int(raw_to)
+    reason: str = body.get("reason", "배송 부하 조정")
+
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    if order.status in {OrderStatus.delivered, OrderStatus.cancelled}:
+        raise HTTPException(status_code=400, detail="완료·취소된 주문은 이관할 수 없습니다.")
+
+    from_driver_id: int = order.driver_id or 0
+    order.driver_id = to_driver_id
+
+    transfer = OrderTransfer(
+        order_id=order_id,
+        from_driver_id=from_driver_id,
+        to_driver_id=to_driver_id,
+        reason=reason,
+    )
+    db.add(transfer)
+    await db.flush()
+
+    return {"ok": True, "order_id": order_id, "to_driver_id": to_driver_id}

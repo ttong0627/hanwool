@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/Login'
 import { Dashboard } from '@/pages/admin/Dashboard'
 import { Orders } from '@/pages/admin/Orders'
 import { DeliveryTracking } from '@/pages/admin/DeliveryTracking'
+import { DeliveryDispatch } from '@/pages/admin/DeliveryDispatch'
 import { Drivers } from '@/pages/admin/Drivers'
 import { Customers } from '@/pages/admin/Customers'
 import { Complaints } from '@/pages/admin/Complaints'
@@ -48,6 +49,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="orders" element={<Orders />} />
               <Route path="delivery-tracking" element={<DeliveryTracking />} />
+              <Route path="dispatch" element={<DeliveryDispatch />} />
               <Route path="drivers" element={<Drivers />} />
               <Route path="customers" element={<Customers />} />
               <Route path="complaints" element={<Complaints />} />
