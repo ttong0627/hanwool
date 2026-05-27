@@ -57,7 +57,7 @@ def _to_out(user: User) -> UserOut:
     )
 
 
-@router.post("/", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201)
 async def create_user(
     data: UserCreate,
     db: AsyncSession = Depends(get_db),
@@ -99,7 +99,7 @@ async def create_user(
     return _to_out(user)
 
 
-@router.get("/", response_model=list[UserOut])
+@router.get("", response_model=list[UserOut])
 async def list_users(
     role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),

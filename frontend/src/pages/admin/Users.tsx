@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield,
+  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate, formatPhone } from '@/lib/utils'
@@ -36,6 +36,7 @@ const STAFF_ROLES = ['super_admin', 'admin', 'receiver', 'driver']
 function CreateStaffModal({ onClose, currentRole }: { onClose: () => void; currentRole: string }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', phone: '', role: 'receiver', password: '' })
+  const [showPw, setShowPw] = useState(false)
 
   const availableRoles = currentRole === 'super_admin'
     ? ['super_admin', 'admin', 'receiver', 'driver']
@@ -92,13 +93,23 @@ function CreateStaffModal({ onClose, currentRole }: { onClose: () => void; curre
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">비밀번호 <span className="text-red-500">*</span></label>
-            <input
-              className="input w-full"
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder="8자 이상"
-            />
+            <div className="relative">
+              <input
+                className="input w-full pr-10"
+                type={showPw ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="8자 이상"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                tabIndex={-1}
+              >
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           {createMutation.isError && (
             <p className="text-red-500 text-sm">
