@@ -97,9 +97,9 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_receiver_or_above),
 ):
-    q = select(User).where(User.deleted_at == None, User.is_active == True)
+    q = select(User).where(User.deleted_at == None)
     if current_user.role == "receiver":
-        q = q.where(User.role == "customer")
+        q = q.where(User.role == "customer", User.is_active == True)
     elif role:
         q = q.where(User.role == role)
     result = await db.execute(q)
@@ -151,6 +151,17 @@ async def update_user(
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     if data.name:
         user.name_enc = encrypt_field(data.name)
+    if data.phone:
+        phone_hash = hash_phone(data.phone)
+        existing = await db.execute(
+            select(User).where(User.phone_hash == phone_hash, User.id != user_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
+        user.phone_enc = encrypt_field(data.phone)
+        user.phone_hash = phone_hash
+    if data.password:
+        user.password_hash = hash_password(data.password)
     if data.dong is not None:
         user.dong = data.dong
     if data.address is not None:
@@ -160,6 +171,26 @@ async def update_user(
     if data.birth_year is not None:
         user.birth_year_enc = encrypt_field(str(data.birth_year))
     return _to_out(user)
+
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin_or_above),
+):
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at == None))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if user.role == "super_admin":
+        raise HTTPException(status_code=400, detail="총관리자 계정은 삭제할 수 없습니다.")
+
+    from datetime import datetime, timezone
+
+    user.deleted_at = datetime.now(timezone.utc)
+    user.is_active = False
+    return {"ok": True, "user_id": user_id}
 
 
 @router.put("/{user_id}/password", response_model=UserOut)

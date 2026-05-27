@@ -13,6 +13,36 @@
 
 ---
 
+## 핵심 도메인 규칙 (모든 작업 시 반드시 준수)
+
+### 장날 (Market Day)
+- **장날**: 매월 3, 8, 13, 18, 23, 28일 고정
+- **접수 시간**: 장날 11:00 ~ 15:00 (서버·클라이언트 모두 강제)
+- **배송 시작**: 15:00 이후 접수된 주문 기준 배송 진행
+- **비장날**: 주문 접수 불가, 모든 접수 버튼 비활성화
+
+```python
+# 반드시 이 로직을 서버에서 검증 (클라이언트만으로는 부족)
+def is_market_day(date) -> bool:
+    return date.day in [3, 8, 13, 18, 23, 28]
+
+def is_reception_open() -> bool:
+    now = datetime.now(KST)
+    return is_market_day(now) and 11 <= now.hour < 15
+```
+
+### 수혜 자격 조건
+- **나이**: 65세 이상 (birth_year 기준 서버에서 계산)
+- **거주지**: 경안동, 송정동, 쌍령동, 탄벌동 4개 동 주민만 해당
+- **서비스**: 완전 무료 (비용 발생 없음)
+
+### DB 핵심 규칙
+- User 테이블: `birth_year` 필드 필수 (65세 검증용, AES-256 암호화 대상)
+- Order 테이블: `market_date` 필드 필수 (장날별 통계·감사 추적)
+- 생년월일은 개인정보 → AES-256 암호화 필수
+
+---
+
 ## 기술 스택 (고정)
 
 | 영역 | 스택 |
@@ -54,20 +84,58 @@
 
 ---
 
-## 테스트 계정
+## 메뉴 구조 및 기능 정의
 
-| 역할 | 전화번호 | 비밀번호 |
-|------|----------|----------|
-| Demo accounts | seed.py requires ALLOW_DEMO_SEED=true and SEED_* password environment variables |
+### Admin / Super Admin
+| 메뉴 | 핵심 기능 |
+|------|----------|
+| 대시보드 | 장날 여부·D-Day·접수 시간 카운트다운, 실시간 주문 현황, 기사 위치 |
+| 주문 관리 | 장날별 필터, 전체 주문 CRUD, 기사 배정 |
+| 배송 확인 | 실시간 배송 상태 추적 |
+| 기사 관리 | 기사 계정·배송 이력 관리 |
+| 고객 관리 | 65세 이상 배지, 생년월일·동 정보 포함 고객 DB |
+| 민원 관리 | 민원 접수·처리·이력 |
+| 통계·보고서 | 장날별 통계, 동별 배송량, 기사 실적 |
+| 개인정보 | 개인정보 열람·폐기 (super_admin 전용) |
+| 사용자 관리 | 시스템 계정 관리 |
+
+### Receiver (접수 담당)
+| 메뉴 | 핵심 기능 |
+|------|----------|
+| 주문 접수 | 장날·시간 잠금, 65세 자격 경고, 고객 자동완성 |
+| 오늘 명단 | 당일 접수 목록 전체 조회 |
+| 라벨 출력 | QR 코드 포함 배송 라벨 PDF 출력 |
 
 ---
 
 ## 개발 원칙
 
-1. **개인정보 보호 최우선**: 성명·전화번호·주소는 AES-256 암호화 필수
+1. **개인정보 보호 최우선**: 성명·전화번호·주소·생년월일은 AES-256 암호화 필수
 2. **노인 친화 UI**: 최소 버튼 수, 최대 글씨 크기 (모바일 고객 화면)
 3. **오프라인 대응**: 기사 앱은 오늘 배송 목록 로컬 캐싱 필수
 4. **SMS는 기기 발송**: expo-sms로 기사 핸드폰에서 직접 발송 (유료 API 미사용)
+5. **장날 로직은 서버 강제**: 접수 시간·장날 검증은 반드시 백엔드 API에서도 수행
+6. **65세 검증은 birth_year 기준**: 클라이언트 경고 + 서버 검증 병행
+
+---
+
+## 드림팀 분업 규칙 (이 프로젝트 전용)
+
+| 작업 유형 | 담당 |
+|----------|------|
+| 장날·접수시간 로직 | 브루마 구현, 코코 보안 검토 |
+| 고객 DB 변경 (생년월일 등) | 빌 설계, 미아 무결성 검토 |
+| 대시보드·UI 개편 | 홀리 설계, 브루마 구현 |
+| API 신규 엔드포인트 | 안토니 설계, 브루마 구현, 코코 보안 검토 |
+| 통계·보고서 | 빌 쿼리, 브루마 구현 |
+
+---
+
+## 테스트 계정
+
+| 역할 | 전화번호 | 비밀번호 |
+|------|----------|----------|
+| Demo accounts | seed.py requires ALLOW_DEMO_SEED=true and SEED_* password environment variables |
 
 ---
 
@@ -79,10 +147,6 @@ git add .
 git commit -m "feat/fix/chore: 내용"
 git push origin master
 
-# VM 반영
-gcloud compute ssh hanwool-server \
-  --project=hanwool-delivery-2026 \
-  --zone=asia-northeast3-a \
-  --strict-host-key-checking=no \
-  --command="cd /opt/hanwool && sudo git pull && sudo docker compose up -d --build"
+# VM 반영 (Windows PowerShell)
+gcloud compute ssh hanwool-server --project=hanwool-delivery-2026 --zone=asia-northeast3-a --command="cd /opt/hanwool && sudo git pull && sudo docker compose up -d --build"
 ```

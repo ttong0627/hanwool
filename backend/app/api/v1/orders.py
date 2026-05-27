@@ -169,6 +169,106 @@ async def get_today_orders(
     return await order_service.get_orders_today(db, driver_id)
 
 
+@router.post("/dispatch/start-work")
+async def start_driver_work(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="기사만 배송업무를 시작할 수 있습니다.")
+
+    today_start = _today_start()
+    assigned_count = (await db.execute(
+        select(func.count()).select_from(Order).where(
+            Order.created_at >= today_start,
+            Order.driver_id == current_user.id,
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+    )).scalar() or 0
+
+    if assigned_count > 0:
+        return {
+            "status": "already_assigned",
+            "assigned_count": assigned_count,
+            "message": "이미 배정된 배송업무가 있습니다.",
+        }
+
+    total_active = (await db.execute(
+        select(func.count()).select_from(Order).where(
+            Order.created_at >= today_start,
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+    )).scalar() or 0
+    pending_count = (await db.execute(
+        select(func.count()).select_from(Order).where(
+            Order.created_at >= today_start,
+            Order.driver_id == None,
+            Order.status == OrderStatus.pending,
+        )
+    )).scalar() or 0
+
+    if total_active == 0:
+        return {"status": "no_orders", "assigned_count": 0, "message": "오늘 배정할 주문이 없습니다."}
+
+    if pending_count == 0:
+        return {
+            "status": "waiting_admin",
+            "assigned_count": 0,
+            "message": "총관리자 배정이 완료될 때까지 대기해 주세요.",
+        }
+
+    if total_active > AUTO_ASSIGN_LIMIT:
+        existing = await db.execute(
+            select(DispatchRequest).where(
+                DispatchRequest.request_date == date.today(),
+                DispatchRequest.status == DispatchRequestStatus.pending,
+            )
+        )
+        request = existing.scalar_one_or_none()
+        if not request:
+            recommended = 2 if total_active <= 80 else 3
+            request = DispatchRequest(
+                request_date=date.today(),
+                requested_by_driver_id=current_user.id,
+                total_orders=total_active,
+                pending_orders=pending_count,
+                recommended_driver_count=recommended,
+                status=DispatchRequestStatus.pending,
+                message=(
+                    f"오늘 배송 {total_active}건입니다. "
+                    "40건을 초과하여 총관리자 배정 결정이 필요합니다."
+                ),
+            )
+            db.add(request)
+            await db.flush()
+        return {
+            "status": "admin_decision_required",
+            "request_id": request.id,
+            "total_orders": total_active,
+            "pending_orders": pending_count,
+            "recommended_driver_count": request.recommended_driver_count,
+            "message": "배송 수량이 40건을 초과했습니다. 총관리자에게 기사 추가/분배 요청을 보냈습니다.",
+        }
+
+    dispatch_result = await _dispatch_today_orders(db, [current_user.id])
+    return {
+        "status": "assigned",
+        "assigned_count": dispatch_result["total"],
+        "dispatch": dispatch_result,
+        "message": f"{dispatch_result['total']}건이 배정되었습니다.",
+    }
+
+
+@router.post("/dispatch")
+async def dispatch_orders_priority(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    driver_ids: list[int] = body.get("driver_ids", [])
+    return await _dispatch_today_orders(db, driver_ids)
+
+
 @router.get("/")
 async def list_orders(
     page: int = Query(1, ge=1),
@@ -571,6 +671,7 @@ async def dispatch_orders(
     from app.core.security import decrypt_field
 
     driver_ids: list[int] = body.get("driver_ids", [])
+    return await _dispatch_today_orders(db, driver_ids)
     if not driver_ids or not (1 <= len(driver_ids) <= 4):
         raise HTTPException(status_code=400, detail="driver_ids는 1~4명이어야 합니다.")
 

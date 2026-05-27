@@ -3,5 +3,17 @@ from app.models.order import Order, OrderStatus
 from app.models.delivery import Delivery
 from app.models.complaint import Complaint
 from app.models.sms_log import SmsLog
+from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 
-__all__ = ["User", "UserRole", "DongArea", "Order", "OrderStatus", "Delivery", "Complaint", "SmsLog"]
+__all__ = [
+    "User",
+    "UserRole",
+    "DongArea",
+    "Order",
+    "OrderStatus",
+    "Delivery",
+    "Complaint",
+    "SmsLog",
+    "DispatchRequest",
+    "DispatchRequestStatus",
+]

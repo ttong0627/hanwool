@@ -44,10 +44,26 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None
     dong: Optional[str] = None
     address: Optional[str] = None
     is_active: Optional[bool] = None
     birth_year: Optional[int] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def phone_format(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 20:
+            raise ValueError("전화번호 형식이 올바르지 않습니다")
+        return v
 
     @field_validator("birth_year")
     @classmethod
