@@ -232,7 +232,6 @@ export function DeliveryTracking() {
   }, [search, selectedDriverId, visibleOrders])
 
   const selectedOrder = selectedOrders.find((order) => order.id === selectedOrderId)
-  const coordTotal = visibleOrders.filter(hasCoord).length
 
   return (
     <div className="p-6 space-y-4 page-fade-in">
@@ -252,13 +251,6 @@ export function DeliveryTracking() {
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />새로고침
           </button>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">오늘 주문</div><div className="text-2xl font-bold text-gray-900">{visibleOrders.length}</div></div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">기사</div><div className="text-2xl font-bold text-gray-900">{driverGroups.length}</div></div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">지도 좌표</div><div className="text-2xl font-bold text-gray-900">{coordTotal}</div></div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4"><div className="text-sm text-gray-500">미배정</div><div className="text-2xl font-bold text-amber-600">{unassignedCount}</div></div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
