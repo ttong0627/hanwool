@@ -361,10 +361,17 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                     docs = resp.json().get("documents", [])
                     if docs:
                         d = docs[0]
+                        # 도로명 주소에는 동 이름이 없으므로 region_3depth_name 별도 추출
+                        dong_name = None
+                        if d.get("road_address"):
+                            dong_name = d["road_address"].get("region_3depth_name")
+                        if not dong_name and d.get("address"):
+                            dong_name = d["address"].get("region_3depth_name")
                         return {
                             "lat": float(d["y"]),
                             "lng": float(d["x"]),
                             "address_name": d.get("address_name", query),
+                            "dong_name": dong_name,
                         }
             except Exception:
                 pass
@@ -385,14 +392,16 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                     docs = resp.json().get("documents", [])
                     if docs:
                         d = docs[0]
+                        addr_name = (d.get("road_address_name") or d.get("address_name") or query)
+                        # keyword 검색: address_name = 지번(동 이름 포함)
+                        jibun = d.get("address_name", "")
+                        m = re.search(r'([가-힣]+동)', jibun)
+                        dong_name = m.group(1) if m else None
                         return {
                             "lat": float(d["y"]),
                             "lng": float(d["x"]),
-                            "address_name": (
-                                d.get("road_address_name")
-                                or d.get("address_name")
-                                or query
-                            ),
+                            "address_name": addr_name,
+                            "dong_name": dong_name,
                         }
             except Exception:
                 pass

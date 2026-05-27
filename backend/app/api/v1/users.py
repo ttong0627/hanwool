@@ -109,7 +109,8 @@ async def list_users(
     if current_user.role == "receiver":
         q = q.where(User.role == "customer", User.is_active == True)
     elif role:
-        q = q.where(User.role == role)
+        roles = [r.strip() for r in role.split(',') if r.strip()]
+        q = q.where(User.role.in_(roles)) if len(roles) > 1 else q.where(User.role == roles[0])
     result = await db.execute(q)
     return [_to_out(u) for u in result.scalars().all()]
 

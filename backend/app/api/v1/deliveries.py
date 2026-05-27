@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.models.delivery import Delivery
 from app.models.order import Order
 from app.models.user import User
-from app.services.order_service import decrypt_order, get_orders_today
+from app.services.order_service import get_orders_today
 from app.services.route_service import optimize_route, get_kakao_coordinates
 
 router = APIRouter(prefix="/deliveries", tags=["배송"])
@@ -15,11 +15,10 @@ router = APIRouter(prefix="/deliveries", tags=["배송"])
 
 @router.get("/route")
 async def get_optimized_route(
-    route_mode: str = "A",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    driver_id = current_user.id if current_user.role == "driver" else None
+    driver_id = current_user.id if current_user.role in {"driver", "admin", "super_admin"} else None
     orders = await get_orders_today(db, driver_id)
 
     enriched = []
@@ -33,7 +32,7 @@ async def get_optimized_route(
             "lng": coords["lng"] if coords else 127.2551,
         })
 
-    return optimize_route(enriched, route_mode)
+    return optimize_route(enriched)
 
 
 @router.post("/{order_id}/location")

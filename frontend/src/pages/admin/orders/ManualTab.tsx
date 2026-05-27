@@ -84,7 +84,7 @@ export function ManualTab() {
       const res = await api.post('/orders/single', {
         customer_name: row.customer_name,
         customer_phone: row.customer_phone,
-        delivery_address: row.delivery_address,
+        delivery_address: row.addrRefined ?? row.delivery_address,
         dong: row.dong,
         items_desc: row.items_desc || undefined,
         item_code: row.item_code || undefined,
@@ -150,11 +150,15 @@ export function ManualTab() {
     addrTimers[rowId] = setTimeout(async () => {
       try {
         const res = await api.get('/orders/geocode', { params: { address: value } })
-        const { lat, lng, address_name } = res.data
-        const fullAddr = address_name ?? value
-        const refinedDong = detectDong(fullAddr)
-        // 서비스 지역 외라도 실제 동 이름 추출 (예: 세류동, 분당동 등)
-        const anyDong = fullAddr.match(/([가-힣]+동)/)?.[1] ?? null
+        const { lat, lng, address_name, dong_name } = res.data
+        // dong_name: 백엔드가 region_3depth_name으로 추출 (도로명 주소에도 정확)
+        const detectedFromAddr = detectDong(address_name ?? '') ?? detectDong(value)
+        const refinedDong = (dong_name && VALID_DONGS.has(dong_name))
+          ? dong_name
+          : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr))
+            ? detectedFromAddr
+            : null
+        const anyDong = dong_name ?? (address_name ?? value).match(/([가-힣]+동)/)?.[1] ?? null
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
         setRows(
           rows.map((r, i) =>
@@ -163,8 +167,7 @@ export function ManualTab() {
                   ...r,
                   addrStatus: 'valid' as AddrStatus,
                   lat, lng,
-                  delivery_address: fullAddr,
-                  addrRefined: address_name,
+                  addrRefined: address_name, // 정제 주소는 저장용, 표시는 입력값 유지
                   dongStatus,
                   dong: refinedDong ?? anyDong ?? r.dong,
                   savedOrderId: undefined,
@@ -174,7 +177,16 @@ export function ManualTab() {
           )
         )
       } catch {
-        setRows(rows.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'invalid' as AddrStatus, dongStatus: 'out-of-zone' } : r))
+        // 주소 그대로 유지, 입력값에서 동 감지 시도
+        const typedDong = detectDong(value)
+        const anyDong = value.match(/([가-힣]+동)/)?.[1] ?? null
+        const dongStatus: DongStatus = typedDong ? 'valid' : 'out-of-zone'
+        setRows(rows.map((r, i) => i === rowIdx ? {
+          ...r,
+          addrStatus: 'invalid' as AddrStatus,
+          dongStatus,
+          dong: typedDong ?? anyDong ?? r.dong,
+        } : r))
       }
     }, 600)
   }, [rows, setRows])
