@@ -178,24 +178,24 @@ async def _dispatch_today_orders(
                 db_order.driver_id = group.driver_id
                 db_order.sequence = dispatch_item.sequence
                 db_order.sequence_source = "auto"
-                if db_order.status == OrderStatus.pending:
-                    db_order.status = OrderStatus.assigned
+                if db_order.status in {OrderStatus.pending, OrderStatus.assigned}:
+                    db_order.status = OrderStatus.in_transit
                     db_order.assigned_at = now
-                elif db_order.status == OrderStatus.assigned and previous_driver_id != group.driver_id:
-                    db_order.assigned_at = now
+                if not db_order.picked_up_at:
+                    db_order.picked_up_at = now
                 dispatch_item.status = db_order.status
                 if previous_status != db_order.status or previous_driver_id != group.driver_id:
                     await order_service.log_order_history(
                         db,
                         db_order,
-                        event_type="assigned",
+                        event_type="dispatched",
                         from_status=previous_status,
                         to_status=db_order.status,
                         actor_user_id=executed_by_id,
                         actor_role="system" if is_auto else None,
                         driver_id=group.driver_id,
                         note=(
-                            ("자동 배차" if is_auto else "관리자 배차")
+                            ("자동 배차 후 배송중 전환" if is_auto else "관리자 배차 후 배송중 전환")
                             + (f" / 기사 변경: {previous_driver_id} -> {group.driver_id}" if previous_driver_id and previous_driver_id != group.driver_id else "")
                         ),
                     )
@@ -459,9 +459,9 @@ async def list_orders(
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar()
 
-    q = q.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    q = q.order_by(Order.id.desc()).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(q)
-    items = [order_service.decrypt_order(o) for o in result.scalars().all()]
+    items = await order_service.attach_driver_info(db, [order_service.decrypt_order(o) for o in result.scalars().all()])
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
