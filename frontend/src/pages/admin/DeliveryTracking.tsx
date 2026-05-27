@@ -69,6 +69,23 @@ function hasCoord(o: Order) {
   return typeof o.lat === 'number' && typeof o.lng === 'number'
 }
 
+// 투명 1×1 PNG (base64) — 클릭 영역만 제공, 시각적으로 보이지 않음
+const TRANSPARENT_1PX =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+function pinHtml(bg: string, seq: number | string, label: string, selected: boolean) {
+  const sz = selected ? 52 : 44
+  const fs = selected ? 20 : 17
+  const tri = selected ? 13 : 11
+  return `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
+    <div style="margin-bottom:5px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;background:rgba(0,0,0,.82);color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.22);">${label}</div>
+    <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${bg};border:${selected ? 4 : 3}px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.38);">
+      <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${seq}</span>
+    </div>
+    <div style="width:0;height:0;border-left:${tri}px solid transparent;border-right:${tri}px solid transparent;border-top:${tri + 1}px solid ${bg};"></div>
+  </div>`
+}
+
 function MapView({
   orders,
   driverLocations,
@@ -87,12 +104,14 @@ function MapView({
   const markersRef = useRef<KakaoAny[]>([])
   const overlaysRef = useRef<KakaoAny[]>([])
   const driverOverlaysRef = useRef<KakaoAny[]>([])
+  const startOverlayRef = useRef<KakaoAny | null>(null)
   const lineRef = useRef<KakaoAny | null>(null)
   const lastFitKeyRef = useRef('')
   const lastCenteredIdRef = useRef<number | undefined>()
   const [ready, setReady] = useState(false)
   const [mapError, setMapError] = useState('')
 
+  // SDK 초기화
   useEffect(() => {
     if (!KAKAO_MAP_KEY || !mapEl.current) return
     const scriptId = 'kakao-maps-sdk'
@@ -121,7 +140,25 @@ function MapView({
     }
   }, [])
 
-  // 주문 마커 + 경로선
+  // 경안시장 출발 마커 (항상 표시)
+  useEffect(() => {
+    if (!ready || !mapRef.current || !(window as any).kakao?.maps) return
+    startOverlayRef.current?.setMap(null)
+    const pos = new (window as any).kakao.maps.LatLng(MARKET_LAT, MARKET_LNG)
+    startOverlayRef.current = new (window as any).kakao.maps.CustomOverlay({
+      position: pos,
+      xAnchor: 0.5,
+      yAnchor: 1.0,
+      content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
+        <div style="margin-bottom:5px;padding:3px 9px;background:rgba(120,53,15,.95);color:#fef3c7;font-size:11px;font-weight:800;border-radius:5px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.28);">🏪 경안시장 (출발)</div>
+        <div style="display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;background:#f59e0b;border:4px solid white;box-shadow:0 4px 16px rgba(0,0,0,.4);font-size:24px;">🏪</div>
+        <div style="width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:15px solid #f59e0b;"></div>
+      </div>`,
+    })
+    startOverlayRef.current.setMap(mapRef.current)
+  }, [ready])
+
+  // 주문 핀 마커 + 경로선
   useEffect(() => {
     if (!ready || !mapRef.current || !(window as any).kakao?.maps) return
     markersRef.current.forEach((m) => m.setMap(null))
@@ -141,29 +178,41 @@ function MapView({
       return
     }
 
+    // 투명 마커 이미지 (클릭 이벤트 전용)
+    const emptyImg = new (window as any).kakao.maps.MarkerImage(
+      TRANSPARENT_1PX,
+      new (window as any).kakao.maps.Size(1, 1)
+    )
+
     const bounds = new (window as any).kakao.maps.LatLngBounds()
     const path: KakaoAny[] = []
+
     coordOrders.forEach((order, index) => {
       const pos = new (window as any).kakao.maps.LatLng(order.lat, order.lng)
       bounds.extend(pos)
       path.push(pos)
+
       const isSelected = selectedId === order.id
       const bg = markerBg(order.status)
-      const sz = isSelected ? 30 : 26
-      const border = isSelected ? '3px solid #fff' : '2px solid white'
-      const marker = new (window as any).kakao.maps.Marker({ position: pos, map: mapRef.current })
+      const seq = order.sequence ?? index + 1
+      const label = `${order.customer_name} · ${order.quantity}개`
+
+      // 투명 마커 — 클릭 이벤트만 처리
+      const marker = new (window as any).kakao.maps.Marker({
+        position: pos,
+        map: mapRef.current,
+        image: emptyImg,
+        clickable: true,
+      })
+      ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
+
+      // 핀 모양 오버레이 — 시각적 표현 (원 + 삼각형 포인터)
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
-        yAnchor: 0.22,
-        content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:74px;">
-          <span style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:999px;background:${bg};color:white;font-size:12px;font-weight:900;border:${border};box-shadow:0 3px 8px rgba(0,0,0,.28);">${order.sequence ?? index + 1}</span>
-          <span style="max-width:98px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:4px;background:#111827;color:white;padding:2px 5px;font-size:10px;font-weight:800;line-height:1.2;box-shadow:0 2px 6px rgba(0,0,0,.2);">${order.customer_name} · ${order.quantity}개</span>
-          <span style="max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:3px;background:${bg};color:white;padding:1px 4px;font-size:9px;font-weight:700;line-height:1.15;">${order.dong || ''}</span>
-        </div>`,
+        yAnchor: 1.0,
+        content: pinHtml(bg, seq, label, isSelected),
       })
-      marker.setMap(mapRef.current)
-      ;(window as any).kakao.maps.event.addListener(marker, 'click', () => onSelect(order))
       overlay.setMap(mapRef.current)
       markersRef.current.push(marker)
       overlaysRef.current.push(overlay)
@@ -186,7 +235,7 @@ function MapView({
     }
   }, [orders, ready, selectedId, viewportKey])
 
-  // 기사 실시간 위치 마커
+  // 기사 실시간 위치 핀
   useEffect(() => {
     if (!ready || !mapRef.current || !(window as any).kakao?.maps) return
     driverOverlaysRef.current.forEach((o) => o.setMap(null))
@@ -202,10 +251,11 @@ function MapView({
       const overlay = new (window as any).kakao.maps.CustomOverlay({
         position: pos,
         xAnchor: 0.5,
-        yAnchor: 0.5,
-        content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px;">
-          <div style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:#7c3aed;border:3px solid white;box-shadow:0 4px 10px rgba(0,0,0,.35);font-size:16px;">🚗</div>
-          <span style="border-radius:4px;background:#7c3aed;color:white;padding:2px 6px;font-size:10px;font-weight:800;line-height:1.2;box-shadow:0 2px 6px rgba(0,0,0,.2);">기사</span>
+        yAnchor: 1.0,
+        content: `<div style="pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:0;">
+          <div style="margin-bottom:5px;padding:3px 8px;background:rgba(109,40,217,.92);color:#fff;font-size:10px;font-weight:700;border-radius:5px;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.22);">기사 위치</div>
+          <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:#7c3aed;border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.38);font-size:22px;">🚗</div>
+          <div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:13px solid #7c3aed;"></div>
         </div>`,
       })
       overlay.setMap(mapRef.current)
@@ -213,7 +263,7 @@ function MapView({
     })
   }, [driverLocations, ready])
 
-  // 선택 주문 중심 이동
+  // 선택 주문 지도 중심 이동
   useEffect(() => {
     if (!selectedId) { lastCenteredIdRef.current = undefined; return }
     if (lastCenteredIdRef.current === selectedId) return
@@ -244,12 +294,10 @@ function MapView({
         <div className="flex items-center gap-3 text-gray-600">
           <span>좌표 {coordCount}/{orders.length}건</span>
           {noCoordCount > 0 && <span className="font-semibold text-orange-600">미설정 {noCoordCount}건</span>}
-          {driverOverlaysRef.current.length > 0 && (
-            <span className="font-semibold text-purple-600">기사위치 {driverOverlaysRef.current.length}명</span>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           {([
+            { color: '#f59e0b', label: '경안시장(출발)' },
             { color: '#22c55e', label: '완료' },
             { color: '#f97316', label: '진행중' },
             { color: '#ef4444', label: '지연' },
