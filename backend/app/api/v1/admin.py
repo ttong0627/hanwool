@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,7 +14,7 @@ from app.models.user import User
 from app.api.v1.orders import _dispatch_today_orders
 from app.services.customer_service import customer_stats, get_customer_detail, list_customers
 from app.services.privacy_service import destroy_personal_data
-from app.utils.market_day import market_day_status
+from app.utils.market_day import market_day_status, today_kst
 
 router = APIRouter(prefix="/admin", tags=["관리자"])
 
@@ -27,7 +27,7 @@ async def get_market_status(_: User = Depends(require_admin)):
 
 @router.get("/dashboard")
 async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
 
     total_today = (await db.execute(
         select(func.count()).select_from(Order).where(Order.created_at >= today_start)
@@ -54,7 +54,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(re
     )).scalar()
 
     return {
-        "today": date.today().isoformat(),
+        "today": today_kst().isoformat(),
         "total_orders_today": total_today,
         "delivered_today": delivered_today,
         "in_progress": in_progress,
@@ -159,7 +159,7 @@ async def stats_by_dong(db: AsyncSession = Depends(get_db), _=Depends(require_ad
 
 @router.get("/stats/drivers")
 async def driver_stats(db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
     result = await db.execute(
         select(
             Order.driver_id,

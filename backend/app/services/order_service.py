@@ -1,4 +1,4 @@
-from datetime import datetime, date, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, func, text
@@ -8,17 +8,17 @@ from app.core.security import encrypt_field, decrypt_field, hash_phone
 from app.models.order import Order, OrderStatus
 from app.models.order_history import OrderHistory
 from app.schemas.order import OrderCreate
-from app.utils.market_day import is_market_day
+from app.utils.market_day import is_market_day, today_kst
 
 
 def _generate_order_no(sequence: int) -> str:
-    today = date.today().strftime("%Y%m%d")
+    today = today_kst().strftime("%Y%m%d")
     return f"{today}-{sequence:04d}"
 
 
 async def _next_sequence(db: AsyncSession) -> int:
     await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 2026052401})
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
     result = await db.execute(
         select(func.max(Order.sequence)).select_from(Order).where(Order.created_at >= today_start)
     )
@@ -56,7 +56,7 @@ async def create_order(
             customer_id = customer.id
 
     seq = await _next_sequence(db)
-    today = date.today()
+    today = today_kst()
     order = Order(
         order_no=_generate_order_no(seq),
         customer_id=customer_id,
@@ -165,7 +165,7 @@ async def attach_driver_info(db: AsyncSession, orders: list[dict]) -> list[dict]
 
 
 async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) -> list:
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
     q = select(Order).where(Order.created_at >= today_start)
     if driver_id:
         q = q.where(Order.driver_id == driver_id)

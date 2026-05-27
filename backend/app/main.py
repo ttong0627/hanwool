@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.limiter import limiter
 from app.models.order import Order, OrderStatus
+from app.utils.market_day import today_kst
 from app.websocket.handler import manager
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ DELAY_THRESHOLD_MINUTES = 45   # in_transit 후 45분 초과 시 지연 처리
 async def _detect_delayed_orders() -> None:
     """in_transit 상태가 DELAY_THRESHOLD_MINUTES 초과된 주문을 delayed로 전환하고 관리자에게 WebSocket 알림."""
     threshold = datetime.now(timezone.utc) - timedelta(minutes=DELAY_THRESHOLD_MINUTES)
-    today = date.today()
+    today = today_kst()
 
     async with AsyncSessionLocal() as db:
         try:

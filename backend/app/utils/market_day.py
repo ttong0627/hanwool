@@ -8,6 +8,11 @@ from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
 MARKET_DAYS = {3, 8, 13, 18, 23, 28}
+
+
+def today_kst() -> date:
+    """서버 timezone과 무관하게 한국 기준 오늘 날짜를 반환"""
+    return datetime.now(KST).date()
 RECEPTION_START_HOUR = 11
 RECEPTION_END_HOUR = 15
 

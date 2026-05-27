@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Optional
 
@@ -41,7 +41,7 @@ from app.services.route_service import (
     analyze_sequence_quality,
     optimize_route,
 )
-from app.utils.market_day import is_market_day, is_reception_open
+from app.utils.market_day import is_market_day, is_reception_open, today_kst
 from app.websocket.handler import manager
 
 router = APIRouter(prefix="/orders", tags=["주문"])
@@ -58,7 +58,7 @@ def is_driver_capable(user) -> bool:
 
 
 def _today_start() -> datetime:
-    return datetime.combine(date.today(), datetime.min.time())
+    return datetime.combine(today_kst(), datetime.min.time())
 
 
 async def _get_today_orders_for_dispatch(
@@ -70,7 +70,7 @@ async def _get_today_orders_for_dispatch(
     result = await db.execute(
         select(Order)
         .where(
-            Order.market_date == date.today(),
+            Order.market_date == today_kst(),
             Order.status.in_(statuses),
         )
         .order_by(Order.created_at.asc())
@@ -196,7 +196,7 @@ async def _dispatch_today_orders(
                 id_to_dispatch_item[oid].sequence = geo_seq
 
     dispatch_run = DispatchRun(
-        market_date=date.today(),
+        market_date=today_kst(),
         executed_by_id=executed_by_id,
         driver_count=len(driver_ids),
         order_count=len(today_orders),
@@ -379,7 +379,7 @@ async def start_driver_work(
     if not is_driver_capable(current_user):
         raise HTTPException(status_code=403, detail="기사 또는 기사 업무가 부여된 관리자만 배송업무를 시작할 수 있습니다.")
 
-    today = date.today()
+    today = today_kst()
     active_orders_result = await db.execute(
         select(Order).where(
             Order.market_date == today,
@@ -447,7 +447,7 @@ async def start_driver_work(
     if total_active > AUTO_ASSIGN_LIMIT:
         existing = await db.execute(
             select(DispatchRequest).where(
-                DispatchRequest.request_date == date.today(),
+                DispatchRequest.request_date == today_kst(),
                 DispatchRequest.status == DispatchRequestStatus.pending,
             )
         )
@@ -455,7 +455,7 @@ async def start_driver_work(
         if not request:
             recommended = 2 if total_active <= 80 else 3
             request = DispatchRequest(
-                request_date=date.today(),
+                request_date=today_kst(),
                 requested_by_driver_id=current_user.id,
                 total_orders=total_active,
                 pending_orders=pending_count,
@@ -496,7 +496,7 @@ async def get_today_dispatch_status(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin_or_above),
 ):
-    today = date.today()
+    today = today_kst()
 
     status_rows = await db.execute(
         select(Order.status, func.count().label("cnt"))
@@ -976,7 +976,7 @@ async def auto_sequence(
     _: User = Depends(require_receiver_or_above),
 ):
     """오늘 접수된 주문의 배송순번을 기사별로 자동 계산하고 저장 + WS 푸시"""
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
     q = select(Order).where(
         Order.created_at >= today_start,
         Order.driver_id.isnot(None),
@@ -1132,7 +1132,7 @@ async def regeocode_unresolved_orders(
     _: User = Depends(require_receiver_or_above),
 ):
     """오늘 좌표 미확인 주문 전체를 백그라운드에서 재매칭 — 즉시 반환"""
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(today_kst(), datetime.min.time())
     result = await db.execute(
         select(Order.id).where(
             Order.created_at >= today_start,
