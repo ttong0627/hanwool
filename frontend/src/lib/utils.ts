@@ -32,6 +32,35 @@ export const STATUS_COLOR: Record<string, string> = {
   delayed: 'bg-purple-100 text-purple-700',
 }
 
+// 3단계 표시: pending·assigned·picked_up → 픽업대기 / in_transit → 배송중 / delivered → 배송완료
+export function toDisplayStatus(status: string): string {
+  if (['pending', 'assigned', 'picked_up'].includes(status)) return 'pickup_waiting'
+  return status
+}
+
+export const DISPLAY_STATUS_LABEL: Record<string, string> = {
+  pickup_waiting: '픽업대기',
+  in_transit: '배송중',
+  delivered: '배송완료',
+  cancelled: '취소',
+  delayed: '지연',
+}
+
+export const DISPLAY_STATUS_COLOR: Record<string, string> = {
+  pickup_waiting: 'bg-yellow-100 text-yellow-700',
+  in_transit: 'bg-orange-100 text-orange-700',
+  delivered: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+  delayed: 'bg-purple-100 text-purple-700',
+}
+
+// 필터 드롭다운용 3단계 옵션
+export const STATUS_FILTER_OPTIONS = [
+  { value: 'pending,assigned,picked_up', label: '픽업대기' },
+  { value: 'in_transit', label: '배송중' },
+  { value: 'delivered', label: '배송완료' },
+]
+
 export const DONG_LIST = ['경안동', '송정동', '쌍령동', '탄벌동']
 
 export function formatPhone(raw: string): string {

@@ -1,9 +1,10 @@
-import { cn, STATUS_COLOR, STATUS_LABEL } from '@/lib/utils'
+import { cn, toDisplayStatus, DISPLAY_STATUS_LABEL, DISPLAY_STATUS_COLOR } from '@/lib/utils'
 
 export function StatusBadge({ status }: { status: string }) {
+  const display = toDisplayStatus(status)
   return (
-    <span className={cn('badge', STATUS_COLOR[status] || 'bg-gray-100 text-gray-600')}>
-      {STATUS_LABEL[status] || status}
+    <span className={cn('badge', DISPLAY_STATUS_COLOR[display] || 'bg-gray-100 text-gray-600')}>
+      {DISPLAY_STATUS_LABEL[display] || status}
     </span>
   )
 }

@@ -9,7 +9,7 @@ import {
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
 import { OrderCard } from '@/components/OrderCard'
-import { DONG_LIST, STATUS_LABEL } from '@/lib/utils'
+import { DONG_LIST, STATUS_FILTER_OPTIONS } from '@/lib/utils'
 import { QrTab } from './orders/QrTab'
 import { ExcelTab } from './orders/ExcelTab'
 import { ManualTab } from './orders/ManualTab'
@@ -410,7 +410,9 @@ function OrderListTab() {
           </select>
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} className="input w-32">
             <option value="">전체 상태</option>
-            {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {STATUS_FILTER_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
           <div className="flex items-center gap-1">
             <button onClick={() => { setDateFrom(today); setDateTo(today); setPage(1) }}

@@ -415,7 +415,11 @@ async def list_orders(
 ):
     q = select(Order)
     if status:
-        q = q.where(Order.status == status)
+        statuses = [s.strip() for s in status.split(',') if s.strip()]
+        if len(statuses) == 1:
+            q = q.where(Order.status == statuses[0])
+        else:
+            q = q.where(Order.status.in_(statuses))
     if dong:
         q = q.where(Order.dong == dong)
     if driver_id:
