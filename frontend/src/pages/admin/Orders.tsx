@@ -772,7 +772,7 @@ function OrderListTab() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              placeholder="이름·전화번호·접수번호" className="input pl-7 w-44 text-xs py-1.5" />
+              placeholder="이름·끝번호4자리·접수번호" className="input pl-7 w-44 text-xs py-1.5" />
           </div>
           <select value={dong} onChange={(e) => { setDong(e.target.value); setPage(1) }} className="input w-28 text-xs py-1.5">
             <option value="">전체 동</option>
