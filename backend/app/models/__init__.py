@@ -1,5 +1,6 @@
 from app.models.user import User, UserRole, DongArea
 from app.models.order import Order, OrderStatus, OrderTransfer
+from app.models.order_history import OrderHistory
 from app.models.delivery import Delivery
 from app.models.complaint import Complaint
 from app.models.sms_log import SmsLog
@@ -17,6 +18,7 @@ __all__ = [
     "Order",
     "OrderStatus",
     "OrderTransfer",
+    "OrderHistory",
     "Delivery",
     "Complaint",
     "SmsLog",

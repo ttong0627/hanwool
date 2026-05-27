@@ -5,6 +5,7 @@ import {
   ChevronLeft, ChevronRight, QrCode, FileSpreadsheet,
   TableProperties, ClipboardList, AlertTriangle, MapPin,
   CheckCircle2, ChevronDown, ChevronUp, RefreshCw, RotateCcw,
+  History,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
@@ -25,6 +26,17 @@ interface Order {
   match_score?: number; coord_source?: string
 }
 interface Driver { id: number; name: string; phone: string }
+interface OrderHistoryItem {
+  id: number
+  order_no: string
+  event_type: string
+  from_status?: string | null
+  to_status?: string | null
+  actor_role?: string | null
+  driver_id?: number | null
+  note?: string | null
+  created_at?: string | null
+}
 
 /* ── 기사 배정 모달 ─────────────────────────────────────────────────────────── */
 function AssignModal({ order, drivers, onConfirm, onClose }: {
@@ -180,6 +192,59 @@ function CancelDialog({ order, onConfirm, onClose }: { order: Order; onConfirm: 
 }
 
 /* ── 엑셀 업로드 모달 ────────────────────────────────────────────────────────── */
+function HistoryModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const { data: histories = [], isLoading } = useQuery<OrderHistoryItem[]>({
+    queryKey: ['order-history', order.id],
+    queryFn: () => api.get(`/orders/${order.id}/history`).then((r) => r.data),
+  })
+
+  const eventLabel: Record<string, string> = {
+    created: '주문 접수',
+    assigned: '기사 배정',
+    status_changed: '상태 변경',
+    delivered: '배송 완료',
+    cancelled: '주문 취소',
+    transferred: '기사 인계',
+    hard_deleted: '완전 삭제',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[86vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold">주문 이력</h2>
+            <p className="text-sm text-gray-500">{order.order_no} · {order.customer_name}</p>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        {isLoading ? (
+          <div className="text-center text-gray-400 py-8 text-sm">불러오는 중...</div>
+        ) : histories.length === 0 ? (
+          <div className="text-center text-gray-400 py-8 text-sm">저장된 이력이 없습니다.</div>
+        ) : (
+          <div className="space-y-3">
+            {histories.map((h) => (
+              <div key={h.id} className="border border-gray-100 rounded-xl p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-gray-900">{eventLabel[h.event_type] || h.event_type}</div>
+                  <div className="text-xs text-gray-400">{h.created_at ? formatDate(h.created_at, 'MM/dd HH:mm') : '-'}</div>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {(h.from_status || h.to_status) && <span>{h.from_status || '-'} → {h.to_status || '-'}</span>}
+                  {h.driver_id ? <span className="ml-2">기사 #{h.driver_id}</span> : null}
+                  {h.actor_role ? <span className="ml-2">처리자 {h.actor_role}</span> : null}
+                </div>
+                {h.note && <div className="text-xs text-gray-500 mt-1">{h.note}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ExcelModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -245,9 +310,9 @@ function matchIssueText(order: Order): string {
 }
 
 /* ── 압축형 주문 행 ──────────────────────────────────────────────────────── */
-function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore }: {
+function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore, onHistory }: {
   order: Order; driverMap: Record<number, string>
-  onAssign: () => void; onEdit: () => void; onDelete: () => void; onRestore: () => void
+  onAssign: () => void; onEdit: () => void; onDelete: () => void; onRestore: () => void; onHistory: () => void
 }) {
   const userRole = useAuthStore((s) => s.user?.role ?? '')
   const hasIssue = order.match_status && order.match_status !== 'matched'
@@ -298,6 +363,10 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore }:
       <div className="w-20 shrink-0 text-xs text-gray-400 text-right">{formatDate(order.created_at, 'MM/dd HH:mm')}</div>
       {/* 액션 */}
       <div className="flex gap-1 shrink-0">
+        <button title="주문 이력" onClick={onHistory}
+          className="p-1.5 rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-600 text-gray-400 transition-colors">
+          <History className="w-3.5 h-3.5" />
+        </button>
         {order.status === 'cancelled' ? (
           <>
             <button title="재접수" onClick={onRestore}
@@ -624,6 +693,7 @@ function OrderListTab() {
   const [editTarget, setEditTarget] = useState<Order | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null)
+  const [historyTarget, setHistoryTarget] = useState<Order | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['orders', { dong, status, page, dateFrom, dateTo }],
@@ -749,6 +819,7 @@ function OrderListTab() {
             onEdit={() => setEditTarget(order)}
             onDelete={() => setCancelTarget(order)}
             onRestore={() => setRestoreTarget(order)}
+            onHistory={() => setHistoryTarget(order)}
           />
         ))}
         {items.length === 0 && !isLoading && (
@@ -783,6 +854,9 @@ function OrderListTab() {
         <RestoreDialog order={restoreTarget}
           onConfirm={() => restoreMutation.mutate(restoreTarget.id)}
           onClose={() => setRestoreTarget(null)} />
+      )}
+      {historyTarget && (
+        <HistoryModal order={historyTarget} onClose={() => setHistoryTarget(null)} />
       )}
     </div>
   )

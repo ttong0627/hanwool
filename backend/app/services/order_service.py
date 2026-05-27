@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import encrypt_field, decrypt_field, hash_phone
 from app.models.order import Order, OrderStatus
+from app.models.order_history import OrderHistory
 from app.schemas.order import OrderCreate
 from app.utils.market_day import is_market_day
 
@@ -80,6 +81,14 @@ async def create_order(
     apply_resolution_to_order(order, address_resolution, fallback_dong=data.dong)
     await log_address_resolution(db, address_resolution, order_id=order.id)
     await db.flush()
+    await log_order_history(
+        db,
+        order,
+        event_type="created",
+        to_status=order.status,
+        actor_user_id=receiver_id,
+        note="주문 접수",
+    )
     return order
 
 
@@ -139,11 +148,66 @@ async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) ->
     return [decrypt_order(o) for o in result.scalars().all()]
 
 
-async def update_order_status(db: AsyncSession, order_id: int, status: str, driver_id: Optional[int] = None) -> Optional[Order]:
+async def log_order_history(
+    db: AsyncSession,
+    order: Order,
+    *,
+    event_type: str,
+    from_status: Optional[str] = None,
+    to_status: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
+    actor_role: Optional[str] = None,
+    driver_id: Optional[int] = None,
+    note: Optional[str] = None,
+) -> OrderHistory:
+    history = OrderHistory(
+        order_id=order.id,
+        order_no=order.order_no,
+        event_type=event_type,
+        from_status=from_status,
+        to_status=to_status,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        driver_id=driver_id if driver_id is not None else order.driver_id,
+        note=note,
+    )
+    db.add(history)
+    await db.flush()
+    return history
+
+
+def serialize_order_history(history: OrderHistory) -> dict:
+    return {
+        "id": history.id,
+        "order_id": history.order_id,
+        "order_no": history.order_no,
+        "event_type": history.event_type,
+        "from_status": history.from_status,
+        "to_status": history.to_status,
+        "actor_user_id": history.actor_user_id,
+        "actor_role": history.actor_role,
+        "driver_id": history.driver_id,
+        "note": history.note,
+        "created_at": history.created_at.isoformat() if history.created_at else None,
+    }
+
+
+async def update_order_status(
+    db: AsyncSession,
+    order_id: int,
+    status: str,
+    driver_id: Optional[int] = None,
+    *,
+    actor_user_id: Optional[int] = None,
+    actor_role: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Optional[Order]:
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         return None
+    previous_status = order.status
+    previous_driver_id = order.driver_id
     order.status = status
     if status == OrderStatus.assigned and driver_id:
         order.driver_id = driver_id
@@ -152,4 +216,23 @@ async def update_order_status(db: AsyncSession, order_id: int, status: str, driv
         order.picked_up_at = datetime.now(timezone.utc)
     elif status == OrderStatus.delivered:
         order.delivered_at = datetime.now(timezone.utc)
+    if previous_status != status or previous_driver_id != order.driver_id:
+        event_type = "status_changed"
+        if status == OrderStatus.assigned:
+            event_type = "assigned"
+        elif status == OrderStatus.delivered:
+            event_type = "delivered"
+        elif status == OrderStatus.cancelled:
+            event_type = "cancelled"
+        await log_order_history(
+            db,
+            order,
+            event_type=event_type,
+            from_status=previous_status,
+            to_status=status,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            driver_id=order.driver_id,
+            note=note,
+        )
     return order

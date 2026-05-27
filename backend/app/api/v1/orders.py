@@ -23,6 +23,7 @@ from app.models.delivery import Delivery
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunStatus
 from app.models.order import Order, OrderStatus, OrderTransfer
+from app.models.order_history import OrderHistory
 from app.models.user import User
 from app.schemas.order import (
     OrderCreate,
@@ -176,8 +177,20 @@ async def _dispatch_today_orders(
                 db_order.sequence = dispatch_item.sequence
                 db_order.sequence_source = "auto"
                 if db_order.status == OrderStatus.pending:
+                    previous_status = db_order.status
                     db_order.status = OrderStatus.assigned
                     db_order.assigned_at = now
+                    await order_service.log_order_history(
+                        db,
+                        db_order,
+                        event_type="assigned",
+                        from_status=previous_status,
+                        to_status=db_order.status,
+                        actor_user_id=executed_by_id,
+                        actor_role="system" if is_auto else None,
+                        driver_id=group.driver_id,
+                        note="자동 배차" if is_auto else "관리자 배차",
+                    )
                 db.add(
                     DispatchRunItem(
                         dispatch_run_id=dispatch_run.id,
@@ -444,6 +457,20 @@ async def list_orders(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/history/by-order-no/{order_no}")
+async def get_order_history_by_order_no(
+    order_no: str,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.order_no == order_no)
+        .order_by(OrderHistory.created_at.asc(), OrderHistory.id.asc())
+    )
+    return [order_service.serialize_order_history(row) for row in result.scalars().all()]
+
+
 @router.get("/{order_id}")
 async def get_order(
     order_id: int,
@@ -457,6 +484,24 @@ async def get_order(
     if current_user.role == "customer" and order.customer_id != current_user.id:
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     return order_service.decrypt_order(order)
+
+
+@router.get("/{order_id}/history")
+async def get_order_history(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    order_result = await db.execute(select(Order.order_no).where(Order.id == order_id))
+    order_no = order_result.scalar_one_or_none()
+    if not order_no:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    result = await db.execute(
+        select(OrderHistory)
+        .where(or_(OrderHistory.order_id == order_id, OrderHistory.order_no == order_no))
+        .order_by(OrderHistory.created_at.asc(), OrderHistory.id.asc())
+    )
+    return [order_service.serialize_order_history(row) for row in result.scalars().all()]
 
 
 @router.put("/{order_id}", response_model=dict)
@@ -532,7 +577,15 @@ async def update_status(
         )
         if not driver_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="유효하지 않은 기사입니다.")
-    order = await order_service.update_order_status(db, order_id, status, driver_id)
+    order = await order_service.update_order_status(
+        db,
+        order_id,
+        status,
+        driver_id,
+        actor_user_id=current_user.id,
+        actor_role=current_user.role,
+        note="주문 상태 변경",
+    )
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
@@ -552,9 +605,17 @@ async def assign_driver(
     order_id: int,
     driver_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
-    order = await order_service.update_order_status(db, order_id, OrderStatus.assigned, driver_id)
+    order = await order_service.update_order_status(
+        db,
+        order_id,
+        OrderStatus.assigned,
+        driver_id,
+        actor_user_id=current_user.id,
+        actor_role=current_user.role,
+        note="기사 배정",
+    )
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
     await sms_service.notify_order_status(order, OrderStatus.assigned)
@@ -595,7 +656,20 @@ async def transfer_order(
         reason=data.reason,
     )
     db.add(transfer)
+    previous_driver_id = order.driver_id
     order.driver_id = data.to_driver_id
+    await order_service.log_order_history(
+        db,
+        order,
+        event_type="transferred",
+        from_status=order.status,
+        to_status=order.status,
+        actor_user_id=current_user.id,
+        actor_role=current_user.role,
+        driver_id=data.to_driver_id,
+        note=f"기사 인계: {previous_driver_id or '-'} -> {data.to_driver_id}"
+        + (f" / 사유: {data.reason}" if data.reason else ""),
+    )
     await db.flush()
     return transfer
 
@@ -637,6 +711,18 @@ async def hard_delete_order(
         raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 삭제할 수 있습니다.")
 
     # 외래키 참조 레코드 먼저 정리 (CASCADE 없으므로 수동 삭제)
+    await order_service.log_order_history(
+        db,
+        order,
+        event_type="hard_deleted",
+        from_status=order.status,
+        to_status=None,
+        actor_user_id=current_user.id,
+        actor_role=current_user.role,
+        driver_id=order.driver_id,
+        note="주문 완전 삭제",
+    )
+
     await db.execute(
         AddressResolutionLog.__table__.delete().where(AddressResolutionLog.order_id == order_id)
     )
@@ -662,9 +748,16 @@ async def hard_delete_order(
 async def cancel_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
-    order = await order_service.update_order_status(db, order_id, OrderStatus.cancelled)
+    order = await order_service.update_order_status(
+        db,
+        order_id,
+        OrderStatus.cancelled,
+        actor_user_id=current_user.id,
+        actor_role=current_user.role,
+        note="주문 취소",
+    )
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
     await sms_service.notify_order_status(order, OrderStatus.cancelled)
