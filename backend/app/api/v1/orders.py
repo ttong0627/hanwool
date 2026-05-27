@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 from typing import Optional
 
@@ -17,6 +17,7 @@ from app.api.v1.deps import (
     require_receiver_or_above,
 )
 from app.core.database import get_db
+from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.user import User
 from app.schemas.order import (
@@ -37,6 +38,83 @@ from app.utils.market_day import is_market_day, is_reception_open
 router = APIRouter(prefix="/orders", tags=["주문"])
 
 PHOTO_DIR = "photos"
+AUTO_ASSIGN_LIMIT = 40
+
+
+def _today_start() -> datetime:
+    return datetime.combine(date.today(), datetime.min.time())
+
+
+async def _get_today_orders_for_dispatch(db: AsyncSession) -> list[Order]:
+    result = await db.execute(
+        select(Order)
+        .where(
+            Order.created_at >= _today_start(),
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+        .order_by(Order.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dict:
+    from app.core.security import decrypt_field
+
+    if not driver_ids or not (1 <= len(driver_ids) <= 4):
+        raise HTTPException(status_code=400, detail="기사는 1~4명까지 배정할 수 있습니다.")
+
+    driver_result = await db.execute(
+        select(User.id).where(
+            User.id.in_(driver_ids),
+            User.role == "driver",
+            User.is_active == True,
+            User.deleted_at == None,
+        )
+    )
+    valid_driver_ids = {row[0] for row in driver_result.all()}
+    if len(valid_driver_ids) != len(set(driver_ids)):
+        raise HTTPException(status_code=400, detail="활성 기사만 배정할 수 있습니다.")
+
+    today_orders = await _get_today_orders_for_dispatch(db)
+    if not today_orders:
+        return {"groups": [], "total": 0}
+
+    for order in today_orders:
+        if not order.lat or not order.lng:
+            addr = decrypt_field(order.delivery_address_enc)
+            coord = await get_kakao_coordinates(addr)
+            if coord:
+                order.lat = coord["lat"]
+                order.lng = coord["lng"]
+
+    dispatch_orders_list = [
+        DispatchOrder(
+            id=o.id,
+            dong=o.dong,
+            sequence=o.sequence,
+            customer_name=decrypt_field(o.customer_name_enc),
+            delivery_address=decrypt_field(o.delivery_address_enc),
+            quantity=o.quantity or 1,
+            status=o.status,
+        )
+        for o in today_orders
+    ]
+
+    groups = run_dispatch(dispatch_orders_list, driver_ids)
+    id_to_order = {o.id: o for o in today_orders}
+    now = datetime.now(timezone.utc)
+    for group in groups:
+        for dispatch_item in group.orders:
+            db_order = id_to_order.get(dispatch_item.id)
+            if db_order:
+                db_order.driver_id = group.driver_id
+                db_order.sequence = dispatch_item.sequence
+                if db_order.status == OrderStatus.pending:
+                    db_order.status = OrderStatus.assigned
+                    db_order.assigned_at = now
+
+    await db.flush()
+    return {"groups": group_summary(groups), "total": len(today_orders)}
 
 
 @router.post("/", response_model=dict, status_code=201)
@@ -419,6 +497,58 @@ async def auto_sequence(
 
     quality = analyze_sequence_quality(optimized)
     return {"updated": len(today_orders), "quality": quality}
+
+
+@router.get("/geocode")
+async def geocode_address(
+    address: str,
+    _: User = Depends(require_receiver_or_above),
+):
+    """주소 → 좌표 + 정제 주소 (Kakao 프록시)"""
+    result = await get_kakao_coordinates(address)
+    if not result:
+        raise HTTPException(status_code=404, detail="주소를 찾을 수 없습니다.")
+    return result
+
+
+@router.post("/batch", status_code=201)
+async def batch_create_orders(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_receiver_or_above),
+):
+    """복수 주문 일괄 등록 (QR / 엑셀 / 직접입력 공통 제출)"""
+    rows = body.get("rows", [])
+    if not rows:
+        raise HTTPException(status_code=400, detail="등록할 주문이 없습니다.")
+
+    results = []
+    for row in rows:
+        try:
+            from app.schemas.order import OrderCreate
+            order_data = OrderCreate(
+                customer_name=row.get("customer_name", ""),
+                customer_phone=row.get("customer_phone", ""),
+                delivery_address=row.get("delivery_address", ""),
+                dong=row.get("dong", "경안동"),
+                items_desc=row.get("items_desc"),
+                quantity=int(row.get("quantity", 1)),
+                request=row.get("request"),
+                notes=row.get("notes"),
+                weight_estimate=row.get("weight_estimate"),
+            )
+            order = await order_service.create_order(db, order_data, current_user)
+            # lat/lng 저장
+            if row.get("lat") and row.get("lng"):
+                order.lat = float(row["lat"])
+                order.lng = float(row["lng"])
+                await db.flush()
+            results.append({"ok": True, "order_no": order.order_no})
+        except Exception as e:
+            results.append({"ok": False, "error": str(e)})
+
+    success = sum(1 for r in results if r.get("ok"))
+    return {"total": len(rows), "success": success, "results": results}
 
 
 @router.post("/dispatch")

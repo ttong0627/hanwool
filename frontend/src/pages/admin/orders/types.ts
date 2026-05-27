@@ -1,0 +1,89 @@
+export const DONG_LIST = ['경안동', '송정동', '쌍령동', '탄벌동'] as const
+export type Dong = typeof DONG_LIST[number]
+
+export const COL_KEYS = [
+  'customer_name',
+  'customer_phone',
+  'dong',
+  'delivery_address',
+  'items_desc',
+  'quantity',
+  'request',
+  'weight_estimate',
+] as const
+
+export type ColKey = typeof COL_KEYS[number]
+
+export const COL_LABELS: Record<ColKey, string> = {
+  customer_name: '성명 *',
+  customer_phone: '전화번호 *',
+  dong: '배송동 *',
+  delivery_address: '주소 *',
+  items_desc: '물품내역',
+  quantity: '수량',
+  request: '요청사항',
+  weight_estimate: '무게',
+}
+
+export const COL_WIDTHS: Record<ColKey, string> = {
+  customer_name: '90px',
+  customer_phone: '130px',
+  dong: '90px',
+  delivery_address: '220px',
+  items_desc: '140px',
+  quantity: '60px',
+  request: '130px',
+  weight_estimate: '100px',
+}
+
+export type AddrStatus = 'idle' | 'validating' | 'valid' | 'invalid'
+
+export interface StagingRow {
+  _id: string
+  customer_name: string
+  customer_phone: string
+  dong: string
+  delivery_address: string
+  items_desc: string
+  quantity: number
+  request: string
+  weight_estimate: string
+  lat?: number
+  lng?: number
+  addrStatus: AddrStatus
+  addrRefined?: string
+  submitStatus?: 'pending' | 'success' | 'error'
+  submitError?: string
+}
+
+export const EMPTY_ROW = (): StagingRow => ({
+  _id: crypto.randomUUID(),
+  customer_name: '',
+  customer_phone: '',
+  dong: '경안동',
+  delivery_address: '',
+  items_desc: '',
+  quantity: 1,
+  request: '',
+  weight_estimate: '',
+  addrStatus: 'idle',
+})
+
+export const WEIGHT_OPTIONS = [
+  { value: '', label: '선택' },
+  { value: '가벼움 (5kg 미만)', label: '가벼움 (<5kg)' },
+  { value: '보통 (5~15kg)', label: '보통 (5~15kg)' },
+  { value: '무거움 (15kg 이상)', label: '무거움 (>15kg)' },
+]
+
+export const EXCEL_FIELD_OPTIONS: { value: ColKey | ''; label: string }[] = [
+  { value: '', label: '— 사용안함 —' },
+  { value: 'customer_name', label: '성명' },
+  { value: 'customer_phone', label: '전화번호' },
+  { value: 'dong', label: '배송동' },
+  { value: 'delivery_address', label: '주소' },
+  { value: 'items_desc', label: '물품내역' },
+  { value: 'quantity', label: '수량' },
+  { value: 'request', label: '요청사항' },
+  { value: 'weight_estimate', label: '무게' },
+]
