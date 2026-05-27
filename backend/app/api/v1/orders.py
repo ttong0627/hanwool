@@ -423,7 +423,10 @@ async def list_orders(
     if date_from:
         q = q.where(Order.created_at >= datetime.fromisoformat(date_from))
     if date_to:
-        q = q.where(Order.created_at <= datetime.fromisoformat(date_to))
+        dt_to = datetime.fromisoformat(date_to)
+        if len(date_to) == 10:  # YYYY-MM-DD 날짜만 전달된 경우 → 해당일 23:59:59까지 포함
+            dt_to = dt_to.replace(hour=23, minute=59, second=59, microsecond=999999)
+        q = q.where(Order.created_at <= dt_to)
 
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar()

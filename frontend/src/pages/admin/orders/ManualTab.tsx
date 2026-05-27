@@ -134,6 +134,7 @@ export function ManualTab() {
         i === rowIdx ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined } : r
       ))
       qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['customers'] })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
       setRows(prev => prev.map((r, i) =>

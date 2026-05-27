@@ -333,13 +333,19 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
 }
 
 /* ── 주문 목록 탭 ──────────────────────────────────────────────────────────── */
+function todayLocalStr() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
 function OrderListTab() {
   const qc = useQueryClient()
+  const today = todayLocalStr()
   const [dong, setDong] = useState('')
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
   const [page, setPage] = useState(1)
   const [assignTarget, setAssignTarget] = useState<Order | null>(null)
   const [editTarget, setEditTarget] = useState<Order | null>(null)
@@ -377,8 +383,15 @@ function OrderListTab() {
   const items: Order[] = (data?.items ?? []).filter((o: Order) =>
     !search || o.customer_name.includes(search) || o.order_no.includes(search)
   )
-  const resetFilters = () => { setDong(''); setStatus(''); setSearch(''); setDateFrom(''); setDateTo(''); setPage(1) }
-  const hasFilter = !!(dong || status || search || dateFrom || dateTo)
+  const resetFilters = () => { setDong(''); setStatus(''); setSearch(''); setDateFrom(today); setDateTo(today); setPage(1) }
+  const hasFilter = !!(dong || status || search || dateFrom !== today || dateTo !== today)
+
+  const setRange = (days: number) => {
+    const from = new Date()
+    from.setDate(from.getDate() - days)
+    const fromStr = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`
+    setDateFrom(fromStr); setDateTo(today); setPage(1)
+  }
 
   return (
     <div className="space-y-4">
@@ -399,6 +412,20 @@ function OrderListTab() {
             <option value="">전체 상태</option>
             {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          <div className="flex items-center gap-1">
+            <button onClick={() => { setDateFrom(today); setDateTo(today); setPage(1) }}
+              className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${dateFrom === today && dateTo === today ? 'border-brand-400 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 hover:border-brand-300 hover:text-brand-700'}`}>
+              오늘
+            </button>
+            <button onClick={() => setRange(7)}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 hover:text-brand-700 transition-colors">
+              1주일
+            </button>
+            <button onClick={() => setRange(30)}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 hover:text-brand-700 transition-colors">
+              1달
+            </button>
+          </div>
           <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} className="input w-36" />
           <span className="text-gray-400">~</span>
           <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} className="input w-36" />
@@ -472,17 +499,17 @@ function OrderListTab() {
 }
 
 /* ── 메인 컴포넌트 ────────────────────────────────────────────────────────── */
-type TabKey = 'list' | 'qr' | 'manual'
+type TabKey = 'list' | 'manual' | 'qr'
 
 const TABS: { key: TabKey; icon: React.ElementType; label: string; desc: string }[] = [
-  { key: 'list',   icon: ClipboardList,  label: '주문 목록',  desc: '접수된 주문 조회·관리' },
-  { key: 'qr',     icon: QrCode,         label: 'QR 촬영',   desc: '카메라로 QR 스캔 입력' },
-  { key: 'manual', icon: TableProperties, label: '직접 입력', desc: '스프레드시트 방식 입력' },
+  { key: 'list',   icon: ClipboardList,   label: '주문 목록',  desc: '접수된 주문 조회·관리' },
+  { key: 'manual', icon: TableProperties,  label: '직접 입력',  desc: '스프레드시트 방식 입력' },
+  { key: 'qr',     icon: QrCode,          label: 'QR 촬영',   desc: '카메라로 QR 스캔 입력' },
 ]
 
 export function Orders() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<TabKey>('manual')
+  const [tab, setTab] = useState<TabKey>('list')
   const [excelModalOpen, setExcelModalOpen] = useState(false)
 
   const activeTab = TABS.find((t) => t.key === tab)!
@@ -500,9 +527,10 @@ export function Orders() {
         </div>
       </div>
 
-      {/* 탭 내비게이션 */}
+      {/* 탭 내비게이션 — 순서: 주문목록 · 직접입력 · 엑셀업로드 · QR촬영 */}
       <div className="grid grid-cols-4 gap-2 mb-6">
-        {TABS.map(({ key, icon: Icon, label, desc }) => (
+        {/* 주문목록 · 직접입력 */}
+        {TABS.slice(0, 2).map(({ key, icon: Icon, label, desc }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -531,6 +559,25 @@ export function Orders() {
           </div>
           <p className="text-xs text-gray-400 leading-snug">파일 업로드 + 컬럼 매핑</p>
         </button>
+
+        {/* QR 촬영 */}
+        {TABS.slice(2).map(({ key, icon: Icon, label, desc }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`rounded-xl border-2 p-3 text-left transition-all ${
+              tab === key
+                ? 'border-brand-500 bg-brand-50 shadow-sm'
+                : 'border-gray-200 hover:border-brand-300 bg-white'
+            }`}
+          >
+            <div className={`flex items-center gap-2 mb-1 ${tab === key ? 'text-brand-600' : 'text-gray-500'}`}>
+              <Icon className="w-4 h-4" />
+              <span className={`font-bold text-sm ${tab === key ? 'text-brand-700' : 'text-gray-700'}`}>{label}</span>
+            </div>
+            <p className="text-xs text-gray-400 leading-snug">{desc}</p>
+          </button>
+        ))}
       </div>
 
       {/* 탭 콘텐츠 */}
