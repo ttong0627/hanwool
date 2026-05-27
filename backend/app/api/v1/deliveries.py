@@ -7,8 +7,9 @@ from app.core.database import get_db
 from app.models.delivery import Delivery
 from app.models.order import Order
 from app.models.user import User
+from app.services.address_service import geocode_address as _geocode_address
 from app.services.order_service import get_orders_today
-from app.services.route_service import optimize_route, get_kakao_coordinates
+from app.services.route_service import optimize_route
 
 router = APIRouter(prefix="/deliveries", tags=["배송"])
 
@@ -25,7 +26,7 @@ async def get_optimized_route(
     for order in orders:
         lat, lng = None, None
         addr = order.get("delivery_address", "")
-        coords = await get_kakao_coordinates(addr) if addr else None
+        coords = await _geocode_address(addr, db) if addr else None
         enriched.append({
             **order,
             "lat": coords["lat"] if coords else 37.4292,

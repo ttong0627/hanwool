@@ -28,10 +28,10 @@ from app.schemas.order import (
     SingleOrderCreate,
 )
 from app.services import order_service, sms_service
+from app.services.address_service import geocode_address as _geocode_address
 from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
 from app.services.route_service import (
     analyze_sequence_quality,
-    get_kakao_coordinates,
     optimize_route,
 )
 from app.utils.market_day import is_market_day, is_reception_open
@@ -122,7 +122,7 @@ async def _dispatch_today_orders(db: AsyncSession, driver_ids: list[int]) -> dic
     for order in today_orders:
         if not order.lat or not order.lng:
             addr = decrypt_field(order.delivery_address_enc)
-            coord = await get_kakao_coordinates(addr)
+            coord = await _geocode_address(addr, db)
             if coord:
                 order.lat = coord["lat"]
                 order.lng = coord["lng"]
@@ -176,7 +176,7 @@ async def create_single_order(
 
     lat, lng = data.lat, data.lng
     if not lat or not lng:
-        coord = await get_kakao_coordinates(data.delivery_address)
+        coord = await _geocode_address(data.delivery_address, db)
         if coord:
             lat, lng = coord["lat"], coord["lng"]
 
@@ -638,7 +638,7 @@ async def auto_sequence(
     for order in today_orders:
         if not order.lat or not order.lng:
             addr = decrypt_field(order.delivery_address_enc)
-            coord = await get_kakao_coordinates(addr)
+            coord = await _geocode_address(addr, db)
             if coord:
                 order.lat = coord["lat"]
                 order.lng = coord["lng"]
@@ -702,12 +702,13 @@ async def resequence_orders(
 
 
 @router.get("/geocode")
-async def geocode_address(
+async def geocode_address_endpoint(
     address: str,
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(require_receiver_or_above),
 ):
-    """주소 → 좌표 + 정제 주소 (Kakao 프록시)"""
-    result = await get_kakao_coordinates(address)
+    """주소 → 좌표 + 동 (로컬 DB 우선, Kakao 폴백)"""
+    result = await _geocode_address(address, db)
     if not result:
         raise HTTPException(status_code=404, detail="주소를 찾을 수 없습니다.")
     return result
