@@ -17,6 +17,9 @@ from app.api.v1.deps import (
     require_receiver_or_above,
 )
 from app.core.database import get_db
+from app.models.address_resolution_log import AddressResolutionLog
+from app.models.complaint import Complaint
+from app.models.delivery import Delivery
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunStatus
 from app.models.order import Order, OrderStatus, OrderTransfer
@@ -632,6 +635,24 @@ async def hard_delete_order(
 
     if order.status == OrderStatus.picked_up and current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 삭제할 수 있습니다.")
+
+    # 외래키 참조 레코드 먼저 정리 (CASCADE 없으므로 수동 삭제)
+    await db.execute(
+        AddressResolutionLog.__table__.delete().where(AddressResolutionLog.order_id == order_id)
+    )
+    await db.execute(
+        DispatchRunItem.__table__.delete().where(DispatchRunItem.order_id == order_id)
+    )
+    await db.execute(
+        OrderTransfer.__table__.delete().where(OrderTransfer.order_id == order_id)
+    )
+    await db.execute(
+        Delivery.__table__.delete().where(Delivery.order_id == order_id)
+    )
+    # 민원은 order_id만 NULL 처리 (민원 기록 자체는 유지)
+    await db.execute(
+        Complaint.__table__.update().where(Complaint.order_id == order_id).values(order_id=None)
+    )
 
     await db.delete(order)
     return {"message": "주문이 완전히 삭제되었습니다."}
