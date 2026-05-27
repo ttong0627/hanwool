@@ -1,17 +1,38 @@
 """PDF 문서 생성 서비스 (ReportLab)"""
 import io
-from datetime import datetime
 from typing import List
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table,
-                                TableStyle)
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+_FONT_REGISTERED = False
+
+def _ensure_fonts():
+    global _FONT_REGISTERED
+    if _FONT_REGISTERED:
+        return
+    try:
+        pdfmetrics.registerFont(TTFont("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"))
+        pdfmetrics.registerFont(TTFont("NanumGothicBold", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"))
+        _FONT_REGISTERED = True
+    except Exception:
+        _FONT_REGISTERED = False
+
+def _F():
+    """일반 폰트명"""
+    _ensure_fonts()
+    return "NanumGothic" if _FONT_REGISTERED else "Helvetica"
+
+def _FB():
+    """볼드 폰트명"""
+    _ensure_fonts()
+    return "NanumGothicBold" if _FONT_REGISTERED else "Helvetica-Bold"
 
 
 def _get_doc(buffer, title: str):
@@ -24,11 +45,11 @@ def _get_doc(buffer, title: str):
 
 
 def _header_style():
-    return ParagraphStyle("header", fontName="Helvetica-Bold", fontSize=16, alignment=TA_CENTER, spaceAfter=12)
+    return ParagraphStyle("header", fontName=_FB(), fontSize=16, alignment=TA_CENTER, spaceAfter=12)
 
 
 def _sub_style():
-    return ParagraphStyle("sub", fontName="Helvetica", fontSize=10, alignment=TA_CENTER, spaceAfter=6, textColor=colors.grey)
+    return ParagraphStyle("sub", fontName=_F(), fontSize=10, alignment=TA_CENTER, spaceAfter=6, textColor=colors.grey)
 
 
 def generate_delivery_list_pdf(orders: List[dict], date_str: str) -> bytes:
@@ -62,7 +83,8 @@ def generate_delivery_list_pdf(orders: List[dict], date_str: str) -> bytes:
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), _F()),
+        ("FONTNAME", (0, 0), (-1, 0), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -97,7 +119,8 @@ def generate_receipt_pdf(order: dict) -> bytes:
     ]
     table = Table(data, colWidths=[4*cm, 13*cm])
     table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), _F()),
+        ("FONTNAME", (0, 0), (0, -1), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 11),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FFF7ED")),
@@ -108,17 +131,17 @@ def generate_receipt_pdf(order: dict) -> bytes:
     elements.append(Spacer(1, 1*cm))
     elements.append(Paragraph(
         "위 물품을 정상적으로 수령하였음을 확인합니다.",
-        ParagraphStyle("confirm", fontName="Helvetica", fontSize=11, alignment=TA_CENTER)
+        ParagraphStyle("confirm", fontName=_F(), fontSize=11, alignment=TA_CENTER)
     ))
     elements.append(Spacer(1, 1*cm))
     elements.append(Paragraph(
         f"수령일: {order.get('delivered_at', '')}",
-        ParagraphStyle("date", fontName="Helvetica", fontSize=10, alignment=TA_CENTER)
+        ParagraphStyle("date", fontName=_F(), fontSize=10, alignment=TA_CENTER)
     ))
     elements.append(Spacer(1, 0.5*cm))
     elements.append(Paragraph(
         "수령인 서명: ___________________",
-        ParagraphStyle("sign", fontName="Helvetica", fontSize=12, alignment=TA_CENTER)
+        ParagraphStyle("sign", fontName=_F(), fontSize=12, alignment=TA_CENTER)
     ))
     doc.build(elements)
     return buffer.getvalue()
@@ -144,7 +167,8 @@ def generate_privacy_destruction_pdf(info: dict) -> bytes:
     ]
     table = Table(data, colWidths=[4.5*cm, 12.5*cm])
     table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), _F()),
+        ("FONTNAME", (0, 0), (0, -1), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 11),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FEE2E2")),
@@ -156,12 +180,12 @@ def generate_privacy_destruction_pdf(info: dict) -> bytes:
     elements.append(Spacer(1, 1.5*cm))
     elements.append(Paragraph(
         f"폐기 일자: {info.get('destroyed_at', '')}",
-        ParagraphStyle("date", fontName="Helvetica", fontSize=10, alignment=TA_CENTER, textColor=colors.grey)
+        ParagraphStyle("date", fontName=_F(), fontSize=10, alignment=TA_CENTER, textColor=colors.grey)
     ))
     elements.append(Spacer(1, 0.5*cm))
     elements.append(Paragraph(
         "담당자 서명: ___________________",
-        ParagraphStyle("sign", fontName="Helvetica", fontSize=12, alignment=TA_CENTER)
+        ParagraphStyle("sign", fontName=_F(), fontSize=12, alignment=TA_CENTER)
     ))
     doc.build(elements)
     return buffer.getvalue()
@@ -189,7 +213,8 @@ def generate_complaint_report_pdf(complaint: dict) -> bytes:
     ]
     table = Table(data, colWidths=[4*cm, 13*cm])
     table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), _F()),
+        ("FONTNAME", (0, 0), (0, -1), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 11),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FFF7ED")),
@@ -242,7 +267,8 @@ def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), _F()),
+        ("FONTNAME", (0, 0), (-1, 0), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 7),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF7ED")]),
