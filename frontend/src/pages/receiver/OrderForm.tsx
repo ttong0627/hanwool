@@ -118,6 +118,7 @@ export function OrderForm() {
   const [addressValue, setAddressValue] = useState('')
   const [focused, setFocused] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const fo = (f: string) => setFocused(f)
   const fb = () => setFocused(null)
 
@@ -182,25 +183,42 @@ export function OrderForm() {
     setValue('delivery_address', '')
   }
 
+  const applyDongFromName = (dongName: string | null | undefined) => {
+    if (!dongName) return
+    const matched = DONG_LIST.find(
+      (d) => dongName === d || dongName.includes(d) || d.includes(dongName),
+    )
+    if (matched) setValue('dong', matched)
+  }
+
   const handleAddressChange = (addr: string) => {
     setAddressValue(addr)
     setValue('delivery_address', addr)
+    // 1. 주소 문자열에 동 이름 포함된 경우 즉시 적용
     const dong = detectDong(addr)
     if (dong) setValue('dong', dong)
+    // 2. 동 이름 없는 도로명 주소 → geocode API로 동 자동감지
+    clearTimeout(geocodeTimerRef.current)
+    if (addr.length >= 5) {
+      geocodeTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await api.get('/orders/geocode', { params: { address: addr } })
+          applyDongFromName(res.data?.dong_name)
+        } catch { /* geocode 실패 시 무시 */ }
+      }, 900)
+    }
   }
 
   const handleAddressSelect = (result: AddressResult) => {
     const addr = result.road_address || result.address_name
     setAddressValue(addr)
     setValue('delivery_address', addr)
+    // 드롭다운 선택 시: dong_name 우선, 없으면 주소 문자열에서 감지
     if (result.dong_name) {
-      const matched = DONG_LIST.find(
-        (d) =>
-          result.dong_name === d ||
-          result.dong_name?.includes(d) ||
-          d.includes(result.dong_name ?? ''),
-      )
-      if (matched) setValue('dong', matched)
+      applyDongFromName(result.dong_name)
+    } else {
+      const dong = detectDong(addr)
+      if (dong) setValue('dong', dong)
     }
   }
 

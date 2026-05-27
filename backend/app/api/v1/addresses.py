@@ -132,7 +132,34 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
     if len(results) >= limit:
         return results[:limit]
 
-    # ── 4. pg_trgm 유사도 폴백 (road_key) ────────────────────────────────────
+    # ── 4. 번지 제거 후 도로명만으로 재검색 ─────────────────────────────────
+    # "중앙로145번길 22" → "중앙로145번길" 로 재시도 (해당 도로 전체 주소 제안)
+    remaining = limit - len(results)
+    if remaining > 0:
+        # 말미 숫자(번지) 제거: "도로명 22", "도로명 3-14" 등
+        street_only = re.sub(r"\s+\d[\d\-]*$", "", search_q).strip()
+        if street_only and street_only != search_q and len(street_only) >= 3:
+            try:
+                rows = await db.execute(
+                    text(
+                        "SELECT road_address, legal_emd, building_name "
+                        "FROM nexus_address.addresses "
+                        "WHERE road_address ILIKE :pat "
+                        "  AND road_address != '' "
+                        "ORDER BY LENGTH(road_address) "
+                        "LIMIT :lim"
+                    ),
+                    {"pat": f"%{street_only}%", "lim": remaining * 2},
+                )
+                for r in rows.all():
+                    add(_row_to_result(r[0], r[1], r[2]))
+            except Exception:
+                pass
+
+    if len(results) >= limit:
+        return results[:limit]
+
+    # ── 5. pg_trgm 유사도 폴백 (road_key) ────────────────────────────────────
     remaining = limit - len(results)
     if remaining > 0:
         norm = re.sub(r"\s+", "", search_q.lower())
