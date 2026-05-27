@@ -15,6 +15,7 @@ app = FastAPI(
     title="경안시장 집배송 서비스 API",
     description="경기도 광주시 경안시장 집배송 서비스 백엔드 API",
     version="1.0.0",
+    redirect_slashes=False,  # /orders → /orders/ 307 리다이렉트 방지 (인증헤더 소실 차단)
     # 운영환경에서 Swagger/ReDoc 비활성화
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
