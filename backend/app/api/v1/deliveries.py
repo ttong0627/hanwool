@@ -7,7 +7,6 @@ from app.core.database import get_db
 from app.models.delivery import Delivery
 from app.models.order import Order
 from app.models.user import User
-from app.services.address_service import geocode_address as _geocode_address
 from app.services.order_service import get_orders_today
 from app.services.route_service import optimize_route
 
@@ -22,16 +21,16 @@ async def get_optimized_route(
     driver_id = current_user.id if (current_user.role == "driver" or bool(getattr(current_user, "is_driver", False))) else None
     orders = await get_orders_today(db, driver_id)
 
-    enriched = []
-    for order in orders:
-        lat, lng = None, None
-        addr = order.get("delivery_address", "")
-        coords = await _geocode_address(addr, db) if addr else None
-        enriched.append({
+    # 저장된 lat/lng 직접 사용 — N+1 geocode 루프 제거
+    # 좌표 없는 주문은 경안시장 좌표로 폴백 (관리자가 regeocode-unresolved로 처리 가능)
+    enriched = [
+        {
             **order,
-            "lat": coords["lat"] if coords else 37.4292,
-            "lng": coords["lng"] if coords else 127.2551,
-        })
+            "lat": order.get("lat") or 37.4292,
+            "lng": order.get("lng") or 127.2551,
+        }
+        for order in orders
+    ]
 
     return optimize_route(enriched)
 
