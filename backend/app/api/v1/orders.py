@@ -152,6 +152,43 @@ async def _dispatch_today_orders(
     ]
 
     groups = run_dispatch(dispatch_orders_list, driver_ids)
+
+    # 배차 결과(driver_id 배정)를 토대로 geo-최적화 순번 재계산
+    order_driver_map: dict[int, int] = {
+        item.id: group.driver_id
+        for group in groups
+        for item in group.orders
+    }
+    geo_order_dicts = [
+        {
+            "id": o.id,
+            "driver_id": order_driver_map.get(o.id),
+            "dong": o.dong,
+            "service_dong": o.service_dong or o.dong,
+            "lat": o.lat,
+            "lng": o.lng,
+            "delivery_address": decrypt_field(o.delivery_address_enc),
+            "order_no": o.order_no,
+        }
+        for o in today_orders
+        if order_driver_map.get(o.id)
+    ]
+    if geo_order_dicts:
+        geo_optimized = optimize_route(geo_order_dicts)
+        geo_seq_map: dict[int, int] = {
+            item["id"]: item["sequence"]
+            for item in geo_optimized
+            if item.get("sequence") is not None
+        }
+        id_to_dispatch_item: dict[int, DispatchOrder] = {
+            item.id: item
+            for group in groups
+            for item in group.orders
+        }
+        for oid, geo_seq in geo_seq_map.items():
+            if oid in id_to_dispatch_item:
+                id_to_dispatch_item[oid].sequence = geo_seq
+
     dispatch_run = DispatchRun(
         market_date=date.today(),
         executed_by_id=executed_by_id,
@@ -961,9 +998,12 @@ async def auto_sequence(
 
     optimized = optimize_route(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
+    changed_count = 0
     for order in today_orders:
         new_seq = seq_map.get(order.id)
         if new_seq is not None:
+            if order.sequence != new_seq:
+                changed_count += 1
             order.sequence = new_seq
             order.sequence_source = "auto"
 
@@ -971,7 +1011,7 @@ async def auto_sequence(
     await _push_route_to_drivers(list(today_orders))
 
     quality = analyze_sequence_quality(optimized)
-    return {"updated": len(today_orders), "quality": quality}
+    return {"updated": len(today_orders), "changed": changed_count, "quality": quality}
 
 
 @router.put("/resequence")

@@ -1,0 +1,9 @@
+# Pyrefly 설정 — 도커 기반 프로젝트, 로컬 venv 없음
+[project]
+python_interpreter = "C:/Users/ttong/AppData/Local/Programs/Python/Python311/python.exe"
+python_version = "3.11"
+
+[errors]
+# 로컬에 설치되지 않은 도커 패키지 경고 억제
+missing-module-source = false
+import-error = false

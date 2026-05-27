@@ -1,9 +1,11 @@
 {
-  "pythonPath": ".venv/Scripts/python.exe",
-  "venvPath": ".",
-  "venv": ".venv",
-  "pythonVersion": "3.12",
+  "pythonPath": "C:/Users/ttong/AppData/Local/Programs/Python/Python311/python.exe",
+  "pythonVersion": "3.11",
   "include": ["app"],
-  "extraPaths": [".venv/Lib/site-packages"],
-  "typeCheckingMode": "basic"
+  "extraPaths": [
+    "C:/Users/ttong/AppData/Local/Programs/Python/Python311/Lib/site-packages"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
 }

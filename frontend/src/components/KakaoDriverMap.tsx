@@ -14,20 +14,6 @@ interface Props {
   apiKey?: string
 }
 
-declare global {
-  interface Window {
-    kakao: {
-      maps: {
-        load: (cb: () => void) => void
-        Map: new (el: HTMLElement, opts: object) => KakaoMap
-        Marker: new (opts: object) => KakaoMarker
-        LatLng: new (lat: number, lng: number) => object
-        InfoWindow: new (opts: object) => KakaoInfoWindow
-      }
-    }
-  }
-}
-
 interface KakaoMap {
   setCenter: (latlng: object) => void
 }
@@ -39,14 +25,67 @@ interface KakaoInfoWindow {
   open: (map: KakaoMap, marker: KakaoMarker) => void
   close: () => void
 }
+interface KakaoMarkerImage {
+  _brand: never
+}
+
+declare global {
+  interface Window {
+    kakao: {
+      maps: {
+        load: (cb: () => void) => void
+        Map: new (el: HTMLElement, opts: object) => KakaoMap
+        Marker: new (opts: object) => KakaoMarker
+        MarkerImage: new (src: string, size: object, opts?: object) => KakaoMarkerImage
+        Size: new (w: number, h: number) => object
+        Point: new (x: number, y: number) => object
+        LatLng: new (lat: number, lng: number) => object
+        InfoWindow: new (opts: object) => KakaoInfoWindow
+      }
+    }
+  }
+}
 
 const MARKET_LAT = 37.4292
 const MARKET_LNG = 127.2551
+
+// 경안시장 마커 HTML — 주황색 store 아이콘 + 라벨
+const MARKET_MARKER_CONTENT = `
+<div style="
+  display:flex;flex-direction:column;align-items:center;
+  transform:translateX(-50%) translateY(-100%);
+  filter: drop-shadow(0 4px 8px rgba(249,115,22,0.45));
+">
+  <div style="
+    background:linear-gradient(135deg,#ea580c,#f97316);
+    border-radius:50%;
+    width:40px;height:40px;
+    display:flex;align-items:center;justify-content:center;
+    border:3px solid #fff;
+    box-shadow:0 2px 8px rgba(234,88,12,0.5);
+  ">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  </div>
+  <div style="
+    margin-top:4px;
+    background:rgba(234,88,12,0.92);
+    color:#fff;
+    font-size:11px;font-weight:700;
+    padding:2px 8px;border-radius:99px;
+    white-space:nowrap;
+    box-shadow:0 1px 4px rgba(0,0,0,0.18);
+  ">경안시장</div>
+  <div style="width:2px;height:8px;background:rgba(234,88,12,0.6);margin-top:2px;"></div>
+</div>`
 
 export function KakaoDriverMap({ drivers, apiKey }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<KakaoMap | null>(null)
   const markersRef = useRef<KakaoMarker[]>([])
+  const marketMarkerRef = useRef<KakaoMarker | null>(null)
 
   // SDK 로드 + 지도 초기화
   useEffect(() => {
@@ -67,10 +106,34 @@ export function KakaoDriverMap({ drivers, apiKey }: Props) {
     function initMap() {
       window.kakao.maps.load(() => {
         if (!containerRef.current) return
-        mapRef.current = new window.kakao.maps.Map(containerRef.current, {
+        const map = new window.kakao.maps.Map(containerRef.current, {
           center: new window.kakao.maps.LatLng(MARKET_LAT, MARKET_LNG),
           level: 5,
         })
+        mapRef.current = map
+
+        // 경안시장 커스텀 오버레이 마커
+        const CustomOverlay = (window.kakao.maps as unknown as {
+          CustomOverlay?: new (opts: object) => { setMap: (m: KakaoMap) => void }
+        }).CustomOverlay
+
+        if (CustomOverlay) {
+          const overlay = new CustomOverlay({
+            position: new window.kakao.maps.LatLng(MARKET_LAT, MARKET_LNG),
+            content: MARKET_MARKER_CONTENT,
+            yAnchor: 0,
+          })
+          overlay.setMap(map)
+        } else {
+          // 폴백: 기본 마커 + 인포윈도우
+          const pos = new window.kakao.maps.LatLng(MARKET_LAT, MARKET_LNG)
+          const marker = new window.kakao.maps.Marker({ position: pos, map })
+          marketMarkerRef.current = marker
+          const iw = new window.kakao.maps.InfoWindow({
+            content: `<div style="padding:5px 10px;font-size:13px;font-weight:700;color:#ea580c;">🏪 경안시장</div>`,
+          })
+          iw.open(map, marker)
+        }
       })
     }
   }, [apiKey])
@@ -79,7 +142,6 @@ export function KakaoDriverMap({ drivers, apiKey }: Props) {
   useEffect(() => {
     if (!mapRef.current || !window.kakao?.maps) return
 
-    // 기존 마커 제거
     markersRef.current.forEach((m) => m.setMap(null))
     markersRef.current = []
 

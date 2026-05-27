@@ -13,7 +13,9 @@ import httpx
 
 from app.core.config import settings
 
-DONG_PRIORITY = {"경안동": 0, "송정동": 1, "쌍령동": 2, "탄벌동": 3}
+# 경안시장 기준 지리적 순서: 인접(경안동) → 북서(탄벌동) → 북동(송정동) → 서외곽(쌍령동)
+DONG_PRIORITY = {"경안동": 0, "탄벌동": 1, "송정동": 2, "쌍령동": 3}
+# 경기 광주시 경안로25번길 14-1 (경안동 33-16)
 MARKET_LOCATION = {"lat": 37.4292, "lng": 127.2551}
 
 JUMP_THRESHOLD_M = 300
@@ -230,7 +232,8 @@ def road_aware_tsp(points: list[dict], start_lat: float, start_lng: float) -> li
 # ──────────────────────────────────────────────
 
 def _dong_priority_key(order: dict) -> int:
-    return DONG_PRIORITY.get(order.get("service_dong") or order.get("dong"), 99)
+    dong: str = order.get("service_dong") or order.get("dong") or ""
+    return DONG_PRIORITY.get(dong, 99)
 
 
 def _optimize_by_priority_dong(driver_orders: list[dict], start_lat: float, start_lng: float) -> list[dict]:

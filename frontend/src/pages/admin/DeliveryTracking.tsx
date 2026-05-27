@@ -405,6 +405,7 @@ export function DeliveryTracking() {
   const [search, setSearch] = useState('')
   const [showConfirmSeq, setShowConfirmSeq] = useState(false)
   const [podPreviewUrl, setPodPreviewUrl] = useState<string | null>(null)
+  const [seqToast, setSeqToast] = useState<string | null>(null)
   const rowRefs = useRef<Record<number, HTMLButtonElement | null>>({})
   const listRef = useRef<HTMLDivElement | null>(null)
   const queryClient = useQueryClient()
@@ -449,7 +450,16 @@ export function DeliveryTracking() {
 
   const autoSequenceMutation = useMutation({
     mutationFn: () => api.post('/orders/sequence/auto').then((r) => r.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['delivery-tracking-orders'] }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['delivery-tracking-orders'] })
+      const msg = (data?.changed ?? 0) > 0
+        ? `${data.changed}개 배송 순번이 최적화되었습니다.`
+        : data?.updated === 0
+          ? '배정된 주문이 없습니다. 먼저 배차를 실행해 주세요.'
+          : '이미 최적 경로입니다.'
+      setSeqToast(msg)
+      setTimeout(() => setSeqToast(null), 4000)
+    },
   })
 
   const regeocodeAllMutation = useMutation({
@@ -560,6 +570,15 @@ export function DeliveryTracking() {
 
   return (
     <div className="space-y-4 p-6 page-fade-in">
+      {/* 순번 적용 결과 토스트 */}
+      {seqToast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-fade-in">
+          <div className="flex items-center gap-2 rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white shadow-2xl">
+            <Route className="h-4 w-4 text-brand-400 shrink-0" />
+            {seqToast}
+          </div>
+        </div>
+      )}
       {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
