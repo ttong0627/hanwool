@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
-  ClipboardPaste, MapPin, AlertTriangle, Save,
+  ClipboardPaste, MapPin, AlertTriangle, Save, X,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { KakaoAddressSearch } from '@/components/KakaoAddressSearch'
@@ -314,11 +314,28 @@ export function ManualTab() {
     applyTsvPaste(text, startRow, startCol)
   }, [applyTsvPaste])
 
+  const [clipboardModal, setClipboardModal] = useState(false)
+  const [clipboardText, setClipboardText] = useState('')
+
   const handleClipboardPaste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      applyTsvPaste(text, activeCell.current.row, activeCell.current.col)
-    } catch { /* 권한 거부 */ }
+      if (text.trim()) {
+        applyTsvPaste(text, activeCell.current.row, activeCell.current.col)
+        return
+      }
+    } catch { /* 권한 차단 시 모달 폴백 */ }
+    // 권한 없거나 빈 경우 → 수동 붙여넣기 모달
+    setClipboardText('')
+    setClipboardModal(true)
+  }
+
+  const confirmClipboardModal = () => {
+    if (clipboardText.trim()) {
+      applyTsvPaste(clipboardText, activeCell.current.row, activeCell.current.col)
+    }
+    setClipboardModal(false)
+    setClipboardText('')
   }
 
   const addBatch = () => {
@@ -343,6 +360,40 @@ export function ManualTab() {
               onChange={(addr) => handleAddressSelect(kakaoRow, addr)}
               placeholder="주소 검색"
             />
+          </div>
+        </div>
+      )}
+
+      {/* 클립보드 수동 붙여넣기 모달 */}
+      {clipboardModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardPaste className="w-5 h-5 text-brand-500" />
+                <h3 className="font-bold text-gray-800">엑셀 데이터 붙여넣기</h3>
+              </div>
+              <button onClick={() => setClipboardModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">
+              엑셀에서 셀을 복사한 후 아래 박스에 <kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+V</kbd>로 붙여넣고 확인을 누르세요.
+            </p>
+            <textarea
+              autoFocus
+              value={clipboardText}
+              onChange={(e) => setClipboardText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) confirmClipboardModal() }}
+              className="w-full h-40 border border-gray-200 rounded-xl p-3 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-brand-400"
+              placeholder="여기에 Ctrl+V로 붙여넣기..."
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setClipboardModal(false)} className="btn-secondary flex-1">취소</button>
+              <button onClick={confirmClipboardModal} disabled={!clipboardText.trim()} className="btn-primary flex-1 disabled:opacity-40">
+                확인 (Ctrl+Enter)
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -472,7 +523,7 @@ export function ManualTab() {
                               <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />
                             ) : row.dongStatus === 'out-of-zone' ? (
                               <>
-                                <span className="text-[10px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full flex items-center gap-0.5 whitespace-nowrap">
+                                <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5 w-full justify-center">
                                   <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
                                   {row.dong || '지역 외'}
                                 </span>
@@ -482,13 +533,15 @@ export function ManualTab() {
                                     onClick={() => setRows(rows.map((r, i) =>
                                       i === rowIdx ? { ...r, dongOverride: true, submitStatus: undefined, savedOrderId: undefined } : r
                                     ))}
-                                    className="text-[9px] text-amber-700 underline hover:text-amber-900 leading-none"
+                                    className="text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-200 leading-none w-full text-center"
                                   >
-                                    강제등록
+                                    강제등록 ✓
                                   </button>
                                 )}
                                 {row.dongOverride && (
-                                  <span className="text-[9px] text-amber-600 font-semibold leading-none">{row.dong} ✓</span>
+                                  <span className="text-[9px] font-bold bg-amber-400 text-white px-1.5 py-0.5 rounded leading-none w-full text-center">
+                                    {row.dong} 허용됨
+                                  </span>
                                 )}
                               </>
                             ) : row.dong ? (

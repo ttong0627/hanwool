@@ -28,7 +28,7 @@ export const COL_LABELS: Record<ColKey, string> = {
 export const COL_WIDTHS: Record<ColKey, string> = {
   customer_name: '90px',
   customer_phone: '130px',
-  dong: '90px',
+  dong: '110px',
   delivery_address: '220px',
   items_desc: '140px',
   item_code: '65px',

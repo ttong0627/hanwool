@@ -338,20 +338,65 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
 # ──────────────────────────────────────────────
 
 async def get_kakao_coordinates(address: str) -> Optional[dict]:
-    """주소 → 좌표 변환 (Kakao 로컬 API)"""
+    """주소 → 좌표 변환 (Kakao 로컬 API)
+
+    전략 1: address.json 정확 검색 (원본 → '경기도 광주시 ' 접두 붙여서)
+    전략 2: keyword.json 키워드 검색 fallback (도로명 약식 입력 대응)
+    """
     if not settings.KAKAO_REST_API_KEY:
         return None
-    url = "https://dapi.kakao.com/v2/local/search/address.json"
+
     headers = {"Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}"}
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, params={"query": address}, headers=headers)
-            if resp.status_code == 200:
-                docs = resp.json().get("documents", [])
-                if docs:
-                    return {"lat": float(docs[0]["y"]), "lng": float(docs[0]["x"])}
-    except Exception:
-        pass
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        # ── 전략 1: 주소 검색 (원본 + 광주시 접두) ─────────────────────────
+        for query in [address, f"경기도 광주시 {address}"]:
+            try:
+                resp = await client.get(
+                    "https://dapi.kakao.com/v2/local/search/address.json",
+                    params={"query": query},
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    docs = resp.json().get("documents", [])
+                    if docs:
+                        d = docs[0]
+                        return {
+                            "lat": float(d["y"]),
+                            "lng": float(d["x"]),
+                            "address_name": d.get("address_name", query),
+                        }
+            except Exception:
+                pass
+
+        # ── 전략 2: 키워드 검색 fallback (도로명 약식 주소 대응) ────────────
+        for query in [f"광주시 {address}", address]:
+            try:
+                resp = await client.get(
+                    "https://dapi.kakao.com/v2/local/search/keyword.json",
+                    params={
+                        "query": query,
+                        # 경기도 광주시 근방 bbox (lng_min,lat_min,lng_max,lat_max)
+                        "rect": "127.10,37.30,127.60,37.65",
+                    },
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    docs = resp.json().get("documents", [])
+                    if docs:
+                        d = docs[0]
+                        return {
+                            "lat": float(d["y"]),
+                            "lng": float(d["x"]),
+                            "address_name": (
+                                d.get("road_address_name")
+                                or d.get("address_name")
+                                or query
+                            ),
+                        }
+            except Exception:
+                pass
+
     return None
 
 
