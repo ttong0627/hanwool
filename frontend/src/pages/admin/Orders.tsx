@@ -228,7 +228,15 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete }: {
   order: Order; driverMap: Record<number, string>
   onAssign: () => void; onEdit: () => void; onDelete: () => void
 }) {
+  const userRole = useAuthStore((s) => s.user?.role ?? '')
   const hasIssue = order.match_status && order.match_status !== 'matched'
+
+  // 수정 가능: pending → 누구나(receiver+) / picked_up → super_admin만 / 그 외 잠금
+  const canEdit = order.status === 'pending' || (order.status === 'picked_up' && userRole === 'super_admin')
+  // 삭제 가능: pending·assigned → admin+ / picked_up → super_admin만 / in_transit·delivered 잠금
+  const canDelete = ['pending', 'assigned'].includes(order.status) ||
+    (order.status === 'picked_up' && userRole === 'super_admin')
+
   return (
     <div className={`flex items-center gap-2 px-4 py-2.5 transition-colors text-sm ${hasIssue ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
       {/* 순번 */}
@@ -275,13 +283,13 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete }: {
             <Truck className="w-3.5 h-3.5" />
           </button>
         )}
-        {order.status === 'pending' && (
+        {canEdit && (
           <button title="수정" onClick={onEdit}
             className="p-1.5 rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-600 text-gray-400 transition-colors">
             <Pencil className="w-3.5 h-3.5" />
           </button>
         )}
-        {!['delivered'].includes(order.status) && (
+        {canDelete && (
           <button title="완전 삭제" onClick={onDelete}
             className="p-1.5 rounded-lg border border-red-200 hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
             <Trash2 className="w-3.5 h-3.5" />
@@ -463,24 +471,32 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{order.standard_road_address ?? order.delivery_address}</p>
                 </div>
                 {/* 수정 / 삭제 버튼 */}
-                <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  {order.status === 'pending' && (
-                    <button
-                      onClick={() => setEditTarget(order)}
-                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-600 transition-colors"
-                    >
-                      <Pencil className="w-3 h-3" />수정
-                    </button>
-                  )}
-                  {['pending', 'assigned'].includes(order.status) && (
-                    <button
-                      onClick={() => setCancelTarget(order)}
-                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />삭제
-                    </button>
-                  )}
-                </div>
+                {(() => {
+                  const role = user?.role ?? ''
+                  const stagingCanEdit = order.status === 'pending' || (order.status === 'picked_up' && role === 'super_admin')
+                  const stagingCanDelete = ['pending', 'assigned'].includes(order.status) ||
+                    (order.status === 'picked_up' && role === 'super_admin')
+                  return (
+                    <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {stagingCanEdit && (
+                        <button
+                          onClick={() => setEditTarget(order)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />수정
+                        </button>
+                      )}
+                      {stagingCanDelete && (
+                        <button
+                          onClick={() => setCancelTarget(order)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />삭제
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             ))}
           </div>

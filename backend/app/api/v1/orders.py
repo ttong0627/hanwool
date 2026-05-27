@@ -461,15 +461,19 @@ async def edit_order(
     order_id: int,
     data: OrderEditRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
-    """pending 상태 주문 수정 — 접수자·admin 이상"""
+    """주문 수정 — pending: 접수자 이상 / picked_up: 최고관리자만 / in_transit+: 잠금"""
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    if order.status != OrderStatus.pending:
-        raise HTTPException(status_code=400, detail="접수대기 상태의 주문만 수정할 수 있습니다.")
+
+    if order.status == OrderStatus.picked_up:
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 수정할 수 있습니다.")
+    elif order.status != OrderStatus.pending:
+        raise HTTPException(status_code=400, detail="배송 진행 중이거나 완료된 주문은 수정할 수 없습니다.")
 
     from app.core.security import encrypt_field
     if data.delivery_address is not None:
@@ -614,13 +618,21 @@ async def hard_delete_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_receiver_or_above),
 ):
-    """주문 DB 완전 삭제 — admin 이상 전용, 복구 불가"""
+    """주문 DB 완전 삭제 — pending·assigned: admin 이상 / picked_up: 최고관리자만 / in_transit+: 잠금"""
     if current_user.role not in {"admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="관리자 이상만 완전 삭제 가능합니다.")
+
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    if order.status in {OrderStatus.in_transit, OrderStatus.delivered}:
+        raise HTTPException(status_code=403, detail="배송 진행 중이거나 완료된 주문은 삭제할 수 없습니다.")
+
+    if order.status == OrderStatus.picked_up and current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 삭제할 수 있습니다.")
+
     await db.delete(order)
     return {"message": "주문이 완전히 삭제되었습니다."}
 
