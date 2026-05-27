@@ -1,11 +1,10 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import {
-  Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
-  ClipboardPaste, MapPin, AlertTriangle, Save, X, Keyboard,
+  Plus, Trash2, CheckCircle, AlertCircle, Loader2,
+  ClipboardPaste, AlertTriangle, Save, X, Keyboard,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
-import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
@@ -57,8 +56,6 @@ export function ManualTab() {
   const rowsRef = useRef(rows)
   rowsRef.current = rows
   const cellRefs = useRef<CellRef[][]>([])
-  const [kakaoRow, setKakaoRow] = useState<number | null>(null)
-  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null)
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
 
   // ── IME 경고 시스템 ────────────────────────────────────────────────────────
@@ -166,7 +163,7 @@ export function ManualTab() {
         ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
         addrStatus: 'idle',
         dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
-        dong: detected ?? '',
+        dong: detected ?? r.dong, // 기존 dong 값 유지 (cleared → auto-save 실패 방지)
       } : r))
       return
     }
@@ -216,62 +213,11 @@ export function ManualTab() {
         const fallbackDongStatus: DongStatus | undefined = fallbackDong
           ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone') : undefined
         setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r, addrStatus: 'invalid' as AddrStatus, dong: fallbackDong ?? '', dongStatus: fallbackDongStatus,
+          ...r, addrStatus: 'invalid' as AddrStatus, dong: fallbackDong ?? r.dong, dongStatus: fallbackDongStatus,
         } : r))
       }
     }, 600)
   }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
-
-  const handleAddressSelect = useCallback(async (rowIdx: number, result: AddressResult) => {
-    const addr = result.road_address || result.address_name
-    let lat = result.lat ?? undefined
-    let lng = result.lng ?? undefined
-    let refinedAddress = addr
-    let matchStatus: StagingRow['matchStatus'] = undefined
-    let matchScore: number | undefined = undefined
-    let coordSource: string | undefined = undefined
-    let legalEmd: string | undefined = result.dong_name ?? undefined
-    let serviceDong: string | undefined = result.dong_name ?? undefined
-    try {
-      const res = await api.post('/addresses/resolve', { address: addr })
-      refinedAddress = res.data.standard_road_address ?? addr
-      lat = res.data.lat ?? lat
-      lng = res.data.lng ?? lng
-      legalEmd = res.data.legal_emd ?? legalEmd
-      serviceDong = res.data.service_dong ?? serviceDong
-      matchStatus = res.data.match_status
-      matchScore = res.data.match_score
-      coordSource = res.data.coord_source
-    } catch {
-      // 검색 결과 자체는 유지하고 자동 저장 검증에서 다시 확인한다.
-    }
-    const detectedDong = serviceDong ? DONG_LIST.find((d) => serviceDong === d) ?? null : null
-    const dong = detectedDong ?? detectDong(refinedAddress) ?? rowsRef.current[rowIdx]?.dong ?? ''
-    const dongStatus: DongStatus = dong && VALID_DONGS.has(dong) ? 'valid' : 'out-of-zone'
-    setRows(prev => prev.map((r, i) =>
-      i === rowIdx ? {
-        ...r,
-        delivery_address: refinedAddress,
-        addrStatus: matchStatus === 'not_found' ? 'invalid' : 'valid',
-        lat,
-        lng,
-        addrRefined: refinedAddress,
-        standardRoadAddress: refinedAddress,
-        legalEmd,
-        serviceDong,
-        matchStatus,
-        matchScore,
-        coordSource,
-        dong,
-        dongStatus,
-        savedOrderId: undefined,
-        submitStatus: undefined,
-      } : r
-    ))
-    setKakaoRow(null)
-    const colIdx = COL_KEYS.indexOf('delivery_address')
-    setTimeout(() => focusCell(rowIdx, colIdx + 1), 50)
-  }, [focusCell]) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
   const DONG_COL = COL_KEYS.indexOf('dong')
   const nextCol = (cur: number, dir: 1 | -1) => {
@@ -417,31 +363,6 @@ export function ManualTab() {
     <div className="space-y-3">
       {ImeWarnToast}
 
-      {/* 주소 검색 모달 */}
-      {kakaoRow !== null && (
-        <div className="modal-overlay">
-          <div className="modal-content max-w-lg p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-brand-500" />
-                주소 검색
-                <span className="text-xs text-gray-400 font-normal">{kakaoRow + 1}행</span>
-              </h3>
-              <button onClick={() => setKakaoRow(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
-            </div>
-            <KakaoAddressSearch
-              value={rows[kakaoRow]?.delivery_address ?? ''}
-              onChange={(addr) => setRows(prev => prev.map((r, i) => i === kakaoRow ? { ...r, delivery_address: addr } : r))}
-              onSelect={(result) => handleAddressSelect(kakaoRow, result)}
-              placeholder="도로명·지번·건물명 입력 후 목록에서 선택"
-            />
-            <p className="mt-3 text-xs text-gray-400">
-              주소를 입력하면 표준 주소 목록이 나타납니다. 클릭하면 배송 동이 자동 설정됩니다.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* 클립보드 모달 */}
       {clipboardModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -567,13 +488,12 @@ export function ManualTab() {
                     const isCode = key === 'item_code'
                     const meta = CELL_META[key]
                     const isKoField = meta?.lang === 'ko'
-                    const isFocused = focusedCell?.row === rowIdx && focusedCell?.col === colIdx
                     const isWarn = warnCell?.row === rowIdx && warnCell?.col === colIdx
 
                     const cellCls = `
                       w-full h-full px-1.5 py-1 text-sm bg-transparent outline-none
                       focus:ring-2 focus:ring-inset
-                      ${isWarn ? 'ring-2 ring-red-400 ring-inset animate-pulse' : isFocused && isKoField ? 'focus:ring-blue-400' : 'focus:ring-brand-400'}
+                      ${isWarn ? 'ring-2 ring-red-400 ring-inset' : isKoField ? 'focus:ring-blue-400' : 'focus:ring-brand-400'}
                       ${isAddr && row.addrStatus === 'valid' ? 'text-green-700' : ''}
                       ${isAddr && row.addrStatus === 'invalid' ? 'text-red-600' : ''}
                     `
@@ -583,12 +503,12 @@ export function ManualTab() {
                     return (
                       <td
                         key={key}
-                        className={`border-r border-gray-100 p-0 relative
+                        className={`border-r border-gray-100 p-0 relative group
                           ${isKoField && !isDong ? 'bg-blue-50/20' : ''}`}
                       >
-                        {/* 포커스 배지 */}
-                        {isFocused && meta && (
-                          <span className={`absolute top-0 right-0 z-20 text-[8px] font-black px-1.5 py-px rounded-bl leading-none pointer-events-none select-none border ${meta.hintColor} ${meta.hintBg}`}>
+                        {/* 포커스 배지 — CSS group-focus-within 으로 플리커 없이 표시 */}
+                        {meta && (
+                          <span className={`absolute top-0 right-0 z-20 text-[8px] font-black px-1.5 py-px rounded-bl leading-none pointer-events-none select-none border invisible group-focus-within:visible ${meta.hintColor} ${meta.hintBg}`}>
                             {meta.hint}
                           </span>
                         )}
@@ -610,25 +530,15 @@ export function ManualTab() {
                               autoComplete="off"
                               onCompositionStart={() => { composingRef.current[cellKey] = true }}
                               onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                              onBlur={() => setFocusedCell(null)}
+                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                               onChange={(e) => {
                                 checkKoreanIME(e.target.value, rowIdx, colIdx, 'delivery_address')
                                 handleAddressChange(rowIdx, e.target.value)
                               }}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                              placeholder="주소 입력 또는 검색"
+                              placeholder="주소 입력"
                             />
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => setKakaoRow(rowIdx)}
-                              className="p-0.5 text-gray-400 hover:text-brand-600 flex-shrink-0"
-                              title="주소 검색"
-                            >
-                              <Search className="w-3.5 h-3.5" />
-                            </button>
                             <AddrIcon status={row.addrStatus} />
                             {row.matchStatus === 'needs_review' && (
                               <span
@@ -656,8 +566,7 @@ export function ManualTab() {
                             value={row.detail_address}
                             onCompositionStart={() => { composingRef.current[cellKey] = true }}
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                            onBlur={() => setFocusedCell(null)}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => {
                               checkKoreanIME(e.target.value, rowIdx, colIdx, 'detail_address')
                               updateCell(rowIdx, 'detail_address', e.target.value)
@@ -713,8 +622,7 @@ export function ManualTab() {
                             autoComplete="off"
                             className={cellCls + ' text-center'}
                             value={row.quantity}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                            onBlur={() => setFocusedCell(null)}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => updateCell(rowIdx, 'quantity', Number(e.target.value))}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -728,8 +636,7 @@ export function ManualTab() {
                             autoComplete="off"
                             className={cellCls}
                             value={row.customer_phone}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                            onBlur={() => setFocusedCell(null)}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => updateCell(rowIdx, 'customer_phone', formatPhone(e.target.value))}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -743,8 +650,7 @@ export function ManualTab() {
                             autoComplete="off"
                             className={cellCls + ' text-center font-mono'}
                             value={row.item_code}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                            onBlur={() => setFocusedCell(null)}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => updateCell(rowIdx, 'item_code', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -759,8 +665,7 @@ export function ManualTab() {
                             value={String(row[key] ?? '')}
                             onCompositionStart={() => { composingRef.current[cellKey] = true }}
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
-                            onBlur={() => setFocusedCell(null)}
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => {
                               checkKoreanIME(e.target.value, rowIdx, colIdx, key)
                               updateCell(rowIdx, key, e.target.value)
@@ -792,7 +697,7 @@ export function ManualTab() {
 
       {/* 지역 외 경고 배너 */}
       {rows.some((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride) && (
-        <div className="flex items-start gap-3 bg-red-50 border-2 border-red-400 rounded-xl px-4 py-3 text-sm text-red-800 animate-pulse">
+        <div className="flex items-start gap-3 bg-red-50 border-2 border-red-400 rounded-xl px-4 py-3 text-sm text-red-800">
           <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-600 mt-0.5" />
           <div>
             <p className="font-bold text-red-700">
