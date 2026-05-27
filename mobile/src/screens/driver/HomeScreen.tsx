@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, Alert, Linking, Image, Modal,
@@ -39,7 +39,54 @@ interface Driver {
   id: number; name: string; phone: string
 }
 
-// ── 사진 업로드 (실패 시 에러 throw) ─────────────────────────────────────────
+// ── 관리자 배차 후 본인 룸 WS 구독 — route_updated 수신 시 콜백 호출 ──────────
+function useRouteListener(
+  driverId: number | null,
+  apiBaseUrl: string,
+  onRouteUpdated: () => void,
+) {
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isActiveRef = useRef(true)
+  // 매 렌더마다 최신 콜백 참조 유지 (reconnect 시 stale closure 방지)
+  const callbackRef = useRef(onRouteUpdated)
+  useEffect(() => { callbackRef.current = onRouteUpdated })
+
+  const connect = useCallback(async () => {
+    if (!driverId || !isActiveRef.current) return
+    if (reconnectRef.current) { clearTimeout(reconnectRef.current); reconnectRef.current = null }
+
+    const { useAuthStore: store } = await import('@/store/authStore')
+    const token = store.getState().accessToken ?? ''
+    const wsUrl = apiBaseUrl.replace(/^http/, 'ws').replace(':8000', '').replace(/\/$/, '')
+    const ws = new WebSocket(`${wsUrl}/ws/driver-${driverId}?token=${encodeURIComponent(token)}`)
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data)
+        if (msg.type === 'route_updated') callbackRef.current()
+      } catch { /* JSON 파싱 실패 무시 */ }
+    }
+    ws.onclose = () => {
+      if (isActiveRef.current) reconnectRef.current = setTimeout(connect, 3_000)
+    }
+    ws.onerror = () => ws.close()
+    wsRef.current = ws
+  }, [driverId, apiBaseUrl])
+
+  useEffect(() => {
+    if (!driverId) return
+    isActiveRef.current = true
+    connect()
+    return () => {
+      isActiveRef.current = false
+      if (reconnectRef.current) clearTimeout(reconnectRef.current)
+      wsRef.current?.close()
+    }
+  }, [driverId, connect])
+}
+
+// ── 사진 업로드 ───────────────────────────────────────────────────────────────
 async function uploadPhoto(orderId: number, photoUri: string): Promise<void> {
   const filename = photoUri.split('/').pop() ?? 'delivery.jpg'
   const ext = filename.split('.').pop() ?? 'jpg'
@@ -50,7 +97,7 @@ async function uploadPhoto(orderId: number, photoUri: string): Promise<void> {
   })
 }
 
-// ── MMS 발송 (사진 첨부) ──────────────────────────────────────────────────────
+// ── MMS 발송 ─────────────────────────────────────────────────────────────────
 async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
   const available = await SMS.isAvailableAsync()
   if (!available) return
@@ -172,11 +219,18 @@ function TransferModal({
 // ── 메인 화면 ─────────────────────────────────────────────────────────────────
 export function DriverHomeScreen() {
   const qc = useQueryClient()
+  const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const myId = user?.id ?? null
+
   const [routeMode, setRouteMode] = useState<'A' | 'B'>('A')
   const [completeTarget, setCompleteTarget] = useState<Order | null>(null)
   const [transferTarget, setTransferTarget] = useState<Order | null>(null)
-  // 사진 업로드 실패 재시도 큐: orderId → photoUri
+  const [editSeqMode, setEditSeqMode] = useState(false)
+  const [localOrders, setLocalOrders] = useState<Order[]>([])
+  const [isResequencing, setIsResequencing] = useState(false)
+
+  // 사진 업로드 실패 재시도 큐
   const retryQueue = useRef<Map<number, string>>(new Map())
   const [retryKeys, setRetryKeys] = useState<number[]>([])
 
@@ -186,12 +240,32 @@ export function DriverHomeScreen() {
     refetchInterval: 60_000,
   })
 
+  // 관리자가 배차/순번 변경 시 WS 푸시로 즉시 갱신
+  useRouteListener(myId, API_BASE, useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['driver-route'] })
+  }, [qc]))
+
+  // 서버 데이터 변경 시 로컬 순번 동기화 (수동 편집 중에는 덮어쓰지 않음)
+  useEffect(() => {
+    if (orders && !isResequencing) {
+      setLocalOrders(
+        [...orders].sort((a: Order, b: Order) => (a.sequence ?? 999) - (b.sequence ?? 999))
+      )
+    }
+  }, [orders, isResequencing])
+
   // 동료 기사 목록 (인계 모달용)
   const { data: allDrivers = [] } = useQuery<Driver[]>({
     queryKey: ['drivers'],
     queryFn: () => api.get('/users', { params: { role: 'driver' } }).then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60_000,
   })
+
+  // 편집 모드에서 ▲▼ 비활성화 여부 계산용 — 배달 미완료 주문의 index 맵
+  const activeSeqMap = useMemo(() => {
+    const active = localOrders.filter((o) => o.status !== 'delivered')
+    return new Map(active.map((o, i) => [o.id, { index: i, total: active.length }]))
+  }, [localOrders])
 
   const startWorkMutation = useMutation({
     mutationFn: () => api.post('/orders/dispatch/start-work').then((r) => r.data),
@@ -213,6 +287,25 @@ export function DriverHomeScreen() {
     },
   })
 
+  // 기사 본인이 순번을 수동으로 변경할 때 호출
+  const resequenceMutation = useMutation({
+    mutationFn: (sequences: { order_id: number; sequence: number }[]) =>
+      api.put('/orders/resequence', { sequences }).then((r) => r.data),
+    onSuccess: () => {
+      setIsResequencing(false)
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+    },
+    onError: () => {
+      Alert.alert('오류', '순번 변경에 실패했습니다. 다시 시도해 주세요.')
+      setIsResequencing(false)
+      if (orders) {
+        setLocalOrders(
+          [...orders].sort((a: Order, b: Order) => (a.sequence ?? 999) - (b.sequence ?? 999))
+        )
+      }
+    },
+  })
+
   const transferMutation = useMutation({
     mutationFn: ({ orderId, toDriverId, reason }: { orderId: number; toDriverId: number; reason: string }) =>
       api.post(`/orders/${orderId}/transfer`, { to_driver_id: toDriverId, reason }),
@@ -223,7 +316,27 @@ export function DriverHomeScreen() {
     onError: () => Alert.alert('오류', '인계 처리 중 문제가 발생했습니다.'),
   })
 
-  // 사진 업로드 실패 → 재시도 큐 등록
+  // 순번 ▲▼ 이동: 배달 미완료 주문 내에서만 이동, 즉시 로컬 반영 후 API 호출
+  const moveOrder = useCallback((orderId: number, dir: 'up' | 'down') => {
+    setLocalOrders((prev) => {
+      const active = prev.filter((o) => o.status !== 'delivered')
+      const done = prev.filter((o) => o.status === 'delivered')
+      const idx = active.findIndex((o) => o.id === orderId)
+      if (idx < 0) return prev
+      const target = dir === 'up' ? idx - 1 : idx + 1
+      if (target < 0 || target >= active.length) return prev
+
+      const next = [...active]
+      ;[next[idx], next[target]] = [next[target], next[idx]]
+      const reseq = next.map((o, i) => ({ ...o, sequence: i + 1 }))
+
+      setIsResequencing(true)
+      resequenceMutation.mutate(reseq.map((o) => ({ order_id: o.id, sequence: o.sequence! })))
+
+      return [...reseq, ...done]
+    })
+  }, [resequenceMutation])
+
   const markRetry = (orderId: number, photoUri: string) => {
     retryQueue.current.set(orderId, photoUri)
     setRetryKeys([...retryQueue.current.keys()])
@@ -234,7 +347,6 @@ export function DriverHomeScreen() {
     setRetryKeys([...retryQueue.current.keys()])
   }
 
-  // 배달 완료: 사진 업로드 → 상태 업데이트 → MMS
   const handleDeliveryComplete = async (order: Order, photoUri: string) => {
     setCompleteTarget(null)
     try {
@@ -261,7 +373,6 @@ export function DriverHomeScreen() {
     }
   }
 
-  // 사진 재업로드 시도
   const handleRetryUpload = async (orderId: number) => {
     const uri = retryQueue.current.get(orderId)
     if (!uri) return
@@ -299,21 +410,11 @@ export function DriverHomeScreen() {
     transferMutation.mutate({ orderId: transferTarget.id, toDriverId, reason })
   }
 
-  // 토큰에서 본인 ID 추출
-  const myId = (() => {
-    try {
-      const token = (api.defaults.headers as Record<string, string>)?.Authorization?.split(' ')[1]
-      if (!token) return null
-      return JSON.parse(atob(token.split('.')[1])).sub
-    } catch { return null }
-  })()
-
-  // 배송 중 실시간 위치 추적 (WS → 관리자 대시보드)
-  useLocationTracking(myId ? Number(myId) : null, API_BASE)
+  useLocationTracking(myId, API_BASE)
   const otherDrivers = allDrivers.filter((d) => String(d.id) !== String(myId))
 
-  const activeOrders = (orders || []).filter((o: Order) => o.status !== 'delivered')
-  const doneOrders = (orders || []).filter((o: Order) => o.status === 'delivered')
+  const activeOrders = localOrders.filter((o: Order) => o.status !== 'delivered')
+  const doneOrders = localOrders.filter((o: Order) => o.status === 'delivered')
 
   return (
     <View style={styles.container}>
@@ -345,7 +446,7 @@ export function DriverHomeScreen() {
       {/* 통계 */}
       <View style={styles.stats}>
         {[
-          { label: '총 건수', value: (orders || []).length, color: '#111827' },
+          { label: '총 건수', value: localOrders.length, color: '#111827' },
           { label: '남은 건수', value: activeOrders.length, color: '#f97316' },
           { label: '완료', value: doneOrders.length, color: '#22c55e' },
         ].map(({ label, value, color }) => (
@@ -360,7 +461,23 @@ export function DriverHomeScreen() {
         <Text style={styles.smsBannerText}>📷 배달 완료 시 사진과 함께 문자가 자동 발송됩니다</Text>
       </View>
 
-      {/* 주문 목록 */}
+      {/* 순번 편집 토글 — 배달 미완료 주문이 2건 이상일 때 표시 */}
+      {activeOrders.length >= 2 && (
+        <TouchableOpacity
+          style={[styles.editSeqBtn, editSeqMode && styles.editSeqBtnActive]}
+          onPress={() => setEditSeqMode((v) => !v)}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.editSeqBtnText, editSeqMode && styles.editSeqBtnTextActive]}>
+            {editSeqMode ? '✓ 순번 편집 완료' : '↕ 배송 순번 직접 조정'}
+          </Text>
+          {resequenceMutation.isPending && (
+            <ActivityIndicator size="small" color={editSeqMode ? 'white' : '#f97316'} style={{ marginLeft: 6 }} />
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* 배송업무 시작 버튼 */}
       <TouchableOpacity
         style={[styles.startWorkBtn, startWorkMutation.isPending && styles.startWorkBtnDisabled]}
         onPress={() => startWorkMutation.mutate()}
@@ -371,13 +488,16 @@ export function DriverHomeScreen() {
         </Text>
       </TouchableOpacity>
 
+      {/* 주문 목록 */}
       <FlatList
-        data={orders || []}
+        data={localOrders}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
         contentContainerStyle={styles.list}
         renderItem={({ item: order }) => {
           const hasRetry = retryKeys.includes(order.id)
+          const seqInfo = activeSeqMap.get(order.id)
+
           return (
             <View style={[styles.orderCard, order.status === 'delivered' && styles.orderCardDone]}>
               <View style={styles.orderHeader}>
@@ -393,6 +513,28 @@ export function DriverHomeScreen() {
                     {STATUS_LABEL[order.status]}
                   </Text>
                 </View>
+
+                {/* ▲▼ 순번 조정 버튼 (편집 모드 + 미배달 주문만) */}
+                {editSeqMode && seqInfo && (
+                  <View style={styles.seqControls}>
+                    <TouchableOpacity
+                      style={[styles.seqMoveBtn, seqInfo.index === 0 && styles.seqMoveBtnDisabled]}
+                      onPress={() => moveOrder(order.id, 'up')}
+                      disabled={seqInfo.index === 0 || resequenceMutation.isPending}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Text style={[styles.seqMoveBtnText, seqInfo.index === 0 && styles.seqMoveBtnTextDisabled]}>▲</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.seqMoveBtn, seqInfo.index === seqInfo.total - 1 && styles.seqMoveBtnDisabled]}
+                      onPress={() => moveOrder(order.id, 'down')}
+                      disabled={seqInfo.index === seqInfo.total - 1 || resequenceMutation.isPending}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Text style={[styles.seqMoveBtnText, seqInfo.index === seqInfo.total - 1 && styles.seqMoveBtnTextDisabled]}>▼</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               <Text style={styles.customerName}>{order.customer_name}</Text>
@@ -484,6 +626,17 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: '#6b7280' },
   smsBanner: { backgroundColor: '#FFF7ED', paddingVertical: 8, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#fed7aa' },
   smsBannerText: { fontSize: 12, color: '#9a3412', textAlign: 'center' },
+  // 순번 편집 토글 버튼
+  editSeqBtn: { marginHorizontal: 12, marginTop: 10, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: '#f97316', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', backgroundColor: 'white' },
+  editSeqBtnActive: { backgroundColor: '#f97316', borderColor: '#f97316' },
+  editSeqBtnText: { fontSize: 14, fontWeight: '700', color: '#f97316' },
+  editSeqBtnTextActive: { color: 'white' },
+  // 순번 ▲▼ 컨트롤
+  seqControls: { flexDirection: 'column', gap: 2, marginLeft: 8 },
+  seqMoveBtn: { width: 28, height: 28, borderRadius: 6, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', alignItems: 'center', justifyContent: 'center' },
+  seqMoveBtnDisabled: { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' },
+  seqMoveBtnText: { fontSize: 13, color: '#ea580c', fontWeight: '700' },
+  seqMoveBtnTextDisabled: { color: '#d1d5db' },
   startWorkBtn: { margin: 12, marginBottom: 0, backgroundColor: '#111827', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   startWorkBtnDisabled: { backgroundColor: '#9ca3af' },
   startWorkBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },

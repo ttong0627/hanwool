@@ -1,10 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, Download, X, Truck, Pencil, Trash2,
   ChevronLeft, ChevronRight, QrCode, FileSpreadsheet,
-  TableProperties, ClipboardList, CheckCircle, AlertCircle,
-  Loader2, Send, Upload
+  TableProperties, ClipboardList,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { OrderCard } from '@/components/OrderCard'
@@ -12,8 +11,6 @@ import { DONG_LIST, STATUS_LABEL } from '@/lib/utils'
 import { QrTab } from './orders/QrTab'
 import { ExcelTab } from './orders/ExcelTab'
 import { ManualTab } from './orders/ManualTab'
-import type { StagingRow } from './orders/types'
-import { EMPTY_ROW } from './orders/types'
 
 /* ── 타입 ──────────────────────────────────────────────────────────────────── */
 interface Order {
@@ -149,113 +146,29 @@ function CancelDialog({ order, onConfirm, onClose }: { order: Order; onConfirm: 
   )
 }
 
-/* ── 스테이징 패널 ────────────────────────────────────────────────────────────
-   모든 입력 탭에서 추가된 row를 한곳에서 확인하고 일괄 제출합니다.
-──────────────────────────────────────────────────────────────────────────── */
-function StagingPanel({
-  rows,
-  onSubmit,
-  onClear,
-  submitting,
-  results,
-}: {
-  rows: StagingRow[]
-  onSubmit: () => void
-  onClear: () => void
-  submitting: boolean
-  results: { ok: boolean; order_no?: string; error?: string }[]
-}) {
-  if (rows.length === 0) return null
-
-  const successCount = results.filter((r) => r.ok).length
-  const errorCount = results.filter((r) => !r.ok).length
-  const isDone = results.length > 0 && results.length === rows.length
-  const outOfZoneCount = rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).length
-  const hasBlocker = rows.some((r) => !r.customer_name || !r.delivery_address)
-
+/* ── 엑셀 업로드 모달 ────────────────────────────────────────────────────────── */
+function ExcelModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed bottom-6 right-6 z-40 w-96 bg-white rounded-2xl shadow-2xl border border-brand-200 overflow-hidden">
-      {/* 헤더 */}
-      <div className="bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-white">
-          <Upload className="w-4 h-4" />
-          <span className="font-bold text-sm">스테이징 목록</span>
-          <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-black">{rows.length}건</span>
-        </div>
-        {!submitting && <button onClick={onClear} className="text-white/70 hover:text-white"><X className="w-4 h-4" /></button>}
-      </div>
-
-      {/* 지역 외 경고 */}
-      {outOfZoneCount > 0 && !isDone && (
-        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800">
-          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-          서비스 지역 외 {outOfZoneCount}건 — 직접입력 탭에서 "강제 등록" 체크 후 제출 가능
-        </div>
-      )}
-
-      {/* 목록 */}
-      <div className="max-h-48 overflow-y-auto divide-y divide-gray-100">
-        {rows.map((row, i) => {
-          const res = results[i]
-          const isOutZone = row.dongStatus === 'out-of-zone' && !row.dongOverride
-          return (
-            <div key={row._id} className={`flex items-center gap-2 px-4 py-2.5 text-sm ${
-              res?.ok ? 'bg-green-50' :
-              res && !res.ok ? 'bg-red-50' :
-              row.savedOrderId ? 'bg-green-50/60' :
-              isOutZone ? 'bg-amber-50' : ''
-            }`}>
-              {res?.ok ? <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                : res && !res.ok ? <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                : row.savedOrderId ? <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                : isOutZone ? <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                : <div className="w-4 h-4 rounded-full bg-gray-200 flex-shrink-0 text-center text-xs leading-4">{i + 1}</div>}
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-gray-800">{row.customer_name || '(미입력)'}</span>
-                <span className="text-gray-400 ml-1.5 text-xs">{row.customer_phone}</span>
-              </div>
-              <span className={`text-xs flex-shrink-0 ${isOutZone ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>{row.dong}</span>
-              {res?.ok && <span className="text-xs text-green-600">{res.order_no}</span>}
-              {res && !res.ok && <span className="text-xs text-red-600 truncate max-w-20">{res.error}</span>}
-              {row.savedOrderId && !res && <span className="text-xs text-green-500">자동저장</span>}
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col" style={{ maxHeight: '88vh' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
+              <FileSpreadsheet className="w-4 h-4 text-brand-600" />
             </div>
-          )
-        })}
+            <div>
+              <h2 className="font-bold text-gray-800">엑셀 업로드</h2>
+              <p className="text-xs text-gray-400">파일 업로드 + 컬럼 매핑 후 서버 저장</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6 overflow-y-auto flex-1">
+          <ExcelTab onClose={onClose} />
+        </div>
       </div>
-
-      {/* 결과 요약 */}
-      {isDone && (
-        <div className={`px-4 py-2 text-sm font-semibold border-t ${successCount === rows.length ? 'text-green-700 bg-green-50' : 'text-amber-700 bg-amber-50'}`}>
-          {successCount === rows.length
-            ? `전체 ${rows.length}건 등록 완료!`
-            : `성공 ${successCount}건 / 실패 ${errorCount}건`}
-        </div>
-      )}
-
-      {/* 제출 버튼 */}
-      {!isDone && (
-        <div className="px-4 py-3 border-t border-gray-100 flex gap-2">
-          <button
-            onClick={onSubmit}
-            disabled={submitting || hasBlocker || outOfZoneCount > 0}
-            className="btn-primary flex-1 py-2.5 text-sm flex items-center justify-center gap-2 disabled:opacity-40"
-            title={outOfZoneCount > 0 ? '지역 외 주소를 먼저 처리해주세요' : undefined}
-          >
-            {submitting
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> 등록 중...</>
-              : <><Send className="w-4 h-4" /> {rows.length}건 전체 등록</>}
-          </button>
-          <button onClick={onClear} disabled={submitting} className="btn-secondary px-3">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {isDone && (
-        <div className="px-4 py-3 border-t border-gray-100">
-          <button onClick={onClear} className="btn-secondary w-full text-sm">닫기</button>
-        </div>
-      )}
     </div>
   )
 }
@@ -310,7 +223,6 @@ function OrderListTab() {
 
   return (
     <div className="space-y-4">
-      {/* 필터 */}
       <div className="card space-y-3">
         <div className="flex gap-3 flex-wrap items-center">
           <div className="relative">
@@ -371,7 +283,6 @@ function OrderListTab() {
         ))}
       </div>
 
-      {/* 페이지네이션 */}
       {data && data.total_pages > 1 && (
         <div className="flex items-center justify-center gap-3">
           <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn-secondary px-3 py-2 disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
@@ -380,7 +291,6 @@ function OrderListTab() {
         </div>
       )}
 
-      {/* 모달들 */}
       {assignTarget && (
         <AssignModal order={assignTarget} drivers={drivers}
           onConfirm={(driverId) => assignMutation.mutate({ orderId: assignTarget.id, driverId })}
@@ -401,67 +311,18 @@ function OrderListTab() {
 }
 
 /* ── 메인 컴포넌트 ────────────────────────────────────────────────────────── */
-type TabKey = 'list' | 'qr' | 'excel' | 'manual'
+type TabKey = 'list' | 'qr' | 'manual'
 
 const TABS: { key: TabKey; icon: React.ElementType; label: string; desc: string }[] = [
-  { key: 'list',   icon: ClipboardList,  label: '주문 목록',    desc: '접수된 주문 조회·관리' },
-  { key: 'qr',     icon: QrCode,         label: 'QR 촬영',     desc: '카메라로 QR 스캔 입력' },
-  { key: 'excel',  icon: FileSpreadsheet, label: '엑셀 업로드', desc: '파일 업로드 + 컬럼 매핑' },
-  { key: 'manual', icon: TableProperties, label: '직접 입력',   desc: '스프레드시트 방식 입력' },
+  { key: 'list',   icon: ClipboardList,  label: '주문 목록',  desc: '접수된 주문 조회·관리' },
+  { key: 'qr',     icon: QrCode,         label: 'QR 촬영',   desc: '카메라로 QR 스캔 입력' },
+  { key: 'manual', icon: TableProperties, label: '직접 입력', desc: '스프레드시트 방식 입력' },
 ]
 
 export function Orders() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('manual')
-  const [stagingRows, setStagingRows] = useState<StagingRow[]>([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
-  const [submitResults, setSubmitResults] = useState<{ ok: boolean; order_no?: string; error?: string }[]>([])
-  const [submitting, setSubmitting] = useState(false)
-
-  const validStaging = stagingRows.filter((r) => r.customer_name && r.delivery_address)
-
-  const addRow = useCallback((row: StagingRow) => {
-    setStagingRows((prev) => [...prev, row])
-  }, [])
-
-  const addRows = useCallback((rows: StagingRow[]) => {
-    setStagingRows((prev) => [...prev, ...rows])
-  }, [])
-
-  const clearStaging = () => {
-    setStagingRows([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
-    setSubmitResults([])
-  }
-
-  const handleBatchSubmit = async () => {
-    const toSubmit = stagingRows.filter((r) => r.customer_name && r.delivery_address)
-    if (toSubmit.length === 0) return
-
-    setSubmitting(true)
-    setSubmitResults([])
-
-    try {
-      const res = await api.post('/orders/batch', {
-        rows: toSubmit.map((r) => ({
-          customer_name: r.customer_name,
-          customer_phone: r.customer_phone,
-          dong: r.dong,
-          delivery_address: r.delivery_address,
-          items_desc: r.items_desc || undefined,
-          item_code: r.item_code || undefined,
-          quantity: r.quantity,
-          request: r.request || undefined,
-          lat: r.lat,
-          lng: r.lng,
-        })),
-      })
-      setSubmitResults(res.data.results ?? [])
-      qc.invalidateQueries({ queryKey: ['orders'] })
-    } catch {
-      setSubmitResults(toSubmit.map(() => ({ ok: false, error: '서버 오류' })))
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  const [excelModalOpen, setExcelModalOpen] = useState(false)
 
   const activeTab = TABS.find((t) => t.key === tab)!
 
@@ -497,6 +358,18 @@ export function Orders() {
             <p className="text-xs text-gray-400 leading-snug">{desc}</p>
           </button>
         ))}
+
+        {/* 엑셀 업로드 — 모달로 열기 */}
+        <button
+          onClick={() => setExcelModalOpen(true)}
+          className="rounded-xl border-2 p-3 text-left transition-all border-gray-200 hover:border-brand-300 bg-white hover:bg-brand-50"
+        >
+          <div className="flex items-center gap-2 mb-1 text-gray-500">
+            <FileSpreadsheet className="w-4 h-4" />
+            <span className="font-bold text-sm text-gray-700">엑셀 업로드</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-snug">파일 업로드 + 컬럼 매핑</p>
+        </button>
       </div>
 
       {/* 탭 콘텐츠 */}
@@ -508,35 +381,20 @@ export function Orders() {
               <h2 className="font-bold text-gray-800">{activeTab.label}</h2>
               <p className="text-xs text-gray-400">{activeTab.desc}</p>
             </div>
-            {validStaging.length > 0 && (
-              <div className="ml-auto flex items-center gap-2 text-sm text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full">
-                <Upload className="w-3.5 h-3.5" />
-                {validStaging.length}건 스테이징 대기
-              </div>
-            )}
           </div>
         )}
 
         {tab === 'list' && <OrderListTab />}
-        {tab === 'qr' && <QrTab onAdd={addRow} />}
-        {tab === 'excel' && <ExcelTab onAddRows={addRows} />}
-        {tab === 'manual' && (
-          <ManualTab
-            rows={stagingRows}
-            onChange={setStagingRows}
-          />
-        )}
+        {tab === 'qr' && <QrTab />}
+        {tab === 'manual' && <ManualTab />}
       </div>
 
-      {/* 스테이징 패널 — manual 탭에서만 표시 */}
-      {(tab === 'qr' || tab === 'excel' || tab === 'manual') && (
-        <StagingPanel
-          rows={tab === 'manual' ? stagingRows : stagingRows.filter((r) => r.customer_name || r.delivery_address)}
-          onSubmit={handleBatchSubmit}
-          onClear={clearStaging}
-          submitting={submitting}
-          results={submitResults}
-        />
+      {/* 엑셀 업로드 모달 */}
+      {excelModalOpen && (
+        <ExcelModal onClose={() => {
+          setExcelModalOpen(false)
+          qc.invalidateQueries({ queryKey: ['orders'] })
+        }} />
       )}
     </div>
   )

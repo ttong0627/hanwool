@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Camera, CameraOff, CheckCircle, AlertCircle, QrCode, AlertTriangle } from 'lucide-react'
+import { Camera, CameraOff, CheckCircle, AlertCircle, QrCode, AlertTriangle, Loader2 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST } from './types'
 
 const VALID_DONGS = new Set<string>(DONG_LIST)
 
-interface Props {
-  onAdd: (row: StagingRow) => void
-}
-
 type ScanState = 'idle' | 'scanning' | 'paused'
 
 function parseQrData(raw: string): Partial<StagingRow> | null {
   try {
-    // JSON 형식
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object') {
       return {
@@ -45,7 +42,8 @@ function parseQrData(raw: string): Partial<StagingRow> | null {
   return null
 }
 
-export function QrTab({ onAdd }: Props) {
+export function QrTab() {
+  const qc = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
 
@@ -60,8 +58,9 @@ export function QrTab({ onAdd }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<Partial<StagingRow> | null>(null)
   const [dongOverride, setDongOverride] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  // form 바뀔 때마다 override 초기화
   const dongStatus: DongStatus = form?.dong ? (VALID_DONGS.has(form.dong) ? 'valid' : 'out-of-zone') : 'valid'
 
   const stopCamera = useCallback(() => {
@@ -111,7 +110,6 @@ export function QrTab({ onAdd }: Props) {
       ctx.drawImage(video, 0, 0)
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
-      // Dynamic import so jsqr doesn't block initial render
       const { default: jsQR } = await import('jsqr')
       const code = jsQR(imageData.data, imageData.width, imageData.height)
 
@@ -121,6 +119,7 @@ export function QrTab({ onAdd }: Props) {
         if (parsed) {
           setScanState('paused')
           setForm(parsed)
+          setSaveError(null)
         }
       }
 
@@ -133,27 +132,54 @@ export function QrTab({ onAdd }: Props) {
 
   useEffect(() => () => stopCamera(), [stopCamera])
 
-  const confirmAdd = () => {
-    if (!form) return
+  // QR 인식 확인 → 서버 직접 저장
+  const confirmAdd = async () => {
+    if (!form || saving) return
     if (dongStatus === 'out-of-zone' && !dongOverride) return
-    const row: StagingRow = {
-      ...EMPTY_ROW(), ...form,
-      addrStatus: 'idle',
-      dongStatus,
-      dongOverride: dongStatus === 'out-of-zone' ? dongOverride : undefined,
+
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await api.post('/orders/single', {
+        customer_name: form.customer_name,
+        customer_phone: form.customer_phone,
+        dong: form.dong,
+        delivery_address: form.delivery_address,
+        items_desc: form.items_desc || undefined,
+        item_code: form.item_code || undefined,
+        quantity: form.quantity,
+        request: form.request || undefined,
+        dong_override: dongStatus === 'out-of-zone' ? dongOverride : false,
+      })
+
+      // 세션 스캔 이력에 추가
+      const row: StagingRow = {
+        ...EMPTY_ROW(), ...form,
+        addrStatus: 'idle',
+        dongStatus,
+        dongOverride: dongStatus === 'out-of-zone' ? dongOverride : undefined,
+      }
+      setScannedRows((prev) => [row, ...prev])
+      qc.invalidateQueries({ queryKey: ['orders'] })
+
+      // 다음 스캔 준비
+      setForm(null)
+      setDongOverride(false)
+      setLastResult(null)
+      setScanState('scanning')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패. 다시 시도해 주세요.'
+      setSaveError(msg)
+    } finally {
+      setSaving(false)
     }
-    setScannedRows((prev) => [row, ...prev])
-    onAdd(row)
-    setForm(null)
-    setDongOverride(false)
-    setLastResult(null)
-    setScanState('scanning')
   }
 
   const skipScan = () => {
     setForm(null)
     setDongOverride(false)
     setLastResult(null)
+    setSaveError(null)
     setScanState('scanning')
   }
 
@@ -169,7 +195,6 @@ export function QrTab({ onAdd }: Props) {
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="relative w-52 h-52">
               <div className="absolute inset-0 border-2 border-brand-400 rounded-lg opacity-80" />
-              {/* 코너 마커 */}
               {[
                 'top-0 left-0 border-t-4 border-l-4 rounded-tl-lg',
                 'top-0 right-0 border-t-4 border-r-4 rounded-tr-lg',
@@ -178,7 +203,6 @@ export function QrTab({ onAdd }: Props) {
               ].map((cls, i) => (
                 <div key={i} className={`absolute w-6 h-6 border-brand-400 ${cls}`} />
               ))}
-              {/* 스캔 라인 */}
               <div className="absolute left-0 right-0 h-0.5 bg-brand-400 opacity-70 animate-bounce" style={{ top: '50%' }} />
             </div>
             <p className="absolute bottom-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
@@ -233,13 +257,22 @@ export function QrTab({ onAdd }: Props) {
                 </div>
               )}
 
+              {saveError && (
+                <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  {saveError}
+                </div>
+              )}
+
               <div className="flex gap-2">
-                <button onClick={skipScan} className="btn-secondary flex-1 text-sm py-2">다시 스캔</button>
+                <button onClick={skipScan} disabled={saving} className="btn-secondary flex-1 text-sm py-2">다시 스캔</button>
                 <button
                   onClick={confirmAdd}
-                  disabled={dongStatus === 'out-of-zone' && !dongOverride}
-                  className="btn-primary flex-1 text-sm py-2 disabled:opacity-40"
-                >추가</button>
+                  disabled={(dongStatus === 'out-of-zone' && !dongOverride) || saving}
+                  className="btn-primary flex-1 text-sm py-2 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                >
+                  {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />저장 중</> : '저장'}
+                </button>
               </div>
             </div>
           </div>
@@ -268,13 +301,13 @@ export function QrTab({ onAdd }: Props) {
         </div>
       )}
 
-      {/* 스캔 이력 */}
+      {/* 스캔 이력 (세션 내 저장 완료 목록) */}
       {scannedRows.length > 0 && (
         <div>
-          <p className="text-xs text-gray-500 font-medium mb-2">이번 세션 스캔 목록 ({scannedRows.length}건)</p>
+          <p className="text-xs text-gray-500 font-medium mb-2">이번 세션 저장 완료 ({scannedRows.length}건)</p>
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {scannedRows.map((r) => (
-              <div key={r._id} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
+              <div key={r._id} className="flex items-center gap-2 text-sm bg-green-50 rounded-lg px-3 py-2">
                 <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
                 <span className="font-medium">{r.customer_name}</span>
                 <span className="text-gray-400">{r.customer_phone}</span>

@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback } from 'react'
-import { Upload, FileSpreadsheet, ArrowRight, CheckCircle, AlertTriangle, X, Table } from 'lucide-react'
+import { Upload, FileSpreadsheet, ArrowRight, CheckCircle, AlertTriangle, X, Table, Loader2 } from 'lucide-react'
+import api from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, EXCEL_FIELD_OPTIONS } from './types'
 
 interface Props {
-  onAddRows: (rows: StagingRow[]) => void
+  onClose?: () => void
 }
 
 interface ParsedExcel {
@@ -49,7 +51,6 @@ function buildRows(parsed: ParsedExcel, mapping: Mapping): StagingRow[] {
       }
       const dong = normalizeDong(get('dong'))
       const addrVal = get('delivery_address')
-      // 주소에서 동 감지 — 감지 못하면 out-of-zone
       const addrHasDong = DONG_LIST.some((d) => addrVal.includes(d))
       const dongStatus: DongStatus = VALID_DONGS.has(dong) && (get('dong') || addrHasDong) ? 'valid' : 'out-of-zone'
 
@@ -69,7 +70,10 @@ function buildRows(parsed: ParsedExcel, mapping: Mapping): StagingRow[] {
     .filter((r) => r.customer_name || r.customer_phone || r.delivery_address)
 }
 
-export function ExcelTab({ onAddRows }: Props) {
+export function ExcelTab({ onClose }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
   const fileRef = useRef<HTMLInputElement>(null)
   const [parsed, setParsed] = useState<ParsedExcel | null>(null)
   const [mapping, setMapping] = useState<Mapping>({})
@@ -77,6 +81,8 @@ export function ExcelTab({ onAddRows }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [imported, setImported] = useState(false)
+  const [importedCount, setImportedCount] = useState(0)
+  const [forceOutOfZone, setForceOutOfZone] = useState(false)
 
   const parseFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase()
@@ -88,6 +94,7 @@ export function ExcelTab({ onAddRows }: Props) {
     setLoading(true)
     setError(null)
     setImported(false)
+    setForceOutOfZone(false)
 
     try {
       const buf = await file.arrayBuffer()
@@ -117,12 +124,39 @@ export function ExcelTab({ onAddRows }: Props) {
     if (file) parseFile(file)
   }, [parseFile])
 
-  const handleImport = () => {
-    if (!parsed) return
+  const handleImport = async () => {
+    if (!parsed || loading) return
     const rows = buildRows(parsed, mapping)
     if (rows.length === 0) { setError('매핑된 유효 데이터가 없습니다.'); return }
-    onAddRows(rows)
-    setImported(true)
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const res = await api.post('/orders/batch', {
+        rows: rows.map((r) => ({
+          customer_name: r.customer_name,
+          customer_phone: r.customer_phone,
+          dong: r.dong,
+          delivery_address: r.delivery_address,
+          items_desc: r.items_desc || undefined,
+          item_code: r.item_code || undefined,
+          quantity: r.quantity,
+          request: r.request || undefined,
+          dong_override: forceOutOfZone && r.dongStatus === 'out-of-zone',
+        })),
+      })
+      const results: { ok: boolean }[] = res.data.results ?? []
+      const successCount = results.filter((r) => r.ok).length
+      setImportedCount(successCount)
+      setImported(true)
+      // 2초 후 자동 닫기
+      setTimeout(() => onClose?.(), 2000)
+    } catch {
+      setError('서버 저장 중 오류가 발생했습니다. 다시 시도해 주세요.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const reset = () => {
@@ -130,14 +164,15 @@ export function ExcelTab({ onAddRows }: Props) {
     setMapping({})
     setFileName('')
     setImported(false)
+    setImportedCount(0)
     setError(null)
+    setForceOutOfZone(false)
     if (fileRef.current) fileRef.current.value = ''
   }
 
   const requiredMapped = (['customer_name', 'customer_phone', 'delivery_address'] as ColKey[])
     .every((k) => Object.values(mapping).includes(k))
 
-  // 미리보기용 out-of-zone 건수
   const previewRows = parsed ? buildRows(parsed, mapping) : []
   const outOfZoneCount = previewRows.filter((r) => r.dongStatus === 'out-of-zone').length
 
@@ -179,13 +214,24 @@ export function ExcelTab({ onAddRows }: Props) {
           </div>
 
           {/* 서비스 지역 외 경고 */}
-          {outOfZoneCount > 0 && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              <span>
-                서비스 지역 외(경안동·송정동·쌍령동·탄벌동 미해당) 주소 <strong>{outOfZoneCount}건</strong>이 포함됩니다.
-                스테이징 등록 후 관리자가 강제 등록 여부를 결정합니다.
-              </span>
+          {outOfZoneCount > 0 && !imported && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>서비스 지역 외 주소 <strong>{outOfZoneCount}건</strong>이 포함됩니다.</span>
+              </div>
+              {isAdmin && (
+                <label className="flex items-center gap-2 cursor-pointer ml-6">
+                  <input
+                    type="checkbox"
+                    checked={forceOutOfZone}
+                    onChange={(e) => setForceOutOfZone(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-amber-500"
+                  />
+                  <span className="text-xs">지역 외 {outOfZoneCount}건도 강제 등록 (관리자)</span>
+                </label>
+              )}
+              {!isAdmin && <p className="text-xs ml-6">지역 외 주소는 등록되지 않습니다.</p>}
             </div>
           )}
 
@@ -260,23 +306,23 @@ export function ExcelTab({ onAddRows }: Props) {
 
           {/* 가져오기 버튼 */}
           {imported ? (
-            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3">
-              <CheckCircle className="w-5 h-5" />
-              <span className="font-semibold">{buildRows(parsed, mapping).length}건을 스테이징 목록에 추가했습니다.</span>
-              {outOfZoneCount > 0 && (
-                <span className="text-amber-700 text-sm ml-1">({outOfZoneCount}건 지역 외)</span>
-              )}
-              <button onClick={reset} className="ml-auto text-sm underline">다른 파일 업로드</button>
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-4">
+              <CheckCircle className="w-6 h-6 flex-shrink-0" />
+              <div>
+                <p className="font-bold">{importedCount}건 서버 저장 완료!</p>
+                <p className="text-sm text-green-600">잠시 후 자동으로 닫힙니다...</p>
+              </div>
             </div>
           ) : (
             <button
               onClick={handleImport}
               disabled={!requiredMapped || loading}
-              className="btn-primary w-full py-3 font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+              className="btn-primary w-full py-3.5 font-bold disabled:opacity-40 flex items-center justify-center gap-2 text-base"
             >
-              <CheckCircle className="w-4 h-4" />
-              {parsed.rows.length}건 스테이징으로 가져오기
-              {outOfZoneCount > 0 && <span className="text-xs opacity-80">({outOfZoneCount}건 지역 외 포함)</span>}
+              {loading
+                ? <><Loader2 className="w-4 h-4 animate-spin" />서버에 저장 중...</>
+                : <><CheckCircle className="w-4 h-4" />{parsed.rows.length}건 서버에 저장{outOfZoneCount > 0 && !forceOutOfZone ? ` (지역 외 ${outOfZoneCount}건 제외)` : outOfZoneCount > 0 && forceOutOfZone ? ` (지역 외 ${outOfZoneCount}건 포함)` : ''}</>
+              }
             </button>
           )}
         </div>

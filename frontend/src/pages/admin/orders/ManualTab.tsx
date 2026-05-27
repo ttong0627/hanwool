@@ -1,5 +1,4 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
 import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
   ClipboardPaste, MapPin, AlertTriangle, Save,
@@ -10,11 +9,6 @@ import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
 import { formatPhone, detectDong } from '@/lib/utils'
-
-interface Props {
-  rows: StagingRow[]
-  onChange: Dispatch<SetStateAction<StagingRow[]>>
-}
 
 type CellRef = HTMLInputElement | HTMLSelectElement | null
 
@@ -37,10 +31,11 @@ function RowStatusDot({ row }: { row: StagingRow }) {
 const addrTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 
-export function ManualTab({ rows, onChange }: Props) {
+export function ManualTab() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
 
+  const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
   const cellRefs = useRef<CellRef[][]>([])
   const [kakaoRow, setKakaoRow] = useState<number | null>(null)
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
@@ -51,16 +46,16 @@ export function ManualTab({ rows, onChange }: Props) {
   }, [])
 
   const addRow = useCallback(() => {
-    onChange([...rows, EMPTY_ROW()])
-  }, [rows, onChange])
+    setRows([...rows, EMPTY_ROW()])
+  }, [rows, setRows])
 
   const updateCell = useCallback((rowIdx: number, key: ColKey, value: string | number) => {
-    onChange(rows.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r))
-  }, [rows, onChange])
+    setRows(rows.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r))
+  }, [rows, setRows])
 
   const deleteRow = useCallback((rowIdx: number) => {
-    onChange(rows.filter((_, i) => i !== rowIdx))
-  }, [rows, onChange])
+    setRows(rows.filter((_, i) => i !== rowIdx))
+  }, [rows, setRows])
 
   // ── 자동저장 (행 완성 즉시) ────────────────────────────────────────────────
   const autoSaveRow = useCallback(async (rowIdx: number) => {
@@ -72,7 +67,7 @@ export function ManualTab({ rows, onChange }: Props) {
     if (row.dongStatus === 'out-of-zone' && !row.dongOverride) return
 
     // pending 표시
-    onChange(rows.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
+    setRows(rows.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
     try {
       const res = await api.post('/orders/single', {
         customer_name: row.customer_name,
@@ -87,7 +82,7 @@ export function ManualTab({ rows, onChange }: Props) {
         lng: row.lng,
         dong_override: row.dongOverride ?? false,
       })
-      onChange((prev) =>
+      setRows((prev) =>
         prev.map((r, i) =>
           i === rowIdx
             ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined }
@@ -96,13 +91,13 @@ export function ManualTab({ rows, onChange }: Props) {
       )
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
-      onChange((prev) =>
+      setRows((prev) =>
         prev.map((r, i) =>
           i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
         )
       )
     }
-  }, [rows, onChange])
+  }, [rows, setRows])
 
   // 행 상태 감시 → 완성되면 1200ms 디바운스 후 자동저장
   useEffect(() => {
@@ -134,11 +129,11 @@ export function ManualTab({ rows, onChange }: Props) {
     clearTimeout(addrTimers[rowId])
 
     if (!value || value.length < 5) {
-      onChange(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined } : r))
+      setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'idle', dongStatus: undefined } : r))
       return
     }
 
-    onChange(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'validating' } : r))
+    setRows(rows.map((r, i) => i === rowIdx ? { ...r, ...updates, addrStatus: 'validating' } : r))
 
     addrTimers[rowId] = setTimeout(async () => {
       try {
@@ -146,7 +141,7 @@ export function ManualTab({ rows, onChange }: Props) {
         const { lat, lng, address_name } = res.data
         const refinedDong = detectDong(address_name ?? value)
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
-        onChange(
+        setRows(
           rows.map((r, i) =>
             i === rowIdx
               ? {
@@ -164,16 +159,16 @@ export function ManualTab({ rows, onChange }: Props) {
           )
         )
       } catch {
-        onChange(rows.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'invalid' as AddrStatus } : r))
+        setRows(rows.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'invalid' as AddrStatus } : r))
       }
     }, 600)
-  }, [rows, onChange])
+  }, [rows, setRows])
 
   // 카카오 주소 검색 결과
   const handleAddressSelect = useCallback((rowIdx: number, addr: string) => {
     const dong = detectDong(addr) ?? rows[rowIdx].dong
     const dongStatus: DongStatus = detectDong(addr) ? 'valid' : 'out-of-zone'
-    onChange(rows.map((r, i) =>
+    setRows(rows.map((r, i) =>
       i === rowIdx
         ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined }
         : r
@@ -181,7 +176,7 @@ export function ManualTab({ rows, onChange }: Props) {
     setKakaoRow(null)
     const colIdx = COL_KEYS.indexOf('delivery_address')
     setTimeout(() => focusCell(rowIdx, colIdx + 1), 50)
-  }, [rows, onChange, focusCell])
+  }, [rows, setRows, focusCell])
 
   // 키보드 내비게이션
   const handleKeyDown = useCallback(
@@ -271,8 +266,8 @@ export function ManualTab({ rows, onChange }: Props) {
         }
       })
     })
-    onChange(newRows)
-  }, [rows, onChange])
+    setRows(newRows)
+  }, [rows, setRows])
 
   const handlePaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
     const text = e.clipboardData.getData('text')
@@ -289,12 +284,8 @@ export function ManualTab({ rows, onChange }: Props) {
   }
 
   const addBatch = () => {
-    onChange([...rows, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
+    setRows([...rows, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
   }
-
-  useEffect(() => {
-    if (rows.length === 0) onChange([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
-  }, []) // eslint-disable-line
 
   return (
     <div className="space-y-3">
@@ -429,7 +420,7 @@ export function ManualTab({ rows, onChange }: Props) {
                               onChange={(e) => {
                                 const newDong = e.target.value
                                 const dongStatus = VALID_DONGS.has(newDong) ? 'valid' : 'out-of-zone'
-                                onChange(rows.map((r, i) =>
+                                setRows(rows.map((r, i) =>
                                   i === rowIdx ? { ...r, dong: newDong, dongStatus, savedOrderId: undefined, submitStatus: undefined } : r
                                 ))
                               }}
@@ -496,7 +487,7 @@ export function ManualTab({ rows, onChange }: Props) {
                               <input
                                 type="checkbox"
                                 checked={row.dongOverride ?? false}
-                                onChange={(e) => onChange(rows.map((r, i) =>
+                                onChange={(e) => setRows(rows.map((r, i) =>
                                   i === rowIdx ? { ...r, dongOverride: e.target.checked, submitStatus: undefined, savedOrderId: undefined } : r
                                 ))}
                                 className="w-3 h-3 accent-amber-500"
