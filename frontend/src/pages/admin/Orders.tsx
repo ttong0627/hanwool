@@ -200,6 +200,27 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchDong, setBatchDong] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editTarget, setEditTarget] = useState<Order | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+
+  const editMutation = useMutation({
+    mutationFn: ({ orderId, data }: { orderId: number; data: object }) =>
+      api.put(`/orders/${orderId}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+      setEditTarget(null)
+      onFixed()
+    },
+  })
+  const cancelMutation = useMutation({
+    mutationFn: (orderId: number) => api.delete(`/orders/${orderId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['orders-today-flagged'] })
+      setCancelTarget(null)
+    },
+  })
 
   const today = new Date().toISOString().split('T')[0]
   const { data: todayData } = useQuery({
@@ -257,6 +278,22 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-amber-600" /> : <ChevronDown className="w-4 h-4 text-amber-600" />}
       </button>
+
+      {/* 수정 / 삭제 모달 */}
+      {editTarget && (
+        <EditModal
+          order={editTarget}
+          onConfirm={(data) => editMutation.mutate({ orderId: editTarget.id, data })}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+      {cancelTarget && (
+        <CancelDialog
+          order={cancelTarget}
+          onConfirm={() => cancelMutation.mutate(cancelTarget.id)}
+          onClose={() => setCancelTarget(null)}
+        />
+      )}
 
       {expanded && (
         <div className="border-t border-amber-200 px-4 py-3 space-y-3">
@@ -322,6 +359,25 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{order.standard_road_address ?? order.delivery_address}</p>
+                </div>
+                {/* 수정 / 삭제 버튼 */}
+                <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {order.status === 'pending' && (
+                    <button
+                      onClick={() => setEditTarget(order)}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />수정
+                    </button>
+                  )}
+                  {['pending', 'assigned'].includes(order.status) && (
+                    <button
+                      onClick={() => setCancelTarget(order)}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-red-200 bg-white text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />삭제
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
