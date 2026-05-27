@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2, Search,
-  ClipboardPaste, MapPin, AlertTriangle, Save, X,
+  ClipboardPaste, MapPin, AlertTriangle, Save, X, Keyboard,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
@@ -13,6 +13,10 @@ import { formatPhone, detectDong } from '@/lib/utils'
 type CellRef = HTMLInputElement | HTMLSelectElement | null
 
 const VALID_DONGS = new Set<string>(DONG_LIST)
+
+// 한글 자모/완성형 유니코드 범위
+const HANGUL_RE = /[ㄱ-ㆎ가-힣]/
+const LATIN_RE = /[a-zA-Z]/
 
 function AddrIcon({ status }: { status: AddrStatus }) {
   if (status === 'validating') return <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
@@ -31,6 +35,17 @@ function RowStatusDot({ row }: { row: StagingRow }) {
 const addrTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 
+// 컬럼별 IME 메타
+const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInputElement['inputMode']; hint: string; hintColor: string; hintBg: string }>> = {
+  customer_name:    { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
+  customer_phone:   { lang: 'en', inputMode: 'tel',     hint: '전화', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
+  delivery_address: { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
+  items_desc:       { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
+  item_code:        { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
+  quantity:         { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
+  request:          { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
+}
+
 export function ManualTab() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
@@ -41,16 +56,32 @@ export function ManualTab() {
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null)
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
 
-  // 컬럼별 IME 힌트: 'ko' = 한글, 'en' = 영문/숫자
-  const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInputElement['inputMode']; hint: string; hintColor: string }>> = {
-    customer_name:    { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
-    customer_phone:   { lang: 'en', inputMode: 'tel',     hint: '숫', hintColor: 'bg-slate-500' },
-    delivery_address: { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
-    items_desc:       { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
-    item_code:        { lang: 'en', inputMode: 'numeric', hint: '숫', hintColor: 'bg-slate-500' },
-    quantity:         { lang: 'en', inputMode: 'numeric', hint: '숫', hintColor: 'bg-slate-500' },
-    request:          { lang: 'ko', hint: '한', hintColor: 'bg-blue-500' },
-  }
+  // ── IME 경고 시스템 ────────────────────────────────────────────────────────
+  const [koreanWarn, setKoreanWarn] = useState(false)
+  const [warnCell, setWarnCell] = useState<{ row: number; col: number } | null>(null)
+  const warnTimer = useRef<ReturnType<typeof setTimeout>>()
+  // composing 상태 추적: IME 조합 중엔 오감지 방지
+  const composingRef = useRef<Record<string, boolean>>({})
+
+  const triggerIMEWarn = useCallback((rowIdx: number, colIdx: number) => {
+    setKoreanWarn(true)
+    setWarnCell({ row: rowIdx, col: colIdx })
+    clearTimeout(warnTimer.current)
+    warnTimer.current = setTimeout(() => {
+      setKoreanWarn(false)
+      setWarnCell(null)
+    }, 3500)
+  }, [])
+
+  const checkKoreanIME = useCallback((value: string, rowIdx: number, colIdx: number, key: ColKey) => {
+    const meta = CELL_META[key]
+    if (meta?.lang !== 'ko') return
+    const cellKey = `${rowIdx}-${colIdx}`
+    if (composingRef.current[cellKey]) return // IME 조합 중이면 스킵
+    if (LATIN_RE.test(value) && !HANGUL_RE.test(value.slice(-1))) {
+      triggerIMEWarn(rowIdx, colIdx)
+    }
+  }, [triggerIMEWarn])
 
   const focusCell = useCallback((row: number, col: number) => {
     const el = cellRefs.current[row]?.[col]
@@ -58,18 +89,18 @@ export function ManualTab() {
   }, [])
 
   const addRow = useCallback(() => {
-    setRows([...rows, EMPTY_ROW()])
-  }, [rows, setRows])
+    setRows(prev => [...prev, EMPTY_ROW()])
+  }, [])
 
   const updateCell = useCallback((rowIdx: number, key: ColKey, value: string | number) => {
-    setRows(rows.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r))
-  }, [rows, setRows])
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r))
+  }, [])
 
   const deleteRow = useCallback((rowIdx: number) => {
-    setRows(rows.filter((_, i) => i !== rowIdx))
-  }, [rows, setRows])
+    setRows(prev => prev.filter((_, i) => i !== rowIdx))
+  }, [])
 
-  // ── 자동저장 (행 완성 즉시) ────────────────────────────────────────────────
+  // ── 자동저장 ──────────────────────────────────────────────────────────────
   const autoSaveRow = useCallback(async (rowIdx: number) => {
     const row = rows[rowIdx]
     if (!row) return
@@ -78,7 +109,6 @@ export function ManualTab() {
     if (row.addrStatus !== 'valid') return
     if (row.dongStatus === 'out-of-zone' && !row.dongOverride) return
 
-    // pending 표시 (함수형 업데이트)
     setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
     try {
       const res = await api.post('/orders/single', {
@@ -94,130 +124,86 @@ export function ManualTab() {
         lng: row.lng,
         dong_override: row.dongOverride ?? false,
       })
-      setRows((prev) =>
-        prev.map((r, i) =>
-          i === rowIdx
-            ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined }
-            : r
-        )
-      )
+      setRows(prev => prev.map((r, i) =>
+        i === rowIdx ? { ...r, savedOrderId: res.data.id, submitStatus: 'success', submitError: undefined } : r
+      ))
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
-      setRows((prev) =>
-        prev.map((r, i) =>
-          i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
-        )
-      )
+      setRows(prev => prev.map((r, i) =>
+        i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
+      ))
     }
-  }, [rows, setRows])
+  }, [rows])
 
-  // 행 상태 감시 → 완성되면 1200ms 디바운스 후 자동저장
   useEffect(() => {
     rows.forEach((row, rowIdx) => {
       if (row.savedOrderId) return
       const isReady =
-        row.customer_name &&
-        row.customer_phone &&
-        row.delivery_address &&
-        row.dong &&
-        row.addrStatus === 'valid' &&
-        (row.dongStatus !== 'out-of-zone' || row.dongOverride)
-
+        row.customer_name && row.customer_phone && row.delivery_address && row.dong &&
+        row.addrStatus === 'valid' && (row.dongStatus !== 'out-of-zone' || row.dongOverride)
       if (!isReady) return
       if (row.submitStatus === 'pending' || row.submitStatus === 'success') return
-
       clearTimeout(saveTimers[row._id])
       saveTimers[row._id] = setTimeout(() => autoSaveRow(rowIdx), 1200)
     })
   }, [rows]) // eslint-disable-line
 
-  // ── 주소 변경 — 즉시 dong 감지 + geocoding debounce ─────────────────────
+  // ── 주소 변경 ─────────────────────────────────────────────────────────────
   const handleAddressChange = useCallback((rowIdx: number, value: string) => {
     const detected = detectDong(value)
     const rowId = rows[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
-
     if (!value || value.length < 5) {
       setRows(prev => prev.map((r, i) => i === rowIdx ? {
-        ...r,
-        delivery_address: value,
-        savedOrderId: undefined,
-        submitStatus: undefined,
+        ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
         addrStatus: 'idle',
         dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
         dong: detected ?? '',
       } : r))
       return
     }
-
     setRows(prev => prev.map((r, i) => i === rowIdx ? {
-      ...r,
-      delivery_address: value,
-      savedOrderId: undefined,
-      submitStatus: undefined,
-      addrStatus: 'validating',
-      ...(detected ? { dong: detected } : {}),
+      ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
+      addrStatus: 'validating', ...(detected ? { dong: detected } : {}),
     } : r))
-
     addrTimers[rowId] = setTimeout(async () => {
       try {
         const res = await api.get('/orders/geocode', { params: { address: value } })
         const { lat, lng, address_name, dong_name } = res.data
-        // dong_name: 백엔드 region_3depth_name (도로명 주소에도 정확한 동 반환)
         const detectedFromAddr = detectDong(address_name ?? '') ?? detectDong(value)
         const refinedDong = (dong_name && VALID_DONGS.has(dong_name))
           ? dong_name
-          : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr))
-            ? detectedFromAddr
-            : null
+          : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr)) ? detectedFromAddr : null
         const anyDong = dong_name ?? (address_name ?? value).match(/([가-힣]+동)/)?.[1] ?? null
         const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
-        // 함수형 업데이트: 타이머 지연 후에도 최신 delivery_address 보존
         setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r,
-          addrStatus: 'valid' as AddrStatus,
-          lat, lng,
-          addrRefined: address_name,
-          dongStatus,
-          dong: refinedDong ?? anyDong ?? r.dong,
-          savedOrderId: undefined,
-          submitStatus: undefined,
+          ...r, addrStatus: 'valid' as AddrStatus, lat, lng, addrRefined: address_name,
+          dongStatus, dong: refinedDong ?? anyDong ?? r.dong, savedOrderId: undefined, submitStatus: undefined,
         } : r))
       } catch {
-        // geocode 실패: 주소 텍스트에서 동 재감지 시도
         const fallbackDong = detectDong(value)
         const fallbackDongStatus: DongStatus | undefined = fallbackDong
-          ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone')
-          : undefined
+          ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone') : undefined
         setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r,
-          addrStatus: 'invalid' as AddrStatus,
-          dong: fallbackDong ?? '',
-          dongStatus: fallbackDongStatus,
+          ...r, addrStatus: 'invalid' as AddrStatus, dong: fallbackDong ?? '', dongStatus: fallbackDongStatus,
         } : r))
       }
     }, 600)
-  }, [rows, setRows])
+  }, [rows])
 
-  // 주소 검색 결과 선택 — AddressResult로 동 자동 설정
   const handleAddressSelect = useCallback((rowIdx: number, result: AddressResult) => {
     const addr = result.road_address || result.address_name
-    const detectedDong = result.dong_name
-      ? DONG_LIST.find((d) => result.dong_name === d) ?? null
-      : null
+    const detectedDong = result.dong_name ? DONG_LIST.find((d) => result.dong_name === d) ?? null : null
     const dong = detectedDong ?? detectDong(addr) ?? rows[rowIdx].dong ?? ''
     const dongStatus: DongStatus = dong && VALID_DONGS.has(dong) ? 'valid' : 'out-of-zone'
-    setRows((prev) => prev.map((r, i) =>
-      i === rowIdx
-        ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined }
-        : r
+    setRows(prev => prev.map((r, i) =>
+      i === rowIdx ? { ...r, delivery_address: addr, addrStatus: 'valid', dong, dongStatus, savedOrderId: undefined, submitStatus: undefined } : r
     ))
     setKakaoRow(null)
     const colIdx = COL_KEYS.indexOf('delivery_address')
     setTimeout(() => focusCell(rowIdx, colIdx + 1), 50)
-  }, [rows, setRows, focusCell])
+  }, [rows, focusCell])
 
-  // 배송동(index 2)은 자동감지 표시 전용 — 포커스 건너뜀
   const DONG_COL = COL_KEYS.indexOf('dong')
   const nextCol = (cur: number, dir: 1 | -1) => {
     let n = cur + dir
@@ -226,20 +212,16 @@ export function ManualTab() {
   }
   const LAST_COL = COL_KEYS.length - 1
 
-  // 키보드 내비게이션: 엔터 → 오른쪽, 마지막 셀 엔터 → 다음 행 첫 셀
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
       const maxRow = rows.length - 1
-
       switch (e.key) {
         case 'Enter': {
           e.preventDefault()
           if (colIdx === LAST_COL) {
-            // 요청사항 → 다음 행 첫 셀
             if (rowIdx === maxRow) addRow()
             setTimeout(() => focusCell(rowIdx + 1, 0), 20)
           } else {
-            // 나머지 → 오른쪽 셀 (dong 건너뜀)
             focusCell(rowIdx, nextCol(colIdx, 1))
           }
           break
@@ -262,11 +244,8 @@ export function ManualTab() {
               focusCell(rowIdx, nextCol(colIdx, 1))
             }
           } else {
-            if (colIdx === 0 && rowIdx > 0) {
-              focusCell(rowIdx - 1, LAST_COL)
-            } else if (colIdx > 0) {
-              focusCell(rowIdx, nextCol(colIdx, -1))
-            }
+            if (colIdx === 0 && rowIdx > 0) focusCell(rowIdx - 1, LAST_COL)
+            else if (colIdx > 0) focusCell(rowIdx, nextCol(colIdx, -1))
           }
           break
         case 'ArrowRight':
@@ -291,12 +270,10 @@ export function ManualTab() {
     [rows, addRow, focusCell, deleteRow]
   )
 
-  // TSV 파싱 공통 함수 (엑셀 붙여넣기)
   const applyTsvPaste = useCallback((text: string, startRow: number, startCol: number) => {
     if (!text.trim()) return
     const pastedRows = text.trim().split('\n').map((line) => line.split('\t'))
     const newRows = [...rows]
-
     pastedRows.forEach((cells, ri) => {
       const rowIdx = startRow + ri
       if (rowIdx >= newRows.length) newRows.push(EMPTY_ROW())
@@ -316,11 +293,8 @@ export function ManualTab() {
           const detected = detectDong(val)
           const dongStatus: DongStatus = detected ? 'valid' : 'out-of-zone'
           newRows[rowIdx] = {
-            ...newRows[rowIdx],
-            delivery_address: val,
-            dongStatus,
-            savedOrderId: undefined,
-            submitStatus: undefined,
+            ...newRows[rowIdx], delivery_address: val, dongStatus,
+            savedOrderId: undefined, submitStatus: undefined,
             ...(detected ? { dong: detected } : {}),
           }
         } else {
@@ -329,7 +303,7 @@ export function ManualTab() {
       })
     })
     setRows(newRows)
-  }, [rows, setRows])
+  }, [rows])
 
   const handlePaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
     const text = e.clipboardData.getData('text')
@@ -344,30 +318,36 @@ export function ManualTab() {
   const handleClipboardPaste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      if (text.trim()) {
-        applyTsvPaste(text, activeCell.current.row, activeCell.current.col)
-        return
-      }
+      if (text.trim()) { applyTsvPaste(text, activeCell.current.row, activeCell.current.col); return }
     } catch { /* 권한 차단 시 모달 폴백 */ }
-    // 권한 없거나 빈 경우 → 수동 붙여넣기 모달
-    setClipboardText('')
-    setClipboardModal(true)
+    setClipboardText(''); setClipboardModal(true)
   }
 
   const confirmClipboardModal = () => {
-    if (clipboardText.trim()) {
-      applyTsvPaste(clipboardText, activeCell.current.row, activeCell.current.col)
-    }
-    setClipboardModal(false)
-    setClipboardText('')
+    if (clipboardText.trim()) applyTsvPaste(clipboardText, activeCell.current.row, activeCell.current.col)
+    setClipboardModal(false); setClipboardText('')
   }
 
-  const addBatch = () => {
-    setRows([...rows, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
-  }
+  const addBatch = () => setRows(prev => [...prev, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
+
+  // IME 경고 토스트 — 화면 우상단 고정
+  const ImeWarnToast = koreanWarn && (
+    <div className="fixed top-16 right-4 z-[9999] flex items-center gap-3 bg-red-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl animate-bounce">
+      <Keyboard className="w-6 h-6 shrink-0" />
+      <div>
+        <p className="font-bold text-sm leading-tight">영어 입력 감지!</p>
+        <p className="text-xs opacity-90 mt-0.5">한/영 키를 눌러 한글로 전환하세요</p>
+      </div>
+      <button onClick={() => { setKoreanWarn(false); setWarnCell(null) }} className="ml-1 opacity-70 hover:opacity-100">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
 
   return (
     <div className="space-y-3">
+      {ImeWarnToast}
+
       {/* 주소 검색 모달 */}
       {kakaoRow !== null && (
         <div className="modal-overlay">
@@ -382,9 +362,7 @@ export function ManualTab() {
             </div>
             <KakaoAddressSearch
               value={rows[kakaoRow]?.delivery_address ?? ''}
-              onChange={(addr) => {
-                setRows((prev) => prev.map((r, i) => i === kakaoRow ? { ...r, delivery_address: addr } : r))
-              }}
+              onChange={(addr) => setRows(prev => prev.map((r, i) => i === kakaoRow ? { ...r, delivery_address: addr } : r))}
               onSelect={(result) => handleAddressSelect(kakaoRow, result)}
               placeholder="도로명·지번·건물명 입력 후 목록에서 선택"
             />
@@ -395,7 +373,7 @@ export function ManualTab() {
         </div>
       )}
 
-      {/* 클립보드 수동 붙여넣기 모달 */}
+      {/* 클립보드 모달 */}
       {clipboardModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
@@ -435,15 +413,21 @@ export function ManualTab() {
           <Save className="w-3.5 h-3.5 text-green-500" />
           <span>필수 항목 입력 + 주소 확인 완료 시 자동 저장 | Ctrl+V 붙여넣기</span>
         </div>
-        <button
-          type="button"
-          onClick={handleClipboardPaste}
-          className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors shrink-0"
-          title="클립보드에서 엑셀 데이터 붙여넣기"
-        >
-          <ClipboardPaste className="w-3.5 h-3.5" />
-          클립보드 붙여넣기
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 한글 입력 안내 뱃지 */}
+          <div className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full">
+            <Keyboard className="w-3 h-3" />
+            <span>파란 열 = 한글 입력</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleClipboardPaste}
+            className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors shrink-0"
+          >
+            <ClipboardPaste className="w-3.5 h-3.5" />
+            클립보드 붙여넣기
+          </button>
+        </div>
       </div>
 
       {/* 스프레드시트 그리드 */}
@@ -462,12 +446,17 @@ export function ManualTab() {
               <th className="text-center text-gray-400 font-normal text-xs py-2.5 border-r border-gray-200">#</th>
               {COL_KEYS.map((k) => {
                 const meta = CELL_META[k]
+                const isKo = meta?.lang === 'ko'
                 return (
-                  <th key={k} className="text-left px-2 py-2 text-xs font-semibold text-gray-600 border-r border-gray-200 whitespace-nowrap overflow-hidden">
+                  <th
+                    key={k}
+                    className={`text-left px-2 py-2 text-xs font-semibold border-r border-gray-200 whitespace-nowrap overflow-hidden
+                      ${isKo ? 'text-blue-700 bg-blue-50/60' : 'text-gray-600'}`}
+                  >
                     <div className="flex items-center gap-1.5">
                       <span>{COL_LABELS[k]}</span>
                       {meta && (
-                        <span className={`text-[7px] font-black px-1 py-px rounded leading-none text-white ${meta.hintColor} opacity-70`}>
+                        <span className={`text-[8px] font-black px-1.5 py-px rounded border leading-none ${meta.hintColor} ${meta.hintBg}`}>
                           {meta.hint}
                         </span>
                       )}
@@ -493,7 +482,6 @@ export function ManualTab() {
                     row.submitStatus === 'error' ? 'bg-red-50' : 'hover:bg-brand-50/30'
                   }`}
                 >
-                  {/* 행 번호 + 저장 상태 */}
                   <td className="text-center text-xs text-gray-400 border-r border-gray-200 py-0.5 select-none">
                     <div className="flex flex-col items-center gap-0.5">
                       <span>{rowIdx + 1}</span>
@@ -507,22 +495,41 @@ export function ManualTab() {
                     const isQty = key === 'quantity'
                     const isPhone = key === 'customer_phone'
                     const isCode = key === 'item_code'
+                    const meta = CELL_META[key]
+                    const isKoField = meta?.lang === 'ko'
+                    const isFocused = focusedCell?.row === rowIdx && focusedCell?.col === colIdx
+                    const isWarn = warnCell?.row === rowIdx && warnCell?.col === colIdx
 
                     const cellCls = `
                       w-full h-full px-1.5 py-1 text-sm bg-transparent outline-none
-                      focus:ring-2 focus:ring-brand-400 focus:ring-inset
+                      focus:ring-2 focus:ring-inset
+                      ${isWarn ? 'ring-2 ring-red-400 ring-inset animate-pulse' : isFocused && isKoField ? 'focus:ring-blue-400' : 'focus:ring-brand-400'}
                       ${isAddr && row.addrStatus === 'valid' ? 'text-green-700' : ''}
                       ${isAddr && row.addrStatus === 'invalid' ? 'text-red-600' : ''}
                     `
 
+                    const cellKey = `${rowIdx}-${colIdx}`
+
                     return (
-                      <td key={key} className="border-r border-gray-100 p-0 relative">
-                        {/* IME 힌트 배지 — 포커스된 셀에만 표시 */}
-                        {focusedCell?.row === rowIdx && focusedCell?.col === colIdx && CELL_META[key] && (
-                          <span className={`absolute top-0 right-0 z-20 text-[7px] font-black px-1.5 py-px rounded-bl-md leading-none pointer-events-none select-none text-white ${CELL_META[key]!.hintColor}`}>
-                            {CELL_META[key]!.hint}
+                      <td
+                        key={key}
+                        className={`border-r border-gray-100 p-0 relative
+                          ${isKoField && !isDong ? 'bg-blue-50/20' : ''}`}
+                      >
+                        {/* 포커스 배지 */}
+                        {isFocused && meta && (
+                          <span className={`absolute top-0 right-0 z-20 text-[8px] font-black px-1.5 py-px rounded-bl leading-none pointer-events-none select-none border ${meta.hintColor} ${meta.hintBg}`}>
+                            {meta.hint}
                           </span>
                         )}
+                        {/* IME 경고 툴팁 */}
+                        {isWarn && (
+                          <div className="absolute -top-8 left-0 z-50 bg-red-600 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap pointer-events-none flex items-center gap-1">
+                            <Keyboard className="w-3 h-3" />
+                            <span>한/영 키 → 한글 전환</span>
+                          </div>
+                        )}
+
                         {isAddr ? (
                           <div className="flex items-center gap-0.5 pr-1">
                             <input
@@ -530,9 +537,15 @@ export function ManualTab() {
                               className={cellCls + ' flex-1'}
                               value={row.delivery_address}
                               lang="ko"
+                              autoComplete="off"
+                              onCompositionStart={() => { composingRef.current[cellKey] = true }}
+                              onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                               onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
                               onBlur={() => setFocusedCell(null)}
-                              onChange={(e) => handleAddressChange(rowIdx, e.target.value)}
+                              onChange={(e) => {
+                                checkKoreanIME(e.target.value, rowIdx, colIdx, 'delivery_address')
+                                handleAddressChange(rowIdx, e.target.value)
+                              }}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                               placeholder="주소 입력 또는 검색"
@@ -563,7 +576,7 @@ export function ManualTab() {
                                 {isAdmin && !row.dongOverride && (
                                   <button
                                     type="button"
-                                    onClick={() => setRows(rows.map((r, i) =>
+                                    onClick={() => setRows(prev => prev.map((r, i) =>
                                       i === rowIdx ? { ...r, dongOverride: true, submitStatus: undefined, savedOrderId: undefined } : r
                                     ))}
                                     className="text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-200 leading-none w-full text-center"
@@ -592,6 +605,7 @@ export function ManualTab() {
                             min={1}
                             inputMode="numeric"
                             lang="en"
+                            autoComplete="off"
                             className={cellCls + ' text-center'}
                             value={row.quantity}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
@@ -606,6 +620,7 @@ export function ManualTab() {
                             type="tel"
                             inputMode="tel"
                             lang="en"
+                            autoComplete="off"
                             className={cellCls}
                             value={row.customer_phone}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
@@ -620,6 +635,7 @@ export function ManualTab() {
                             type="text"
                             inputMode="numeric"
                             lang="en"
+                            autoComplete="off"
                             className={cellCls + ' text-center font-mono'}
                             value={row.item_code}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
@@ -632,17 +648,22 @@ export function ManualTab() {
                         ) : (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            lang={meta?.lang ?? 'ko'}
+                            autoComplete="off"
                             className={cellCls}
-                            lang={CELL_META[key]?.lang ?? 'ko'}
                             value={String(row[key] ?? '')}
+                            onCompositionStart={() => { composingRef.current[cellKey] = true }}
+                            onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; setFocusedCell({ row: rowIdx, col: colIdx }) }}
                             onBlur={() => setFocusedCell(null)}
-                            onChange={(e) => updateCell(rowIdx, key, e.target.value)}
+                            onChange={(e) => {
+                              checkKoreanIME(e.target.value, rowIdx, colIdx, key)
+                              updateCell(rowIdx, key, e.target.value)
+                            }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
                         )}
-
                       </td>
                     )
                   })}
@@ -681,7 +702,7 @@ export function ManualTab() {
         </div>
       )}
 
-      {/* 행 추가 버튼 */}
+      {/* 행 추가 */}
       <div className="flex gap-2">
         <button
           onClick={addRow}
