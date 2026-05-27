@@ -17,7 +17,8 @@ for (const [fileName, expectedCount] of files) {
   const phonesOk = rows.every((row) => /^010-\d{4}-\d{4}$/.test(row["전화번호"]));
   const addressesOk = rows.every((row) => {
     const address = String(row["주소"] || "");
-    return allowedDongs.has(row["배송동"]) && address.includes("경기도 광주시") && /\d+동 \d+호$/.test(address);
+    const detail = String(row["상세주소"] || "");
+    return allowedDongs.has(row["배송동"]) && address.includes("경기도 광주시") && /^\d+동 \d+호$/.test(detail);
   });
   if (rows.length !== expectedCount || dongs.length !== 4 || !phonesOk || !addressesOk) {
     throw new Error(

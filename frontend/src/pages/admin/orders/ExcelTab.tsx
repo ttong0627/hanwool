@@ -28,6 +28,7 @@ function autoDetectMapping(headers: string[]): Mapping {
     전화: 'customer_phone', 전화번호: 'customer_phone', 핸드폰: 'customer_phone', 연락처: 'customer_phone',
     동: 'dong', 배송동: 'dong', 지역: 'dong',
     주소: 'delivery_address', 배송주소: 'delivery_address', 배달주소: 'delivery_address',
+    상세주소: 'detail_address', 동호수: 'detail_address', '동·호수': 'detail_address',
     물품: 'items_desc', 물품내역: 'items_desc', 상품: 'items_desc', 품목: 'items_desc',
     수량: 'quantity', 갯수: 'quantity',
     요청: 'request', 요청사항: 'request', 메모: 'request',

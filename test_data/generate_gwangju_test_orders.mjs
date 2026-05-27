@@ -93,7 +93,7 @@ const sourceAddresses = [
   ["탄벌동", "경기도 광주시 벌원길 43-3"],
 ];
 
-const headers = ["성명", "전화번호", "배송동", "주소", "물품내역", "코드", "수량", "요청사항"];
+const headers = ["#", "성명", "전화번호", "배송동", "주소", "상세주소", "물품내역", "코드", "수량", "요청사항"];
 const itemNames = ["채소", "과일", "정육", "생선", "반찬", "쌀", "두부", "계란", "건어물", "생활용품"];
 const requests = ["문 앞에 놓아주세요", "도착 전 전화 부탁드립니다", "천천히 오셔도 됩니다", "벨 누르지 말아주세요", "경비실 호출 후 전달", "부재 시 문고리에 걸어주세요"];
 
@@ -125,10 +125,12 @@ function makeRows(count) {
     const [_, address] = pool[dongCursor[dong] % pool.length];
     dongCursor[dong] += 1;
     rows.push({
+      "#": i + 1,
       "성명": `테스트고객${String(i + 1).padStart(3, "0")}`,
       "전화번호": phone(i + 1),
       "배송동": dong,
-      "주소": `${address}, ${detail(i)}`,
+      "주소": address,
+      "상세주소": detail(i),
       "물품내역": itemNames[i % itemNames.length],
       "코드": `T${String(i + 1).padStart(4, "0")}`,
       "수량": (i % 4) + 1,
@@ -142,16 +144,18 @@ function writeWorkbook(count, fileName) {
   const rows = makeRows(count);
   const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
   worksheet["!cols"] = [
+    { wch: 6 },
     { wch: 14 },
     { wch: 16 },
     { wch: 10 },
-    { wch: 42 },
+    { wch: 34 },
+    { wch: 14 },
     { wch: 12 },
     { wch: 10 },
     { wch: 8 },
     { wch: 24 },
   ];
-  worksheet["!autofilter"] = { ref: `A1:H${count + 1}` };
+  worksheet["!autofilter"] = { ref: `A1:J${count + 1}` };
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "테스트명단");
