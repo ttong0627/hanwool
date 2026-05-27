@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import {
   Plus, Trash2, CheckCircle, AlertCircle, Loader2,
-  ClipboardPaste, AlertTriangle, Save, X, Keyboard,
+  ClipboardPaste, AlertTriangle, Save, X, Keyboard, ShieldCheck,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -231,6 +231,73 @@ export function ManualTab() {
     }, 600)
   }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
+  // ── 전체 주소 일괄 검증 ────────────────────────────────────────────────────
+  const [validatingAll, setValidatingAll] = useState(false)
+
+  const validateAllAddresses = useCallback(async () => {
+    const currentRows = rowsRef.current
+    const targets = currentRows
+      .map((row, idx) => ({ row, idx }))
+      .filter(({ row }) =>
+        row.delivery_address && row.delivery_address.length >= 5 &&
+        row.addrStatus !== 'valid' && !row.savedOrderId
+      )
+    if (targets.length === 0) return
+
+    // 먼저 전체를 'validating' 상태로 표시
+    setRows(prev => prev.map((r, i) =>
+      targets.some(({ idx }) => idx === i) ? { ...r, addrStatus: 'validating' } : r
+    ))
+    setValidatingAll(true)
+
+    // 3개씩 병렬 처리
+    const CHUNK = 3
+    for (let c = 0; c < targets.length; c += CHUNK) {
+      const chunk = targets.slice(c, c + CHUNK)
+      await Promise.all(chunk.map(async ({ row, idx }) => {
+        const value = row.delivery_address
+        try {
+          const res = await api.post('/addresses/resolve', { address: value })
+          const { lat, lng, standard_road_address, legal_emd, service_dong, match_status, match_score, coord_source } = res.data
+          const displayAddress = standard_road_address ?? value
+          const detectedFromAddr = detectDong(displayAddress) ?? detectDong(value)
+          const refinedDong = (service_dong && VALID_DONGS.has(service_dong))
+            ? service_dong
+            : (legal_emd && VALID_DONGS.has(legal_emd))
+              ? legal_emd
+              : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr)) ? detectedFromAddr : null
+          const anyDong = service_dong ?? legal_emd ?? (displayAddress ?? value).match(/([가-힣]+동)/)?.[1] ?? null
+          const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
+          const addrStatus: AddrStatus = match_status === 'not_found' ? 'invalid' : 'valid'
+          setRows(prev => prev.map((r, i) => i === idx ? {
+            ...r,
+            addrStatus, lat, lng,
+            addrRefined: displayAddress,
+            standardRoadAddress: standard_road_address,
+            legalEmd: legal_emd,
+            serviceDong: service_dong,
+            matchStatus: match_status,
+            matchScore: match_score,
+            coordSource: coord_source,
+            dongStatus,
+            dong: refinedDong ?? anyDong ?? r.dong,
+            savedOrderId: undefined,
+            submitStatus: undefined,
+          } : r))
+        } catch {
+          const fallbackDong = detectDong(value)
+          const fallbackDongStatus: DongStatus | undefined = fallbackDong
+            ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone') : undefined
+          setRows(prev => prev.map((r, i) => i === idx ? {
+            ...r, addrStatus: 'invalid' as AddrStatus,
+            dong: fallbackDong ?? r.dong, dongStatus: fallbackDongStatus,
+          } : r))
+        }
+      }))
+    }
+    setValidatingAll(false)
+  }, [])
+
   const DONG_COL = COL_KEYS.indexOf('dong')
   const nextCol = (cur: number, dir: 1 | -1) => {
     let n = cur + dir
@@ -416,12 +483,41 @@ export function ManualTab() {
           <Save className="w-3.5 h-3.5 text-green-500" />
           <span>필수 항목 입력 + 주소 확인 완료 시 자동 저장 | Ctrl+V 붙여넣기</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* 한글 입력 안내 뱃지 */}
           <div className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full">
             <Keyboard className="w-3 h-3" />
             <span>파란 열 = 한글 입력</span>
           </div>
+
+          {/* 전체 주소 확인 버튼 — 미검증 행이 있을 때 강조 표시 */}
+          {(() => {
+            const unvalidated = rows.filter(r =>
+              r.delivery_address && r.delivery_address.length >= 5 &&
+              r.addrStatus !== 'valid' && !r.savedOrderId
+            ).length
+            return (
+              <button
+                type="button"
+                onClick={validateAllAddresses}
+                disabled={validatingAll || unvalidated === 0}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0 disabled:opacity-50
+                  ${unvalidated > 0
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm'
+                    : 'border border-gray-200 text-gray-400 bg-white'}`}
+              >
+                {validatingAll
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <ShieldCheck className="w-3.5 h-3.5" />}
+                {validatingAll
+                  ? '주소 확인 중…'
+                  : unvalidated > 0
+                    ? `전체 주소 확인 (${unvalidated}건)`
+                    : '주소 확인 완료'}
+              </button>
+            )
+          })()}
+
           <button
             type="button"
             onClick={handleClipboardPaste}
