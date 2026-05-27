@@ -1,14 +1,17 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import os
 import uuid
 
+_KST = ZoneInfo("Asia/Seoul")
+
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -67,10 +70,21 @@ async def _get_today_orders_for_dispatch(
     statuses = [OrderStatus.pending, OrderStatus.assigned]
     if include_in_transit:
         statuses.append(OrderStatus.in_transit)
+    today = today_kst()
+    # market_date가 null인 주문 포용: 오늘(KST) 생성된 주문을 UTC 범위로 포함
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
     result = await db.execute(
         select(Order)
         .where(
-            Order.market_date == today_kst(),
+            or_(
+                Order.market_date == today,
+                and_(
+                    Order.market_date.is_(None),
+                    Order.created_at >= today_start_utc,
+                    Order.created_at < today_end_utc,
+                ),
+            ),
             Order.status.in_(statuses),
         )
         .order_by(Order.created_at.asc())
