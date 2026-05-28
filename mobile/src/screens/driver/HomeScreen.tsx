@@ -85,9 +85,10 @@ async function sendMmsWithPhoto(phone: string, message: string, photoUri: string
   const available = await SMS.isAvailableAsync()
   if (!available) return
   try {
-    await SMS.sendSMSAsync([phone], message, {
-      attachments: { uri: photoUri, mimeType: 'image/jpeg', filename: 'delivery.jpg' },
-    })
+    const options = photoUri
+      ? { attachments: { uri: photoUri, mimeType: 'image/jpeg', filename: 'delivery.jpg' } }
+      : {}
+    await SMS.sendSMSAsync([phone], message, options)
   } catch { /* 사용자 취소 또는 기기 미지원 */ }
 }
 
