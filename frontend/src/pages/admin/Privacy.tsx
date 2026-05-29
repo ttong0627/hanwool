@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Shield, AlertTriangle, Download, Lock, CheckCircle2, Eye, Key, Users } from 'lucide-react'
+import { Shield, AlertTriangle, Download, Lock, CheckCircle2, Eye, Key, Users, FlaskConical, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 
@@ -38,6 +38,13 @@ export function Privacy() {
       setResult(res.data)
       setStep(1)
     },
+  })
+
+  const [clearTestResult, setClearTestResult] = useState<{ deleted: Record<string, number>; message: string } | null>(null)
+  const clearTestMutation = useMutation({
+    mutationFn: () => api.delete('/admin/clear-test-data'),
+    onSuccess: (res) => setClearTestResult(res.data),
+    onError: () => alert('테스트 데이터 삭제 중 오류가 발생했습니다.'),
   })
 
   const downloadPdf = () => {
@@ -87,6 +94,50 @@ export function Privacy() {
           <ProtectionItem icon={Shield} text="개인정보처리방침 준수 (개인정보보호법 제21조)" />
         </ul>
       </div>
+
+      {/* 테스트 데이터 초기화 (super_admin 전용) */}
+      {isSuperAdmin && (
+        <div className="card border-amber-200 bg-amber-50 space-y-3">
+          <h2 className="font-semibold text-amber-900 flex items-center gap-2">
+            <FlaskConical className="w-5 h-5 text-amber-600" />
+            테스트 데이터 초기화
+          </h2>
+          <p className="text-sm text-amber-800">
+            <code className="bg-amber-100 px-1 rounded text-xs">is_test=true</code> 로 표시된 주문·고객 계정·배차 이력을 한 번에 삭제합니다.
+            운영 데이터(실제 접수 주문, 스태프 계정)는 절대 삭제되지 않습니다.
+          </p>
+
+          {clearTestResult ? (
+            <div className="rounded-xl bg-green-50 border border-green-200 p-4 space-y-2">
+              <p className="text-green-800 font-semibold text-sm">✅ {clearTestResult.message}</p>
+              <ul className="text-xs text-green-700 space-y-0.5">
+                {Object.entries(clearTestResult.deleted).map(([k, v]) => (
+                  <li key={k}>• {k}: {v}건 삭제</li>
+                ))}
+              </ul>
+              <button
+                onClick={() => setClearTestResult(null)}
+                className="text-xs text-green-600 underline mt-1"
+              >
+                닫기
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                if (confirm('is_test=true 데이터를 전부 삭제합니다. 계속하시겠습니까?')) {
+                  clearTestMutation.mutate()
+                }
+              }}
+              disabled={clearTestMutation.isPending}
+              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40"
+            >
+              <Trash2 className="w-4 h-4" />
+              {clearTestMutation.isPending ? '삭제 중...' : '🧹 테스트 데이터 초기화'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 폐기 완료 결과 */}
       {result && (

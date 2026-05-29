@@ -2,14 +2,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_admin, require_admin_or_above, require_receiver_or_above, require_super_admin
 from app.core.database import get_db
 from app.models.complaint import Complaint
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
+from app.models.dispatch_run import DispatchRun, DispatchRunItem
 from app.models.order import Order, OrderStatus
+from app.models.order_history import OrderHistory
+from app.models.address_resolution_log import AddressResolutionLog
 from app.models.user import User
 from app.api.v1.orders import _dispatch_today_orders
 from app.services.customer_service import customer_stats, get_customer_detail, list_customers
@@ -27,15 +30,30 @@ async def get_market_status(_: User = Depends(require_admin)):
 
 @router.get("/dashboard")
 async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    today_start = datetime.combine(today_kst(), datetime.min.time())
+    from zoneinfo import ZoneInfo
+    from sqlalchemy import and_, or_
+    _KST = ZoneInfo("Asia/Seoul")
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(hours=24)
+
+    # market_date 기준 우선, 없으면 KST created_at 범위
+    today_filter = or_(
+        Order.market_date == today,
+        and_(
+            Order.market_date.is_(None),
+            Order.created_at >= today_start_utc,
+            Order.created_at < today_end_utc,
+        ),
+    )
 
     total_today = (await db.execute(
-        select(func.count()).select_from(Order).where(Order.created_at >= today_start)
+        select(func.count()).select_from(Order).where(today_filter)
     )).scalar()
 
     delivered_today = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.created_at >= today_start, Order.status == OrderStatus.delivered
+            today_filter, Order.status == OrderStatus.delivered
         )
     )).scalar()
 
@@ -269,3 +287,67 @@ async def get_customer_detail_endpoint(
     if not result:
         raise HTTPException(status_code=404, detail="고객을 찾을 수 없습니다.")
     return result
+
+
+@router.delete("/clear-test-data")
+async def clear_test_data(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    """
+    is_test=True 로 표시된 테스트 데이터 전체 삭제 — super_admin 전용.
+    삭제 순서: dispatch_run_items → dispatch_runs → order_histories
+               → address_resolution_logs → orders → users(is_test)
+    운영 데이터(is_test=False)는 절대 건드리지 않음.
+    """
+    # 테스트 주문 ID 먼저 수집
+    test_order_ids_result = await db.execute(
+        select(Order.id).where(Order.is_test == True)
+    )
+    test_order_ids = [row[0] for row in test_order_ids_result.all()]
+
+    # 테스트 유저 ID 수집
+    test_user_ids_result = await db.execute(
+        select(User.id).where(User.is_test == True)
+    )
+    test_user_ids = [row[0] for row in test_user_ids_result.all()]
+
+    counts: dict[str, int] = {}
+
+    if test_order_ids:
+        r = await db.execute(delete(DispatchRunItem).where(
+            DispatchRunItem.order_id.in_(test_order_ids)
+        ))
+        counts["dispatch_run_items"] = r.rowcount
+
+        r = await db.execute(delete(OrderHistory).where(
+            OrderHistory.order_id.in_(test_order_ids)
+        ))
+        counts["order_histories"] = r.rowcount
+
+        r = await db.execute(delete(AddressResolutionLog).where(
+            AddressResolutionLog.order_id.in_(test_order_ids)
+        ))
+        counts["address_resolution_logs"] = r.rowcount
+
+    # dispatch_runs 중 run_items가 모두 삭제된 것(= 테스트용) 정리
+    r = await db.execute(delete(DispatchRun).where(
+        ~DispatchRun.id.in_(
+            select(DispatchRunItem.dispatch_run_id).distinct()
+        )
+    ))
+    counts["dispatch_runs"] = r.rowcount
+
+    if test_order_ids:
+        r = await db.execute(delete(Order).where(Order.is_test == True))
+        counts["orders"] = r.rowcount
+
+    if test_user_ids:
+        r = await db.execute(delete(User).where(User.is_test == True))
+        counts["users"] = r.rowcount
+
+    await db.commit()
+    return {
+        "message": "테스트 데이터 삭제 완료",
+        "deleted": counts,
+    }

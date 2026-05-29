@@ -66,6 +66,7 @@ class Order(Base):
     match_score: Mapped[float] = mapped_column(Float, nullable=True)                # 매칭 신뢰도 0~1
     coord_source: Mapped[str] = mapped_column(String(20), nullable=True)             # nexus/kakao/cache/manual
     address_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_up_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

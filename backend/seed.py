@@ -1,6 +1,10 @@
 """
 테스트용 초기 데이터 생성 스크립트
 실행: python seed.py
+
+모든 생성 데이터에 is_test=True 가 자동으로 설정됩니다.
+삭제: super_admin 웹 → 개인정보 관리 → 테스트 데이터 초기화
+  또는 API: DELETE /api/v1/admin/clear-test-data
 """
 import asyncio
 import os
@@ -31,15 +35,15 @@ async def seed():
     customer_password = _required_seed_password("SEED_CUSTOMER_PASSWORD")
 
     async with AsyncSessionLocal() as db:
-        # 이미 데이터 있으면 스킵
-        result = await db.execute(select(User).limit(1))
+        # 이미 테스트 데이터 있으면 스킵
+        result = await db.execute(select(User).where(User.is_test == True).limit(1))
         if result.scalar_one_or_none():
-            print("이미 시드 데이터가 있습니다.")
+            print("이미 테스트 시드 데이터가 있습니다. clear-test-data API로 삭제 후 재실행하세요.")
             return
 
-        print("시드 데이터 생성 중...")
+        print("시드 데이터 생성 중... (모두 is_test=True로 표시됩니다)")
 
-        # 최고관리자
+        # 최고관리자 (테스트용)
         super_admin = User(
             name_enc=encrypt_field("최고관리자"),
             phone_enc=encrypt_field("010-9999-9999"),
@@ -48,9 +52,10 @@ async def seed():
             dong="경안동",
             password_hash=hash_password(super_admin_password),
             is_active=True,
+            is_test=True,
         )
 
-        # 관리자
+        # 관리자 (테스트용)
         admin = User(
             name_enc=encrypt_field("관리자"),
             phone_enc=encrypt_field("010-0000-0000"),
@@ -60,9 +65,10 @@ async def seed():
             address_enc=encrypt_field("경기도 광주시 경안동 1"),
             password_hash=hash_password(admin_password),
             is_active=True,
+            is_test=True,
         )
 
-        # 접수자
+        # 접수자 (테스트용)
         receiver = User(
             name_enc=encrypt_field("김접수"),
             phone_enc=encrypt_field("010-1111-1111"),
@@ -72,9 +78,10 @@ async def seed():
             address_enc=encrypt_field("경기도 광주시 경안동 경안시장"),
             password_hash=hash_password(receiver_password),
             is_active=True,
+            is_test=True,
         )
 
-        # 배송기사
+        # 배송기사 (테스트용)
         driver = User(
             name_enc=encrypt_field("이기사"),
             phone_enc=encrypt_field("010-2222-2222"),
@@ -84,9 +91,10 @@ async def seed():
             address_enc=encrypt_field("경기도 광주시 경안동 2"),
             password_hash=hash_password(driver_password),
             is_active=True,
+            is_test=True,
         )
 
-        # 고객들
+        # 고객들 (테스트용)
         customers = [
             ("박할머니", "010-3333-3333", "경안동", "경기도 광주시 경안동 주민아파트 101동 302호"),
             ("최할아버지", "010-4444-4444", "송정동", "경기도 광주시 송정동 행복마을 5동 201호"),
@@ -106,14 +114,14 @@ async def seed():
                 address_enc=encrypt_field(address),
                 password_hash=hash_password(customer_password),
                 is_active=True,
+                is_test=True,
             )
             customer_objects.append(c)
 
         db.add_all([super_admin, admin, receiver, driver] + customer_objects)
         await db.flush()
 
-        print("  Demo users created with passwords from SEED_* environment variables.")
-        print(f"  고객 5명 생성 완료")
+        print("  테스트 계정 생성 (is_test=True)")
 
         # 테스트 주문 3건
         today = date.today().strftime("%Y%m%d")
@@ -140,12 +148,14 @@ async def seed():
                 pickup_location="경안시장 입구",
                 sequence=i,
                 status=OrderStatus.pending,
+                is_test=True,
             )
             db.add(order)
 
         await db.commit()
-        print(f"  테스트 주문 3건 생성 완료 ({today}-0001 ~ {today}-0003)")
+        print(f"  테스트 주문 3건 생성 완료 ({today}-0001 ~ {today}-0003, is_test=True)")
         print("\n시드 완료!")
+        print("삭제하려면: DELETE /api/v1/admin/clear-test-data (super_admin 전용)")
 
 
 if __name__ == "__main__":
