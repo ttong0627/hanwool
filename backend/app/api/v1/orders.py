@@ -1191,6 +1191,9 @@ async def batch_create_orders(
     if not rows:
         raise HTTPException(status_code=400, detail="등록할 주문이 없습니다.")
 
+    # 테스트 모드: True면 생성되는 주문·신규 고객을 is_test=True로 표시
+    is_test = bool(body.get("is_test", False))
+
     results = []
     for row in rows:
         try:
@@ -1220,7 +1223,7 @@ async def batch_create_orders(
                 notes=row.get("notes"),
                 dong_override=dong_override,
             )
-            order = await order_service.create_order(db, order_data, current_user.id)
+            order = await order_service.create_order(db, order_data, current_user.id, is_test=is_test)
             if row.get("lat") and row.get("lng"):
                 order.lat = float(row["lat"])
                 order.lng = float(row["lng"])

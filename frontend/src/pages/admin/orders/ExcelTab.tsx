@@ -85,6 +85,7 @@ export function ExcelTab({ onClose }: Props) {
   const [imported, setImported] = useState(false)
   const [importedCount, setImportedCount] = useState(0)
   const [forceOutOfZone, setForceOutOfZone] = useState(false)
+  const [asTestData, setAsTestData] = useState(false)
 
   const parseFile = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase()
@@ -136,6 +137,7 @@ export function ExcelTab({ onClose }: Props) {
 
     try {
       const res = await api.post('/orders/batch', {
+        is_test: asTestData,
         rows: rows.map((r) => ({
           customer_name: r.customer_name,
           customer_phone: r.customer_phone,
@@ -169,6 +171,7 @@ export function ExcelTab({ onClose }: Props) {
     setImportedCount(0)
     setError(null)
     setForceOutOfZone(false)
+    setAsTestData(false)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -305,6 +308,25 @@ export function ExcelTab({ onClose }: Props) {
               </table>
             </div>
           </div>
+
+          {/* 테스트 데이터로 등록 옵션 */}
+          {!imported && isAdmin && (
+            <label className="flex items-center gap-2.5 cursor-pointer bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <input
+                type="checkbox"
+                checked={asTestData}
+                onChange={(e) => setAsTestData(e.target.checked)}
+                className="w-4 h-4 accent-amber-500"
+              />
+              <div className="text-sm">
+                <span className="font-semibold text-amber-800">🧪 테스트 데이터로 등록</span>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  체크 시 이 주문·신규 고객은 <code className="bg-amber-100 px-1 rounded">is_test</code>로 표시되어,
+                  개인정보 관리 → 테스트 데이터 초기화로 한 번에 삭제됩니다.
+                </p>
+              </div>
+            </label>
+          )}
 
           {/* 가져오기 버튼 */}
           {imported ? (

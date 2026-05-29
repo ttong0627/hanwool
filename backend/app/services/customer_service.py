@@ -51,6 +51,7 @@ async def upsert_customer(
     dong: str = "경안동",
     address: str = "",
     birth_year: int | None = None,
+    is_test: bool = False,
 ) -> Optional[User]:
     """Create or update the person record used by order history aggregation."""
     if not phone or not normalize_phone(phone):
@@ -88,6 +89,7 @@ async def upsert_customer(
         address_enc=encrypt_field(address) if address else None,
         birth_year_enc=encrypt_field(str(birth_year)) if birth_year else None,
         is_active=True,
+        is_test=is_test,
     )
     db.add(customer)
     await db.flush()

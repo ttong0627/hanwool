@@ -34,6 +34,7 @@ async def create_order(
     receiver_id: int,
     *,
     _pre_resolved=None,
+    is_test: bool = False,
 ) -> Order:
     from app.services.customer_service import upsert_customer
     from app.services.address_resolver import (
@@ -54,6 +55,7 @@ async def create_order(
             phone=data.customer_phone,
             dong=resolved_dong or "경안동",
             address=data.delivery_address or "",
+            is_test=is_test,
         )
         if customer and not customer_id:
             customer_id = customer.id
@@ -78,6 +80,7 @@ async def create_order(
         weight_estimate=data.weight_estimate,
         pickup_location=data.pickup_location,
         market_date=today if is_market_day(today) else None,
+        is_test=is_test,
     )
     db.add(order)
     await db.flush()
