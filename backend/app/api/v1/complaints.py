@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.security import decrypt_field, encrypt_field
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintOut, ComplaintUpdate
-from app.services.sms_service import SMS_TEMPLATES
+from app.services.sms_service import SMS_TEMPLATES, resolve_sms_recipient
 
 router = APIRouter(prefix="/complaints", tags=["민원"])
 
@@ -49,8 +49,10 @@ async def create_complaint(
     await db.flush()
     result = _decrypt_complaint(complaint)
     # 문자는 기기에서 직접 발송 — 내용과 수신번호를 응답에 포함
-    result["sms_to"] = data.customer_phone
-    result["sms_message"] = SMS_TEMPLATES["complaint_received"].format(name=data.customer_name)
+    msg = SMS_TEMPLATES["complaint_received"].format(name=data.customer_name)
+    sms_to, sms_message = resolve_sms_recipient(data.customer_phone, msg)
+    result["sms_to"] = sms_to
+    result["sms_message"] = sms_message
     return result
 
 
@@ -87,8 +89,10 @@ async def update_complaint(
         complaint.resolved_at = datetime.utcnow()
         name = decrypt_field(complaint.customer_name_enc)
         phone = decrypt_field(complaint.customer_phone_enc)
-        out["sms_to"] = phone
-        out["sms_message"] = SMS_TEMPLATES["complaint_resolved"].format(
+        msg = SMS_TEMPLATES["complaint_resolved"].format(
             name=name, result=data.result or "처리 완료"
         )
+        sms_to, sms_message = resolve_sms_recipient(phone, msg)
+        out["sms_to"] = sms_to
+        out["sms_message"] = sms_message
     return out

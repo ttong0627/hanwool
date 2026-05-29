@@ -3,7 +3,22 @@ SMS 알림 서비스
 실제 문자 발송은 기사 앱(expo-sms)에서 기기 데이터로 직접 전송.
 백엔드는 SMS 내용 템플릿만 제공하고 로그를 기록함.
 """
+from app.core.config import settings
 from app.core.security import decrypt_field
+
+
+def resolve_sms_recipient(actual_phone: str, message: str) -> tuple[str, str]:
+    """
+    테스트 SMS 리다이렉트 적용.
+    settings.TEST_SMS_REDIRECT_PHONE 가 설정돼 있으면,
+    실제 수신번호 대신 테스트 번호로 보내고 메시지 앞에 원래 번호를 표시한다.
+    설정이 비어 있으면 원본 그대로 반환한다.
+    """
+    redirect = (settings.TEST_SMS_REDIRECT_PHONE or "").strip()
+    if not redirect:
+        return actual_phone, message
+    tagged = f"[테스트 발송 / 원수신: {actual_phone}]\n{message}"
+    return redirect, tagged
 
 SMS_TEMPLATES = {
     "assigned": "[경안시장 배송] {name}님, 배송기사가 배정되었습니다. 곧 출발할 예정입니다.",

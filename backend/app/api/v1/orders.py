@@ -772,7 +772,8 @@ async def update_status(
     sms_message = sms_service.get_sms_message(status, customer_name)
 
     result = order_service.decrypt_order(order)
-    result["sms_to"] = customer_phone
+    sms_to, sms_message = sms_service.resolve_sms_recipient(customer_phone, sms_message)
+    result["sms_to"] = sms_to
     result["sms_message"] = sms_message
     return result
 
