@@ -18,21 +18,21 @@ export interface MoveStop {
 }
 
 /**
- * 활성(미완료) 주문 순서에서 moveId를 newIndex 위치로 옮긴 뒤
- * [{order_id, sequence}] 생성. 완료건수(deliveredCount)만큼 순번 오프셋 유지.
+ * 활성(미완료) 주문 순서에서 moveId를 newIndex 위치로 옮긴 뒤 [{order_id, sequence}] 생성.
+ * 활성 주문만 1..M로 재부여한다. 완료 주문은 sequences에 포함되지 않으므로 서버가 건드리지 않고,
+ * 목록 정렬에서 항상 뒤로 빠지므로 순번 이동에 영향받지 않는다.
  */
 export function reorderedSequences(
   activeSorted: MoveStop[],
   moveId: number,
   newIndex: number,
-  deliveredCount: number,
 ): { order_id: number; sequence: number }[] {
   const others = activeSorted.filter((o) => o.id !== moveId)
   const moving = activeSorted.find((o) => o.id === moveId)
   if (!moving) return []
   const next = [...others]
   next.splice(Math.max(0, Math.min(newIndex, next.length)), 0, moving)
-  return next.map((o, i) => ({ order_id: o.id, sequence: deliveredCount + i + 1 }))
+  return next.map((o, i) => ({ order_id: o.id, sequence: i + 1 }))
 }
 
 /**

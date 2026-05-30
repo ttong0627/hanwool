@@ -16,13 +16,13 @@ import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
 const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (JS 키 허용 도메인)
 
-// 드래그 바텀시트 스냅 높이 (살짝 / 중간 / 펼침)
+// 드래그 바텀시트 — 행 단위 스냅 (기본 3건, 위로 끌면 1건씩 증가)
 const { height: SCREEN_H } = Dimensions.get('window')
-const SNAP = {
-  peek: Math.min(392, Math.round(SCREEN_H * 0.46)), // 약 5건 보이게
-  mid: Math.round(SCREEN_H * 0.62),
-  full: Math.round(SCREEN_H * 0.86),
-}
+const ROW_H = 62          // 배송지 한 행 높이(카드 + 간격)
+const HEADER_H = 50       // 핸들 + 타이틀 영역 높이
+const MAX_SHEET = Math.round(SCREEN_H * 0.86)
+const heightForRows = (n: number) => Math.min(MAX_SHEET, HEADER_H + Math.max(1, n) * ROW_H)
+const PEEK = heightForRows(3)   // 기본 노출 3건
 
 const T = {
   primary: '#F97316', dark: '#0F172A', bg: '#F1F5F9', card: '#FFFFFF',
@@ -247,8 +247,7 @@ export function DriverMapScreen() {
   const handleMoveSelect = (newIndex: number) => {
     if (!moveTarget) return
     const active = sorted.filter((o) => o.status !== 'delivered')
-    const deliveredCount = orders.filter((o) => o.status === 'delivered').length
-    const seqs = reorderedSequences(active, moveTarget.id, newIndex, deliveredCount)
+    const seqs = reorderedSequences(active, moveTarget.id, newIndex)
     setMoveTarget(null)
     if (seqs.length) {
       api.put('/orders/resequence', { sequences: seqs })
@@ -258,24 +257,29 @@ export function DriverMapScreen() {
   }
 
   const sheetStops = useMemo(() => sorted.filter((o) => o.status !== 'delivered'), [sorted])
-  const heightAnim = useRef(new Animated.Value(SNAP.peek)).current
-  const heightRef = useRef(SNAP.peek)
-  const startH = useRef(SNAP.peek)
+  const heightAnim = useRef(new Animated.Value(PEEK)).current
+  const heightRef = useRef(PEEK)
+  const startH = useRef(PEEK)
+  const maxRowsRef = useRef(1)
   useEffect(() => {
     const id = heightAnim.addListener(({ value }) => { heightRef.current = value })
     return () => heightAnim.removeListener(id)
   }, [heightAnim])
+  useEffect(() => { maxRowsRef.current = Math.max(1, sheetStops.length) }, [sheetStops.length])
   const sheetPan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
       onPanResponderGrant: () => { startH.current = heightRef.current },
       onPanResponderMove: (_, g) => {
-        heightAnim.setValue(Math.max(SNAP.peek, Math.min(SNAP.full, startH.current - g.dy)))
+        const maxH = heightForRows(maxRowsRef.current)
+        heightAnim.setValue(Math.max(heightForRows(1), Math.min(maxH, startH.current - g.dy)))
       },
       onPanResponderRelease: (_, g) => {
+        // 놓을 때 행 경계로 스냅 → 1건 단위로 늘었다 줄었다
         const cur = startH.current - g.dy
-        const target = [SNAP.peek, SNAP.mid, SNAP.full].reduce((a, b) => (Math.abs(b - cur) < Math.abs(a - cur) ? b : a))
-        Animated.spring(heightAnim, { toValue: target, useNativeDriver: false, bounciness: 1 }).start()
+        const rows = Math.round((cur - HEADER_H) / ROW_H)
+        const clamped = Math.max(1, Math.min(rows, maxRowsRef.current))
+        Animated.spring(heightAnim, { toValue: heightForRows(clamped), useNativeDriver: false, bounciness: 1 }).start()
       },
     }),
   ).current
@@ -335,7 +339,7 @@ export function DriverMapScreen() {
         <FlatList
           data={sheetStops}
           keyExtractor={(o) => String(o.id)}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 20, gap: 8 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 20, gap: 4 }}
           ListEmptyComponent={<Text style={s.sheetEmpty}>남은 배송지가 없습니다</Text>}
           renderItem={({ item: o }) => (
             <TouchableOpacity style={s.stopRow} activeOpacity={0.7} onPress={() => setDetailOrder(o)}>
@@ -388,7 +392,7 @@ const s = StyleSheet.create({
   mapWrap: { flex: 1, backgroundColor: '#E5E7EB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   myLocBtn: {
-    position: 'absolute', right: 14, bottom: SNAP.peek + 12, width: 46, height: 46, borderRadius: 23,
+    position: 'absolute', right: 14, bottom: PEEK + 12, width: 46, height: 46, borderRadius: 23,
     backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
   },

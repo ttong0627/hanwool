@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, select, func, text
+from sqlalchemy import and_, case, or_, select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -197,7 +197,8 @@ async def get_orders_today(db: AsyncSession, driver_id: Optional[int] = None) ->
     )
     if driver_id:
         q = q.where(Order.driver_id == driver_id)
-    q = q.order_by(Order.sequence, Order.created_at)
+    # 완료(delivered) 주문은 항상 맨 뒤로 — 활성 주문 사이에 섞여 순번 이동 시 함께 움직이는 것처럼 보이는 문제 방지
+    q = q.order_by(case((Order.status == OrderStatus.delivered, 1), else_=0), Order.sequence, Order.created_at)
     result = await db.execute(q)
     return await attach_driver_info(db, [decrypt_order(o) for o in result.scalars().all()])
 

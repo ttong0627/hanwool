@@ -692,7 +692,7 @@ export function DriverHomeScreen() {
 
   useEffect(() => {
     if (orders && !isResequencing) {
-      setLocalOrders([...orders].sort((a: Order, b: Order) => (a.sequence ?? 999) - (b.sequence ?? 999)))
+      setLocalOrders([...orders].sort((a: Order, b: Order) => ((a.status === 'delivered' ? 1 : 0) - (b.status === 'delivered' ? 1 : 0)) || (a.sequence ?? 999) - (b.sequence ?? 999)))
     }
   }, [orders, isResequencing])
 
@@ -1060,8 +1060,7 @@ export function DriverHomeScreen() {
           activeOrders={localOrders.filter((o) => o.status !== 'delivered').sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999))}
           onSelect={(newIndex) => {
             const active = localOrders.filter((o) => o.status !== 'delivered').sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999))
-            const deliveredCount = localOrders.filter((o) => o.status === 'delivered').length
-            const seqs = reorderedSequences(active, moveTarget.id, newIndex, deliveredCount)
+            const seqs = reorderedSequences(active, moveTarget.id, newIndex)
             if (seqs.length) { setIsResequencing(true); resequenceMutation.mutate(seqs) }
           }}
           onClose={() => setMoveTarget(null)}
