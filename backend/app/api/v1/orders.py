@@ -797,10 +797,8 @@ async def update_status(
     eta = sms_service.eta_text(order.sequence) if status == OrderStatus.in_transit else "30분 이내"
     sms_message = sms_service.get_sms_message(status, customer_name, eta=eta)
 
-    # 완료 문자: MMS 사진 첨부가 일부 기기서 실패 → 서버 호스팅 사진 링크를 본문에 추가(항상 열람 가능)
-    if status == OrderStatus.delivered and order.delivery_photo_path and sms_message:
-        photo_url = f"https://ga.wssc.kr/photos/{order.delivery_photo_path}"
-        sms_message = f"{sms_message}\n배송 사진: {photo_url}"
+    # 완료 사진은 기사 앱이 MMS 파일로 직접 첨부 발송한다(sendMmsWithPhoto).
+    # 링크(URL)는 보이스피싱으로 오인돼 고객이 누르지 않으므로 문자 본문에 넣지 않는다.
 
     result = order_service.decrypt_order(order)
     sms_to, sms_message = sms_service.resolve_sms_recipient(customer_phone, sms_message)
