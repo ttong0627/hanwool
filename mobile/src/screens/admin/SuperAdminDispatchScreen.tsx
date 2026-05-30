@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { useRouter } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -30,7 +31,9 @@ interface Driver {
 
 export function SuperAdminDispatchScreen() {
   const qc = useQueryClient()
+  const router = useRouter()
   const logout = useAuthStore((state) => state.logout)
+  const user = useAuthStore((state) => state.user)
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
   const [selectedDriverIds, setSelectedDriverIds] = useState<number[]>([])
 
@@ -80,9 +83,16 @@ export function SuperAdminDispatchScreen() {
           <Text style={styles.title}>총관리자 배정 알림</Text>
           <Text style={styles.subtitle}>40건 초과 배송 요청을 직접 승인합니다.</Text>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-          <Text style={styles.logoutText}>로그아웃</Text>
-        </TouchableOpacity>
+        <View style={styles.headerBtns}>
+          {user?.is_driver && (
+            <TouchableOpacity style={styles.myDeliveryBtn} onPress={() => router.push('/(driver)')}>
+              <Text style={styles.myDeliveryText}>🚚 내 배송</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <Text style={styles.logoutText}>로그아웃</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {!selectedRequest ? (
@@ -152,6 +162,9 @@ export function SuperAdminDispatchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb', padding: 16, paddingTop: 48 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  myDeliveryBtn: { backgroundColor: '#F97316', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  myDeliveryText: { color: '#FFFFFF', fontWeight: '800' },
   title: { fontSize: 22, fontWeight: '800', color: '#111827' },
   subtitle: { marginTop: 4, fontSize: 13, color: '#6b7280' },
   logoutBtn: { backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },

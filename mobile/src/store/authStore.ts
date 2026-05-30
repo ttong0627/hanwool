@@ -7,6 +7,7 @@ interface User {
   role: string
   dong?: string
   address?: string
+  is_driver?: boolean
 }
 
 interface AuthState {

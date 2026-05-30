@@ -48,6 +48,7 @@ async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(ge
         dong=user.dong,
         address=decrypt_field(user.address_enc) if user.address_enc else None,
         is_active=user.is_active,
+        is_driver=user.is_driver,
         created_at=user.created_at,
     )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token, user=user_out)

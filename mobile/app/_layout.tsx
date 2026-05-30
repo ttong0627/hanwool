@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Stack, useRouter, useSegments } from 'expo-router'
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/store/authStore'
@@ -12,8 +12,12 @@ function AuthGuard() {
   const user = useAuthStore((s) => s.user)
   const router = useRouter()
   const segments = useSegments()
+  const navState = useRootNavigationState()
 
   useEffect(() => {
+    // 루트 네비게이터가 마운트된 후에만 이동 (mount 전 navigate 크래시 방지)
+    if (!navState?.key) return
+
     const inAuth = segments[0] === 'login'
     if (!user && !inAuth) {
       router.replace('/login')
@@ -22,7 +26,7 @@ function AuthGuard() {
       else if (user.role === 'super_admin') router.replace('/(admin)')
       else router.replace('/(customer)')
     }
-  }, [user, segments])
+  }, [user, segments, navState?.key])
 
   return null
 }
