@@ -18,6 +18,7 @@ interface Order {
   created_at: string
   driver_id?: number
   delivery_photo_url?: string | null
+  delivery_signature_url?: string | null
   match_status?: string
   standard_road_address?: string
 }
@@ -98,6 +99,25 @@ export function OrderCard({ order, onClick, actions }: Props) {
               src={`${API_BASE}${order.delivery_photo_url}`}
               alt="배송 완료 사진"
               className="h-16 w-24 object-cover rounded-lg border border-gray-200 ml-1"
+            />
+          </a>
+        </div>
+      )}
+
+      {order.delivery_signature_url && (
+        <div className="mt-2">
+          <a
+            href={`${API_BASE}${order.delivery_signature_url}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-800"
+          >
+            ✍️ 수령인 서명
+            <img
+              src={`${API_BASE}${order.delivery_signature_url}`}
+              alt="수령인 서명"
+              className="h-12 w-24 object-contain rounded-lg border border-gray-200 bg-white ml-1"
             />
           </a>
         </div>

@@ -37,6 +37,8 @@ interface Order {
   pod_lat?: number | null
   pod_lng?: number | null
   delivery_photo_path?: string | null
+  delivery_photo_url?: string | null
+  delivery_signature_url?: string | null
   created_at: string
   delivered_at?: string | null
   picked_up_at?: string | null
@@ -944,13 +946,22 @@ export function DeliveryTracking() {
                   기사 {selectedOrder.driver_phone}
                 </a>
               )}
-              {selectedOrder.delivery_photo_path && (
+              {selectedOrder.delivery_photo_url && (
                 <button
-                  onClick={() => setPodPreviewUrl(`/photos/${selectedOrder.delivery_photo_path}`)}
+                  onClick={() => setPodPreviewUrl(selectedOrder.delivery_photo_url!)}
                   className="flex items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100"
                 >
                   <Camera className="h-3.5 w-3.5" />
                   배송 완료 사진
+                </button>
+              )}
+              {selectedOrder.delivery_signature_url && (
+                <button
+                  onClick={() => setPodPreviewUrl(selectedOrder.delivery_signature_url!)}
+                  className="flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  수령인 서명
                 </button>
               )}
             </div>

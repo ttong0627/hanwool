@@ -1,5 +1,6 @@
 """PDF 문서 생성 서비스 (ReportLab)"""
 import io
+import os
 from typing import List
 
 from reportlab.lib import colors
@@ -9,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 _FONT_REGISTERED = False
 
@@ -105,6 +106,22 @@ def generate_delivery_list_pdf(orders: List[dict], date_str: str) -> bytes:
     return buffer.getvalue()
 
 
+def _signature_flowable(order: dict):
+    """완료 서명(delivery_signature_url='/photos/x.png')을 PDF 이미지로 변환. 없으면 None."""
+    url = order.get("delivery_signature_url")
+    if not url:
+        return None
+    path = url.lstrip("/")  # '/photos/x.png' -> 'photos/x.png' (백엔드 cwd=/app 기준)
+    if not os.path.exists(path):
+        return None
+    try:
+        img = Image(path, width=6 * cm, height=2.4 * cm, kind="proportional")
+        img.hAlign = "CENTER"
+        return img
+    except Exception:
+        return None
+
+
 def generate_receipt_pdf(order: dict) -> bytes:
     buffer = io.BytesIO()
     doc = _get_doc(buffer, "수령증")
@@ -146,10 +163,19 @@ def generate_receipt_pdf(order: dict) -> bytes:
         ParagraphStyle("date", fontName=_F(), fontSize=10, alignment=TA_CENTER)
     ))
     elements.append(Spacer(1, 0.5*cm))
-    elements.append(Paragraph(
-        "수령인 서명: ___________________",
-        ParagraphStyle("sign", fontName=_F(), fontSize=12, alignment=TA_CENTER)
-    ))
+    _sig = _signature_flowable(order)
+    if _sig is not None:
+        elements.append(Paragraph(
+            "수령인 서명",
+            ParagraphStyle("signlbl", fontName=_F(), fontSize=11, alignment=TA_CENTER)
+        ))
+        elements.append(Spacer(1, 0.2*cm))
+        elements.append(_sig)
+    else:
+        elements.append(Paragraph(
+            "수령인 서명: ___________________",
+            ParagraphStyle("sign", fontName=_F(), fontSize=12, alignment=TA_CENTER)
+        ))
     doc.build(elements)
     return buffer.getvalue()
 
