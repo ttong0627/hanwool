@@ -947,12 +947,26 @@ _ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """두 좌표 간 거리(미터). 배송지-기사 GPS 오차 판정용."""
+    from math import radians, sin, cos, asin, sqrt
+    r = 6371000.0
+    dlat = radians(lat2 - lat1)
+    dlng = radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 2 * r * asin(sqrt(a))
+
+
+COORD_MISMATCH_THRESHOLD_M = 30.0
+
+
 @router.post("/{order_id}/photo")
 async def upload_delivery_photo(
     order_id: int,
     file: UploadFile = File(...),
     pod_lat: Optional[float] = Form(None),
     pod_lng: Optional[float] = Form(None),
+    force: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_driver_or_above),
 ):
@@ -992,6 +1006,24 @@ async def upload_delivery_photo(
         order.pod_lat = pod_lat
     if pod_lng is not None:
         order.pod_lng = pod_lng
+
+    # 기사 GPS와 배송지 좌표 거리 검증 (둘 다 좌표가 있을 때만)
+    distance_m = None
+    if pod_lat is not None and pod_lng is not None and order.lat is not None and order.lng is not None:
+        distance_m = round(_haversine_m(pod_lat, pod_lng, order.lat, order.lng), 1)
+        order.coord_distance_m = distance_m
+        if distance_m > COORD_MISMATCH_THRESHOLD_M:
+            order.coord_mismatch = True
+            if force:
+                await order_service.log_order_history(
+                    db, order,
+                    event_type="force_completed",
+                    actor_user_id=current_user.id,
+                    actor_role=current_user.role,
+                    note=f"좌표 불일치 강제완료 — 배송지에서 {distance_m}m 떨어진 위치",
+                )
+        else:
+            order.coord_mismatch = False
     await db.flush()
 
     return {
@@ -999,6 +1031,8 @@ async def upload_delivery_photo(
         "order_no": order.order_no,
         "pod_lat": order.pod_lat,
         "pod_lng": order.pod_lng,
+        "coord_distance_m": distance_m,
+        "coord_mismatch": order.coord_mismatch,
     }
 
 

@@ -45,6 +45,8 @@ class Order(Base):
     delivery_signature_path: Mapped[str] = mapped_column(String(500), nullable=True)
     pod_lat: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 위도
     pod_lng: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 경도
+    coord_mismatch: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')  # 완료 GPS-배송지 30m 초과
+    coord_distance_m: Mapped[float] = mapped_column(Float, nullable=True)  # 완료 GPS-배송지 거리(m)
     market_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Float, nullable=True)
     lng: Mapped[float] = mapped_column(Float, nullable=True)

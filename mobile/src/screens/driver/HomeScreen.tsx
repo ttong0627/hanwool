@@ -49,6 +49,19 @@ interface Order {
   id: number; order_no: string; customer_name: string; customer_phone: string
   status: string; dong: string; delivery_address: string; items_desc?: string
   quantity: number; sequence?: number; delivery_photo_url?: string
+  lat?: number; lng?: number; coord_mismatch?: boolean
+}
+
+const COORD_WARN_THRESHOLD_M = 30
+
+/* 두 좌표 간 거리(m) — 배송지-기사 GPS 오차 판정 */
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
 }
 interface StatusResponse extends Order { sms_to?: string; sms_message?: string }
 interface Driver { id: number; name: string; phone: string }
@@ -69,12 +82,14 @@ async function uploadPhoto(
   photoUri: string,
   podLat?: number,
   podLng?: number,
+  force?: boolean,
 ): Promise<void> {
   const compressed = await compressPhoto(photoUri)
   const formData = new FormData()
   formData.append('file', { uri: compressed, name: 'delivery.jpg', type: 'image/jpeg' } as unknown as Blob)
   if (podLat != null) formData.append('pod_lat', String(podLat))
   if (podLng != null) formData.append('pod_lng', String(podLng))
+  if (force) formData.append('force', 'true')
   await api.post(`/orders/${orderId}/photo`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -136,11 +151,18 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
 function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number) => void; onCancel: () => void }) {
+}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
   const insets = useSafeAreaInsets()
+
+  // 배송지 좌표와 기사 GPS 거리(m). 좌표 미매칭 주문은 경안시장 폴백(37.4292,127.2551)이라 경고 스킵.
+  const hasRealCoord = order.lat != null && order.lng != null && Math.abs(order.lat - 37.4292) > 0.0005
+  const distanceM = podCoords && hasRealCoord
+    ? haversineMeters(podCoords.lat, podCoords.lng, order.lat as number, order.lng as number)
+    : null
+  const coordWarn = distanceM != null && distanceM > COORD_WARN_THRESHOLD_M
 
   // 모달 열릴 때 GPS 자동 캡처 (백그라운드, 실패해도 진행)
   useEffect(() => {
@@ -161,6 +183,29 @@ function DeliveryCompleteModal({
     if (status !== 'granted') { Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.'); return }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, allowsEditing: false })
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri)
+  }
+
+  // 모달 열리면 카메라 자동 실행 (1회)
+  useEffect(() => {
+    takePhoto()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const submit = () => {
+    if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
+    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force) }
+    if (coordWarn) {
+      Alert.alert(
+        '⚠️ 위치 경고',
+        `현재 위치가 배송지에서 약 ${Math.round(distanceM!)}m 떨어져 있습니다.\n배송지가 맞는지 확인해 주세요.\n\n그래도 완료 처리하면 '좌표 오류'로 기록됩니다.`,
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '강제 완료', style: 'destructive', onPress: () => doConfirm(true) },
+        ],
+      )
+      return
+    }
+    doConfirm(false)
   }
 
   return (
@@ -209,14 +254,26 @@ function DeliveryCompleteModal({
             <Ionicons
               name={podCoords ? 'location' : 'location-outline'}
               size={14}
-              color={podCoords ? T.success : T.textMuted}
+              color={coordWarn ? T.error : podCoords ? T.success : T.textMuted}
             />
-            <Text style={[$modal.gpsText, { color: podCoords ? T.success : T.textMuted }]}>
+            <Text style={[$modal.gpsText, { color: coordWarn ? T.error : podCoords ? T.success : T.textMuted }]}>
               {podCoords
-                ? `GPS 위치 확보 (${podCoords.lat.toFixed(5)}, ${podCoords.lng.toFixed(5)})`
+                ? (distanceM != null
+                    ? `배송지와 약 ${Math.round(distanceM)}m`
+                    : `GPS 위치 확보 (${podCoords.lat.toFixed(5)}, ${podCoords.lng.toFixed(5)})`)
                 : 'GPS 위치 수신 중...'}
             </Text>
           </View>
+
+          {/* 좌표 불일치 경고 배너 */}
+          {coordWarn && (
+            <View style={$modal.warnBanner}>
+              <Ionicons name="warning" size={16} color={T.error} />
+              <Text style={$modal.warnText}>
+                배송지에서 {Math.round(distanceM!)}m 떨어져 있습니다. 배송지가 맞는지 확인하세요.
+              </Text>
+            </View>
+          )}
 
           {/* 안내 배너 */}
           <View style={$modal.notice}>
@@ -229,17 +286,17 @@ function DeliveryCompleteModal({
               <Text style={$modal.cancelText}>취소</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[$modal.confirmBtn, (!photoUri || loading) && $modal.confirmDisabled]}
-              onPress={() => {
-                if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
-                setLoading(true)
-                onConfirm(photoUri, podCoords?.lat, podCoords?.lng)
-              }}
+              style={[
+                $modal.confirmBtn,
+                coordWarn && { backgroundColor: T.error },
+                (!photoUri || loading) && $modal.confirmDisabled,
+              ]}
+              onPress={submit}
               disabled={!photoUri || loading}
             >
               {loading
                 ? <ActivityIndicator color="white" size="small" />
-                : <><Ionicons name="checkmark-circle-outline" size={18} color="white" style={{ marginRight: 6 }} /><Text style={$modal.confirmText}>완료 + 문자 발송</Text></>
+                : <><Ionicons name={coordWarn ? 'warning-outline' : 'checkmark-circle-outline'} size={18} color="white" style={{ marginRight: 6 }} /><Text style={$modal.confirmText}>{coordWarn ? '강제 완료' : '완료 + 문자 발송'}</Text></>
               }
             </TouchableOpacity>
           </View>
@@ -572,9 +629,9 @@ export function DriverHomeScreen() {
   const markRetry = (id: number, uri: string) => { retryQueue.current.set(id, uri); setRetryKeys([...retryQueue.current.keys()]) }
   const clearRetry = (id: number) => { retryQueue.current.delete(id); setRetryKeys([...retryQueue.current.keys()]) }
 
-  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number) => {
+  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean) => {
     setCompleteTarget(null)
-    try { await uploadPhoto(order.id, photoUri, podLat, podLng); clearRetry(order.id) }
+    try { await uploadPhoto(order.id, photoUri, podLat, podLng, force); clearRetry(order.id) }
     catch {
       markRetry(order.id, photoUri)
       Alert.alert('사진 업로드 실패', '배달 완료는 처리됩니다.\n나중에 재시도 버튼으로 재업로드할 수 있습니다.', [{ text: '확인' }])
@@ -772,7 +829,7 @@ export function DriverHomeScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng) => handleDeliveryComplete(completeTarget, uri, lat, lng)}
+          onConfirm={(uri, lat, lng, force) => handleDeliveryComplete(completeTarget, uri, lat, lng, force)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}
@@ -892,6 +949,8 @@ const $modal = StyleSheet.create({
   retakeText:   { fontSize: 13, color: T.primary, fontWeight: '600' },
   gpsRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 4 },
   gpsText:      { fontSize: 12, fontWeight: '600' },
+  warnBanner:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', padding: 12, borderRadius: 10, marginBottom: 8 },
+  warnText:     { fontSize: 12.5, color: '#DC2626', flex: 1, fontWeight: '600', lineHeight: 18 },
   notice:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.bg, padding: 12, borderRadius: 10, marginBottom: 20 },
   noticeText:   { fontSize: 12, color: T.textSub, flex: 1, lineHeight: 18 },
   btnRow:       { flexDirection: 'row', gap: 10 },
