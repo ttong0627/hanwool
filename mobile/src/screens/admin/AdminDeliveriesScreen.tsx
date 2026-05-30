@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Image, Modal, TextInput, RefreshControl, ActivityIndicator,
+  Linking, ScrollView,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -32,6 +33,7 @@ interface Order {
   delivered_at?: string | null; delivery_photo_url?: string | null
   coord_mismatch?: boolean; coord_distance_m?: number | null
   items_desc?: string; quantity?: number; delivery_address?: string
+  detail_address?: string | null; request?: string | null; item_code?: string | null
 }
 
 function fmtTime(iso?: string | null): string {
@@ -49,11 +51,11 @@ function StatChip({ label, value, color }: { label: string; value: number; color
   )
 }
 
-function DeliveryCard({ order, onPhoto }: { order: Order; onPhoto: (url: string) => void }) {
+function DeliveryCard({ order, onPhoto, onPress }: { order: Order; onPhoto: (url: string) => void; onPress: () => void }) {
   const meta = STATUS_META[order.status] ?? STATUS_META.pending
   const photoUrl = order.delivery_photo_url ? `${BASE_URL}${order.delivery_photo_url}` : null
   return (
-    <View style={s.card}>
+    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.7}>
       <View style={s.cardLeft}>
         <View style={s.seqCircle}><Text style={s.seqText}>{order.sequence ?? '-'}</Text></View>
       </View>
@@ -89,7 +91,77 @@ function DeliveryCard({ order, onPhoto }: { order: Order; onPhoto: (url: string)
           <Image source={{ uri: photoUrl }} style={s.thumb} />
         </TouchableOpacity>
       )}
+    </TouchableOpacity>
+  )
+}
+
+function DetailRow({ icon, label, value, color }: { icon: any; label: string; value: string; color?: string }) {
+  return (
+    <View style={s.detailRow}>
+      <Ionicons name={icon} size={16} color={color ?? T.textMuted} style={{ marginTop: 1 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.detailLabel}>{label}</Text>
+        <Text style={[s.detailValue, color ? { color } : null]}>{value || '-'}</Text>
+      </View>
     </View>
+  )
+}
+
+function DetailModal({ order, onClose, onPhoto }: { order: Order | null; onClose: () => void; onPhoto: (url: string) => void }) {
+  const insets = useSafeAreaInsets()
+  if (!order) return null
+  const meta = STATUS_META[order.status] ?? STATUS_META.pending
+  const photoUrl = order.delivery_photo_url ? `${BASE_URL}${order.delivery_photo_url}` : null
+  const addr = `${order.delivery_address ?? ''}${order.detail_address ? ` ${order.detail_address}` : ''}`.trim()
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.detailOverlay}>
+        <View style={[s.detailSheet, { paddingBottom: insets.bottom + 20 }]}>
+          <View style={s.detailHandle} />
+          <View style={s.detailHeader}>
+            <Text style={s.detailName}>{order.customer_name}</Text>
+            <View style={[s.badge, { backgroundColor: meta.bg }]}>
+              <Text style={[s.badgeText, { color: meta.color }]}>{meta.label}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={24} color={T.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: 14, paddingTop: 6 }}>
+            <DetailRow icon="receipt-outline" label="주문번호" value={order.order_no} />
+            <DetailRow icon="location-outline" label="배송지" value={addr || order.dong} />
+            <DetailRow icon="cube-outline" label="물품"
+              value={`${order.items_desc ?? '-'} · ${order.quantity ?? 1}개${order.item_code ? `  (코드: ${order.item_code})` : ''}`} />
+            {order.request ? <DetailRow icon="chatbox-ellipses-outline" label="요청사항" value={order.request} color={T.primary} /> : null}
+            <DetailRow icon="person-outline" label="담당 기사" value={order.driver_name ?? '미배정'} />
+            {order.status === 'delivered'
+              ? <DetailRow icon="checkmark-circle-outline" label="완료 시각" value={fmtTime(order.delivered_at)} color={T.success} />
+              : null}
+            {order.coord_mismatch
+              ? <DetailRow icon="warning-outline" label="좌표 오류"
+                  value={order.coord_distance_m != null ? `약 ${Math.round(order.coord_distance_m)}m 떨어진 곳에서 완료` : '배송지와 완료 위치 불일치'} color={T.error} />
+              : null}
+
+            {photoUrl && (
+              <View>
+                <Text style={s.detailLabel}>배송 완료 사진</Text>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => onPhoto(photoUrl)}>
+                  <Image source={{ uri: photoUrl }} style={s.detailPhoto} resizeMode="cover" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+
+          {order.customer_phone ? (
+            <TouchableOpacity style={s.callBtn} activeOpacity={0.85} onPress={() => Linking.openURL(`tel:${order.customer_phone}`)}>
+              <Ionicons name="call" size={18} color="#fff" />
+              <Text style={s.callBtnText}>고객 전화 ({order.customer_phone})</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -98,6 +170,7 @@ export function AdminDeliveriesScreen() {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [photoModal, setPhotoModal] = useState<string | null>(null)
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null)
 
   const { data: orders = [], isLoading, refetch, isRefetching } = useQuery<Order[]>({
     queryKey: ['admin-deliveries'],
@@ -156,7 +229,7 @@ export function AdminDeliveriesScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={T.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          renderItem={({ item }) => <DeliveryCard order={item} onPhoto={setPhotoModal} />}
+          renderItem={({ item }) => <DeliveryCard order={item} onPhoto={setPhotoModal} onPress={() => setDetailOrder(item)} />}
           ListEmptyComponent={
             <View style={s.center}>
               <Ionicons name="cube-outline" size={48} color={T.border} />
@@ -165,6 +238,9 @@ export function AdminDeliveriesScreen() {
           }
         />
       )}
+
+      {/* 상세 모달 */}
+      <DetailModal order={detailOrder} onClose={() => setDetailOrder(null)} onPhoto={setPhotoModal} />
 
       {/* 사진 확대 모달 */}
       <Modal visible={!!photoModal} transparent animationType="fade" onRequestClose={() => setPhotoModal(null)}>
@@ -213,4 +289,16 @@ const s = StyleSheet.create({
   photoOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', gap: 16 },
   photoFull: { width: '92%', height: '78%' },
   photoHint: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
+
+  detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  detailSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10 },
+  detailHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 12 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: T.border },
+  detailName: { flex: 1, fontSize: 20, fontWeight: '800', color: T.text },
+  detailRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  detailLabel: { fontSize: 11.5, color: T.textMuted, fontWeight: '700', marginBottom: 2 },
+  detailValue: { fontSize: 15, color: T.text, fontWeight: '600', lineHeight: 21 },
+  detailPhoto: { width: '100%', height: 220, borderRadius: 14, marginTop: 6, backgroundColor: T.border },
+  callBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: T.info, paddingVertical: 15, borderRadius: 14, marginTop: 16 },
+  callBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 })

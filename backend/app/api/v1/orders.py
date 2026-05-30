@@ -799,6 +799,11 @@ async def update_status(
     customer_name = decrypt_field(order.customer_name_enc)
     sms_message = sms_service.get_sms_message(status, customer_name)
 
+    # 완료 문자: MMS 사진 첨부가 일부 기기서 실패 → 서버 호스팅 사진 링크를 본문에 추가(항상 열람 가능)
+    if status == OrderStatus.delivered and order.delivery_photo_path and sms_message:
+        photo_url = f"https://ga.wssc.kr/photos/{order.delivery_photo_path}"
+        sms_message = f"{sms_message}\n배송 사진: {photo_url}"
+
     result = order_service.decrypt_order(order)
     sms_to, sms_message = sms_service.resolve_sms_recipient(customer_phone, sms_message)
     result["sms_to"] = sms_to

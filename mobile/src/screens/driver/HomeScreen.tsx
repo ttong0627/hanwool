@@ -6,7 +6,6 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SMS from 'expo-sms'
-import * as ImagePicker from 'expo-image-picker'
 import * as ImageManipulator from 'expo-image-manipulator'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
@@ -17,6 +16,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useLocationTracking } from '@/hooks/useLocationTracking'
 import { useAutoSaveCache, loadOrdersFromCache } from '@/hooks/useOfflineOrders'
 import { ScanModal } from './ScanModal'
+import { CameraCaptureModal } from './CameraCaptureModal'
 
 const API_BASE = BASE_URL
 
@@ -215,23 +215,15 @@ function DeliveryCompleteModal({
     return () => { cancelled = true }
   }, [])
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync()
-    if (status !== 'granted') { Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.'); return }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.9,
-      allowsEditing: false,
-      cameraType: ImagePicker.CameraType.back,
-    })
-    if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri)
-  }
+  // 후면 카메라 인앱 캡처 모달 (모달 열리면 자동 실행)
+  const [cameraOpen, setCameraOpen] = useState(true)
 
-  // 모달 열리면 카메라 자동 실행 (1회)
-  useEffect(() => {
-    takePhoto()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const handleCaptured = (uri: string) => { setPhotoUri(uri); setCameraOpen(false) }
+  const handleCameraCancel = () => {
+    setCameraOpen(false)
+    if (!photoUri) onCancel() // 사진 없이 카메라를 닫으면 완료 모달 자체를 닫음
+  }
+  const openCamera = () => setCameraOpen(true)
 
   const submit = () => {
     if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
@@ -282,7 +274,7 @@ function DeliveryCompleteModal({
           )}
 
           {/* 사진 촬영 영역 */}
-          <TouchableOpacity style={$modal.photoBox} onPress={takePhoto} activeOpacity={0.85}>
+          <TouchableOpacity style={$modal.photoBox} onPress={openCamera} activeOpacity={0.85}>
             {photoUri ? (
               <Image source={{ uri: photoUri }} style={$modal.photo} resizeMode="cover" />
             ) : (
@@ -291,17 +283,19 @@ function DeliveryCompleteModal({
                   <Ionicons name="camera-outline" size={40} color={T.primary} />
                 </View>
                 <Text style={$modal.cameraTitle}>배달 완료 사진 촬영</Text>
-                <Text style={$modal.cameraHint}>사진을 찍어 고객께 MMS로 전송합니다</Text>
+                <Text style={$modal.cameraHint}>사진을 찍어 고객께 문자로 전송합니다</Text>
               </View>
             )}
           </TouchableOpacity>
 
           {photoUri && (
-            <TouchableOpacity onPress={takePhoto} style={$modal.retake}>
+            <TouchableOpacity onPress={openCamera} style={$modal.retake}>
               <Ionicons name="refresh-outline" size={14} color={T.primary} />
               <Text style={$modal.retakeText}>다시 촬영</Text>
             </TouchableOpacity>
           )}
+
+          <CameraCaptureModal visible={cameraOpen} onCaptured={handleCaptured} onCancel={handleCameraCancel} />
 
           {/* GPS POD 상태 표시 */}
           <View style={$modal.gpsRow}>
