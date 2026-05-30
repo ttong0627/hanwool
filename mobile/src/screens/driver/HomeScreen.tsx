@@ -726,14 +726,14 @@ export function DriverHomeScreen() {
             </View>
           </View>
           <View style={$s.headerRight}>
-            {/* 루트 미리보기 버튼 */}
+            {/* 지도 버튼 */}
             <TouchableOpacity
               style={$s.routePreviewBtn}
-              onPress={() => router.push('/(driver)/route')}
+              onPress={() => router.push('/(driver)/map')}
               activeOpacity={0.8}
             >
               <Ionicons name="map-outline" size={15} color={T.primary} />
-              <Text style={$s.routePreviewText}>루트</Text>
+              <Text style={$s.routePreviewText}>지도</Text>
             </TouchableOpacity>
 
             {/* 루트 모드 토글 */}
