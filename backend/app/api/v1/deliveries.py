@@ -32,6 +32,10 @@ async def get_optimized_route(
         for order in orders
     ]
 
+    # 저장된 순번(수동 조정 포함)이 있으면 그대로 사용 — 매번 재최적화하면 수동 이동이 덮어써짐.
+    # 순번이 전혀 없을 때(미배차 등)만 최적화.
+    if any(o.get("sequence") is not None for o in enriched):
+        return sorted(enriched, key=lambda o: (o.get("sequence") is None, o.get("sequence") or 9999))
     return optimize_route(enriched)
 
 

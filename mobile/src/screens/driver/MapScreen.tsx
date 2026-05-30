@@ -18,7 +18,11 @@ const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (J
 
 // 드래그 바텀시트 스냅 높이 (살짝 / 중간 / 펼침)
 const { height: SCREEN_H } = Dimensions.get('window')
-const SNAP = { peek: 210, mid: Math.round(SCREEN_H * 0.5), full: Math.round(SCREEN_H * 0.85) }
+const SNAP = {
+  peek: Math.min(392, Math.round(SCREEN_H * 0.46)), // 약 5건 보이게
+  mid: Math.round(SCREEN_H * 0.62),
+  full: Math.round(SCREEN_H * 0.86),
+}
 
 const T = {
   primary: '#F97316', dark: '#0F172A', bg: '#F1F5F9', card: '#FFFFFF',
@@ -278,14 +282,6 @@ export function DriverMapScreen() {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>배송 지도</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
       <View style={s.mapWrap}>
         {isLoading ? (
           <View style={s.center}><ActivityIndicator size="large" color={T.primary} /></View>
@@ -308,6 +304,11 @@ export function DriverMapScreen() {
             }}
           />
         )}
+
+        {/* 뒤로가기 — 헤더 제거, 버튼만 */}
+        <TouchableOpacity onPress={() => router.back()} style={s.backFloat} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={24} color={T.dark} />
+        </TouchableOpacity>
 
         {/* 내 위치로 이동 버튼 */}
         <TouchableOpacity
@@ -390,6 +391,11 @@ const s = StyleSheet.create({
     position: 'absolute', right: 14, bottom: SNAP.peek + 12, width: 46, height: 46, borderRadius: 23,
     backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
+  },
+  backFloat: {
+    position: 'absolute', left: 12, top: 10, width: 42, height: 42, borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 5,
   },
 
   sheet: {
