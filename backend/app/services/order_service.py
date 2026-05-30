@@ -21,7 +21,13 @@ def _generate_order_no(sequence: int) -> str:
 
 async def _next_sequence(db: AsyncSession) -> int:
     await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 2026052401})
-    today_start = datetime.combine(today_kst(), datetime.min.time())
+    # KST 자정을 UTC로 변환해 비교 (created_at은 UTC 저장). naive 비교 시
+    # KST 새벽(UTC 전날) 구간에서 오늘 주문이 누락돼 seq가 1로 고정되는 버그 방지.
+    today_start = (
+        datetime.combine(today_kst(), datetime.min.time())
+        .replace(tzinfo=_KST)
+        .astimezone(timezone.utc)
+    )
     result = await db.execute(
         select(func.max(Order.sequence)).select_from(Order).where(Order.created_at >= today_start)
     )
