@@ -580,6 +580,32 @@ export function DriverHomeScreen() {
     onError: () => Alert.alert('오류', '배송업무 시작 요청 중 문제가 발생했습니다.'),
   })
 
+  // 전체 픽업 완료 — assigned 주문을 한 번에 picked_up으로 (순차 처리)
+  const bulkPickupMutation = useMutation({
+    mutationFn: async (targets: Order[]) => {
+      for (const o of targets) {
+        await api.put(`/orders/${o.id}/status`, null, { params: { status: 'picked_up' } })
+      }
+    },
+    onSuccess: (_data, targets) => {
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      Alert.alert('전체 픽업 완료', `${targets.length}건을 픽업 완료 처리했습니다.`)
+    },
+    onError: () => Alert.alert('오류', '일괄 픽업 처리 중 문제가 발생했습니다. 다시 시도해 주세요.'),
+  })
+
+  const handleBulkPickup = () => {
+    if (assignedOrders.length === 0) return
+    Alert.alert(
+      '전체 픽업 완료',
+      `픽업 대기 ${assignedOrders.length}건을 모두 '픽업 완료'로 변경할까요?`,
+      [
+        { text: '취소', style: 'cancel' },
+        { text: '전체 픽업 완료', onPress: () => bulkPickupMutation.mutate(assignedOrders) },
+      ],
+    )
+  }
+
   const updateMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: number; status: string }) =>
       api.put<StatusResponse>(`/orders/${orderId}/status`, null, { params: { status } }).then((r) => r.data),
@@ -673,6 +699,7 @@ export function DriverHomeScreen() {
 
   const activeOrders = localOrders.filter((o) => o.status !== 'delivered')
   const doneOrders = localOrders.filter((o) => o.status === 'delivered')
+  const assignedOrders = localOrders.filter((o) => o.status === 'assigned')
   const otherDrivers = allDrivers.filter((d) => String(d.id) !== String(myId))
   const progress = localOrders.length > 0 ? Math.round((doneOrders.length / localOrders.length) * 100) : 0
 
@@ -791,6 +818,21 @@ export function DriverHomeScreen() {
         )}
       </View>
 
+      {/* ── 전체 픽업 완료 ── */}
+      {assignedOrders.length > 0 && (
+        <TouchableOpacity
+          style={[$s.bulkPickupBtn, bulkPickupMutation.isPending && $s.bulkPickupLoading]}
+          onPress={handleBulkPickup}
+          disabled={bulkPickupMutation.isPending}
+          activeOpacity={0.85}
+        >
+          {bulkPickupMutation.isPending
+            ? <ActivityIndicator color="white" size="small" />
+            : <><Ionicons name="checkmark-done-outline" size={18} color="white" style={{ marginRight: 6 }} /><Text style={$s.bulkPickupText}>전체 픽업 완료 ({assignedOrders.length}건)</Text></>
+          }
+        </TouchableOpacity>
+      )}
+
       {/* ── 배송 목록 ── */}
       <FlatList
         data={localOrders}
@@ -880,6 +922,9 @@ const $s = StyleSheet.create({
   startBtn:       { flex: 1, flexDirection: 'row', backgroundColor: T.dark, paddingVertical: 14, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   startBtnLoading:{ backgroundColor: T.textSub },
   startBtnText:   { color: 'white', fontSize: 15, fontWeight: '700' },
+  bulkPickupBtn:  { flexDirection: 'row', backgroundColor: T.warning, marginHorizontal: 16, marginTop: 10, paddingVertical: 14, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  bulkPickupLoading: { backgroundColor: T.textSub },
+  bulkPickupText: { color: 'white', fontSize: 15, fontWeight: '800' },
   editBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white' },
   editBtnActive:  { backgroundColor: T.primary, borderColor: T.primary },
   editBtnText:    { fontSize: 13, fontWeight: '700', color: T.primary },
