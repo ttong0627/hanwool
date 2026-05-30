@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut,
   Shield, QrCode, UserCog, MapPin, Route, UserCircle, FileCheck2,
@@ -49,6 +49,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
   const [managementMenuOpen, setManagementMenuOpen] = useState(false)
   const navs = ['admin', 'super_admin'].includes(user?.role || '') ? adminNavs : receiverNavs
+  const homePath = ['admin', 'super_admin'].includes(user?.role || '') ? '/admin' : '/receiver'
   const managementNavs = adminManagementNavs.filter((item) => {
     if (item.to === '/admin/privacy') return user?.can_manage_privacy
     return user?.role === 'super_admin' || !item.superOnly
@@ -93,12 +94,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* 로고 영역 */}
         <div className={cn('border-b border-white/5', sidebarCollapsed ? 'px-2 py-3' : 'px-4 py-4')}>
           <div className={cn('flex items-center gap-2', sidebarCollapsed ? 'flex-col justify-center' : 'justify-between')}>
-            <HanwoolLogo
-              size={sidebarCollapsed ? 30 : 34}
-              showText={!sidebarCollapsed}
-              variant="full"
-              className="[&_.text-brand-700]:text-orange-300 [&_.text-gray-500]:text-slate-400"
-            />
+            <Link
+              to={homePath}
+              title="홈으로 이동"
+              aria-label="홈으로 이동"
+              className={cn(
+                'rounded-lg transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70',
+                sidebarCollapsed ? 'p-1' : '-ml-1 px-1 py-0.5'
+              )}
+            >
+              <HanwoolLogo
+                size={sidebarCollapsed ? 30 : 34}
+                showText={!sidebarCollapsed}
+                variant="full"
+                className="[&_.text-brand-700]:text-orange-300 [&_.text-gray-500]:text-slate-400"
+              />
+            </Link>
             <button
               type="button"
               onClick={toggleSidebar}
