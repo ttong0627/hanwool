@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, Alert, Linking, Image, Modal,
   ActivityIndicator, TextInput, ScrollView, Platform,
+  NativeModules, PermissionsAndroid,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SMS from 'expo-sms'
@@ -107,6 +108,33 @@ async function sendDepartureJobs(jobs: { phone: string; message: string }[]): Pr
     try { await SMS.sendSMSAsync([phone], message, {}) }
     catch { /* 취소/미지원 — 다음 수신자로 진행 */ }
   }
+}
+
+// 출발 문자 자동 발송 (Android SmsManager — 사용자 확인 없이 건수만큼 1:1 자동 전송).
+// iOS·권한거부·모듈없음이면 기존 컴포저 방식(sendDepartureJobs)으로 폴백.
+async function autoSendDepartureJobs(jobs: { phone: string; message: string }[]): Promise<void> {
+  if (!jobs?.length) return
+  const DirectSms = (NativeModules as any)?.DirectSms
+  if (Platform.OS === 'android' && DirectSms?.sendSms) {
+    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.SEND_SMS, {
+      title: '문자 발송 권한',
+      message: '고객에게 출발 안내 문자를 자동 발송하려면 문자 권한이 필요합니다.',
+      buttonPositive: '허용',
+      buttonNegative: '거부',
+    })
+    if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+      let sent = 0
+      for (const { phone, message } of jobs) {
+        try { await DirectSms.sendSms(phone, message); sent += 1 }
+        catch { /* 실패 건 건너뛰고 계속 */ }
+        await new Promise((r) => setTimeout(r, 300)) // 대량 발송 시스템 제한 회피
+      }
+      Alert.alert('출발 문자 발송', `${sent}/${jobs.length}건 자동 발송했습니다.`)
+      return
+    }
+    // 권한 거부 → 컴포저 폴백
+  }
+  await sendDepartureJobs(jobs)
 }
 
 async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
@@ -657,10 +685,10 @@ export function DriverHomeScreen() {
       if (jobs.length) {
         Alert.alert(
           '배송업무 시작',
-          `${data.message || '배송을 시작합니다.'}\n\n고객 ${jobs.length}곳에 출발 문자를 보낼까요?`,
+          `${data.message || '배송을 시작합니다.'}\n\n고객 ${jobs.length}명에게 출발 문자를 자동 발송할까요?`,
           [
             { text: '나중에', style: 'cancel' },
-            { text: '출발 문자 보내기', onPress: () => sendDepartureJobs(jobs) },
+            { text: '자동 발송', onPress: () => autoSendDepartureJobs(jobs) },
           ],
         )
       } else {

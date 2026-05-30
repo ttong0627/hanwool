@@ -4,7 +4,7 @@ from fastapi import APIRouter
 router = APIRouter(prefix="/app", tags=["앱"])
 
 # 새 APK를 배포할 때마다 이 버전을 올린다 (mobile/app.json version과 동일하게 유지).
-APP_LATEST_VERSION = "1.0.7"
+APP_LATEST_VERSION = "1.0.8"
 APK_URL = "https://ga.wssc.kr/downloads/hanwool-driver.apk"
 MIN_SUPPORTED_VERSION = "1.0.0"
 
