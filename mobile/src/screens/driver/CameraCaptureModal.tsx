@@ -3,7 +3,22 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Vib
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { Ionicons } from '@expo/vector-icons'
 import * as ImageManipulator from 'expo-image-manipulator'
+import { Audio } from 'expo-av'
 import api from '@/lib/api'
+
+// 흐림 경고음(짧은 더블 비프). 재생 실패는 무시(진동으로 대체).
+async function playWarningBeep() {
+  try {
+    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true })
+    const { sound } = await Audio.Sound.createAsync(
+      require('../../../assets/beep.wav'),
+      { shouldPlay: true, volume: 1.0 },
+    )
+    sound.setOnPlaybackStatusUpdate((st) => {
+      if (st.isLoaded && st.didJustFinish) sound.unloadAsync().catch(() => {})
+    })
+  } catch { /* 소리 재생 실패는 무시 */ }
+}
 
 /**
  * 배송 완료 사진 촬영 오버레이 — 후면(back) 카메라 강제.
@@ -60,10 +75,11 @@ export function CameraCaptureModal({
         return
       }
 
-      // 흐림 — 다시 촬영 유도 (강한 진동 + 경고 팝업)
+      // 흐림 — 다시 촬영 유도 (경고음 + 강한 진동 + 경고 팝업)
       setLastUri(photo.uri)
       setAttempts((a) => a + 1)
       setBusy(false)
+      playWarningBeep()
       Vibration.vibrate([0, 300, 150, 300])
       Alert.alert('사진이 흐립니다', '현관문과 배달한 물품이 선명하게 보이도록 다시 촬영해 주세요.')
     } catch {
