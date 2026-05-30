@@ -79,7 +79,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <div className="flex h-screen" style={{ background: 'var(--surface-base)' }}>
+    <div
+      className="flex h-screen"
+      style={{
+        background: 'linear-gradient(180deg, #f8fafc 0%, #f4f6fa 46%, #edf1f6 100%)',
+      }}
+    >
       <aside
         className={cn(
           'flex flex-col shrink-0 transition-[width] duration-200',
@@ -255,7 +260,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto bg-transparent">{children}</main>
     </div>
   )
 }
