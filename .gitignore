@@ -46,3 +46,12 @@ backend/gwangju_address.sql
 .codex/
 .gemini/
 GLOBAL_SKILLS.md
+
+# 작업 중 생긴 임시 파일 (스크린샷·디버깅 크롭·엑셀 임시 락파일) — 저장소에 올리지 않음
+KakaoTalk_*.jpg
+KakaoTalk_*.jpeg
+KakaoTalk_*.png
+_crop_*.png
+_err_*.png
+~$*.xlsx
+**/~$*.xlsx
