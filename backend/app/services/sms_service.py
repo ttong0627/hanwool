@@ -39,6 +39,29 @@ def get_sms_message(status: str, name: str, eta: str = "30분 이내", result: s
     return template.format(name=name, eta=eta, result=result)
 
 
+# 전체 출발 시 모든 고객에게 보낼 공통 문구 (이름 미포함 → 수신자별 개별 발송해도 안전)
+DEPARTURE_BROADCAST = "[경안시장 배송] 주문하신 상품 배송이 출발했습니다. 잠시 후 도착 예정입니다. 경안시장 배송센터"
+
+
+def build_departure_broadcast(phones: list[str]) -> tuple[list[str], str]:
+    """
+    전체 출발(업무 시작) 시 기사 앱이 발송할 (수신번호 목록, 메시지) 반환.
+    - 테스트 리다이렉트가 설정돼 있으면 단일 테스트 번호로 축약 + 테스트 태그.
+    - 운영 시에는 중복 제거한 실제 수신번호 목록을 반환(앱에서 수신자별 개별 발송 → 번호 노출 방지).
+    """
+    redirect = (settings.TEST_SMS_REDIRECT_PHONE or "").strip()
+    if redirect:
+        return [redirect], f"[테스트 발송]\n{DEPARTURE_BROADCAST}"
+    seen: set[str] = set()
+    recipients: list[str] = []
+    for phone in phones:
+        cleaned = (phone or "").strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            recipients.append(cleaned)
+    return recipients, DEPARTURE_BROADCAST
+
+
 async def notify_order_status(order, status: str, eta: str = "30분 이내") -> bool:
     """
     실제 발송은 기사 앱에서 수행.

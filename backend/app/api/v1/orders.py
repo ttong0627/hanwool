@@ -446,10 +446,15 @@ async def start_driver_work(
                 )
             await db.flush()
             await _push_route_to_drivers(pre_assigned)
+            from app.core.security import decrypt_field
+            phones = [decrypt_field(o.customer_phone_enc) for o in pre_assigned]
+            sms_recipients, sms_message = sms_service.build_departure_broadcast(phones)
             return {
                 "status": "assigned",
                 "assigned_count": len(pre_assigned),
                 "message": f"오늘 배송 {len(pre_assigned)}건을 시작합니다.",
+                "sms_recipients": sms_recipients,
+                "sms_message": sms_message,
             }
         return {
             "status": "already_assigned",

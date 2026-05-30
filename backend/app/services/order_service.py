@@ -132,6 +132,7 @@ def decrypt_order(order: Order) -> dict:
         "lat": order.lat,
         "lng": order.lng,
         "items_desc": order.items_desc,
+        "item_code": order.item_code,
         "quantity": order.quantity,
         "notes": order.notes,
         "request": order.request,

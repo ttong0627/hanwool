@@ -16,6 +16,7 @@ import api, { BASE_URL } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useLocationTracking } from '@/hooks/useLocationTracking'
 import { useAutoSaveCache, loadOrdersFromCache } from '@/hooks/useOfflineOrders'
+import { ScanModal } from './ScanModal'
 
 const API_BASE = BASE_URL
 
@@ -97,6 +98,17 @@ async function uploadPhoto(
 }
 
 /* ── MMS 발송 ────────────────────────────────────────────────────── */
+// 전체 출발 시 수신자별 순차 발송 (단체문자=번호 노출이라 개인정보 보호상 1:1 반복)
+async function sendBroadcastSms(phones: string[], message: string): Promise<void> {
+  if (!phones?.length) return
+  const available = await SMS.isAvailableAsync()
+  if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
+  for (const phone of phones) {
+    try { await SMS.sendSMSAsync([phone], message, {}) }
+    catch { /* 취소/미지원 — 다음 수신자로 진행 */ }
+  }
+}
+
 async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
   const available = await SMS.isAvailableAsync()
   if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
@@ -486,18 +498,39 @@ function DeliveryCard({
         )}
       </View>
 
-      {/* 고객 정보 */}
-      <Text style={$card.name}>{order.customer_name} 어르신</Text>
-      <View style={$card.addressRow}>
-        <Ionicons name="location-outline" size={14} color={T.textMuted} style={{ marginTop: 1 }} />
-        <Text style={$card.address}>{order.delivery_address}</Text>
-      </View>
-      {order.items_desc && (
-        <View style={$card.itemsRow}>
-          <Ionicons name="cube-outline" size={13} color={T.textMuted} style={{ marginTop: 1 }} />
-          <Text style={$card.items}>{order.items_desc} ({order.quantity}개)</Text>
+      {/* 고객 정보 — 탭하면 다음 단계(픽업→출발→완료) 처리 */}
+      <TouchableOpacity
+        activeOpacity={isDone ? 1 : 0.6}
+        onPress={isDone ? undefined : onStatus}
+        disabled={isDone}
+      >
+        <Text style={$card.name}>{order.customer_name} 어르신</Text>
+        <View style={$card.addressRow}>
+          <Ionicons name="location-outline" size={14} color={T.textMuted} style={{ marginTop: 1 }} />
+          <Text style={$card.address}>
+            {order.delivery_address}{order.detail_address ? ` ${order.detail_address}` : ''}
+          </Text>
         </View>
-      )}
+        {order.items_desc && (
+          <View style={$card.itemsRow}>
+            <Ionicons name="cube-outline" size={13} color={T.textMuted} style={{ marginTop: 1 }} />
+            <Text style={$card.items}>
+              {order.items_desc} ({order.quantity}개){order.item_code ? `  ·  ${order.item_code}` : ''}
+            </Text>
+          </View>
+        )}
+        {order.request ? (
+          <View style={$card.itemsRow}>
+            <Ionicons name="chatbox-ellipses-outline" size={13} color={T.primary} style={{ marginTop: 1 }} />
+            <Text style={[$card.items, { color: T.primary }]}>요청: {order.request}</Text>
+          </View>
+        ) : null}
+        {!isDone && (
+          <Text style={$card.tapHint}>
+            👆 탭하면 {order.status === 'assigned' ? '픽업 완료' : order.status === 'picked_up' ? '배송 출발' : '배송 완료'} 처리
+          </Text>
+        )}
+      </TouchableOpacity>
 
       {/* 완료 사진 썸네일 */}
       {isDone && order.delivery_photo_url && (
@@ -567,6 +600,7 @@ export function DriverHomeScreen() {
   const [editSeqMode, setEditSeqMode] = useState(false)
   const [localOrders, setLocalOrders] = useState<Order[]>([])
   const [isResequencing, setIsResequencing] = useState(false)
+  const [scanVisible, setScanVisible] = useState(false)
 
   const retryQueue = useRef<Map<number, string>>(new Map())
   const [retryKeys, setRetryKeys] = useState<number[]>([])
@@ -618,7 +652,22 @@ export function DriverHomeScreen() {
 
   const startWorkMutation = useMutation({
     mutationFn: () => api.post('/orders/dispatch/start-work').then((r) => r.data),
-    onSuccess: (data) => { qc.invalidateQueries({ queryKey: ['driver-route'] }); Alert.alert('배송업무 시작', data.message || '배송업무 요청이 처리됐습니다.') },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      const recipients: string[] = data?.sms_recipients || []
+      if (recipients.length && data?.sms_message) {
+        Alert.alert(
+          '배송업무 시작',
+          `${data.message || '배송을 시작합니다.'}\n\n고객 ${recipients.length}곳에 출발 문자를 보낼까요?`,
+          [
+            { text: '나중에', style: 'cancel' },
+            { text: '출발 문자 보내기', onPress: () => sendBroadcastSms(recipients, data.sms_message) },
+          ],
+        )
+      } else {
+        Alert.alert('배송업무 시작', data?.message || '배송업무 요청이 처리됐습니다.')
+      }
+    },
     onError: () => Alert.alert('오류', '배송업무 시작 요청 중 문제가 발생했습니다.'),
   })
 
@@ -737,6 +786,24 @@ export function DriverHomeScreen() {
     ])
   }
 
+  // 스캔된 코드(item_code / order_no / id)로 주문을 찾아 다음 단계 처리(픽업→출발→완료)
+  const handleScanned = (code: string) => {
+    setScanVisible(false)
+    const norm = code.trim()
+    const matched = localOrders.find(
+      (o) => o.item_code === norm || o.order_no === norm || String(o.id) === norm,
+    )
+    if (!matched) {
+      Alert.alert('일치하는 주문 없음', `스캔한 코드에 해당하는 오늘 배송 주문을 찾을 수 없습니다.\n\n코드: ${norm}`)
+      return
+    }
+    if (matched.status === 'delivered') {
+      Alert.alert('이미 완료', `${matched.customer_name} 어르신 주문은 이미 배송 완료되었습니다.`)
+      return
+    }
+    handleStatusUpdate(matched)
+  }
+
   useLocationTracking(myId, API_BASE)
 
   const activeOrders = localOrders.filter((o) => o.status !== 'delivered')
@@ -843,6 +910,15 @@ export function DriverHomeScreen() {
           }
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={$s.scanBtn}
+          onPress={() => setScanVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="scan-outline" size={16} color={T.primary} />
+          <Text style={$s.scanBtnText}>스캔</Text>
+        </TouchableOpacity>
+
         {activeOrders.length >= 2 && (
           <TouchableOpacity
             style={[$s.editBtn, editSeqMode && $s.editBtnActive]}
@@ -928,6 +1004,12 @@ export function DriverHomeScreen() {
           onCancel={() => setTransferTarget(null)}
         />
       )}
+      <ScanModal
+        visible={scanVisible}
+        onClose={() => setScanVisible(false)}
+        onScanned={handleScanned}
+        title="상품 스캔 (픽업·완료)"
+      />
     </View>
   )
 }
@@ -971,6 +1053,8 @@ const $s = StyleSheet.create({
   editBtnActive:  { backgroundColor: T.primary, borderColor: T.primary },
   editBtnText:    { fontSize: 13, fontWeight: '700', color: T.primary },
   editBtnTextActive: { color: 'white' },
+  scanBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white' },
+  scanBtnText:    { fontSize: 13, fontWeight: '700', color: T.primary },
 
   // 목록
   list:           { paddingHorizontal: 12, paddingTop: 12, gap: 10 },
@@ -1001,6 +1085,7 @@ const $card = StyleSheet.create({
   address:      { fontSize: 14, color: T.textSub, flex: 1, lineHeight: 20 },
   itemsRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: 6 },
   items:        { fontSize: 13, color: T.textMuted, flex: 1 },
+  tapHint:      { fontSize: 12, color: T.primary, fontWeight: '600', marginTop: 2, marginBottom: 2 },
   thumb:        { width: '100%', height: 160, borderRadius: 12, marginTop: 10 },
   retryBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', paddingVertical: 10, borderRadius: 10, paddingHorizontal: 14, marginTop: 8, borderWidth: 1, borderColor: '#FECACA' },
   retryText:    { fontSize: 13, fontWeight: '700', color: T.error },
