@@ -3,7 +3,7 @@
     "name": "경안시장 배송",
     "slug": "hanwool-delivery",
     "scheme": "hanwool",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -57,7 +57,8 @@
           "photosPermission": "배달 완료 사진을 갤러리에서 선택할 수 있습니다.",
           "cameraPermission": "배달 완료 사진 촬영에 카메라를 사용합니다."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "apiUrl": "https://ga.wssc.kr",

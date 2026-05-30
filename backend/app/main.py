@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
 
-from app.api.v1 import auth, users, orders, deliveries, complaints, documents, admin, addresses
+from app.api.v1 import auth, users, orders, deliveries, complaints, documents, admin, addresses, app_meta
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.limiter import limiter
@@ -124,6 +124,7 @@ app.include_router(complaints.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(addresses.router, prefix="/api/v1")
+app.include_router(app_meta.router, prefix="/api/v1")
 
 app.mount("/photos", StaticFiles(directory="photos"), name="photos")
 

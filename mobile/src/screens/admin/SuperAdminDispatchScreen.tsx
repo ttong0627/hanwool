@@ -84,6 +84,9 @@ export function SuperAdminDispatchScreen() {
           <Text style={styles.subtitle}>40건 초과 배송 요청을 직접 승인합니다.</Text>
         </View>
         <View style={styles.headerBtns}>
+          <TouchableOpacity style={styles.checkBtn} onPress={() => router.push('/(admin)/deliveries')}>
+            <Text style={styles.checkText}>📋 배송확인</Text>
+          </TouchableOpacity>
           {user?.is_driver && (
             <TouchableOpacity style={styles.myDeliveryBtn} onPress={() => router.push('/(driver)')}>
               <Text style={styles.myDeliveryText}>🚚 내 배송</Text>
@@ -165,6 +168,8 @@ const styles = StyleSheet.create({
   headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   myDeliveryBtn: { backgroundColor: '#F97316', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   myDeliveryText: { color: '#FFFFFF', fontWeight: '800' },
+  checkBtn: { backgroundColor: '#0F172A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  checkText: { color: '#FFFFFF', fontWeight: '800' },
   title: { fontSize: 22, fontWeight: '800', color: '#111827' },
   subtitle: { marginTop: 4, fontSize: 13, color: '#6b7280' },
   logoutBtn: { backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },

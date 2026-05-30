@@ -385,6 +385,15 @@ async def get_today_orders(
     return await order_service.get_orders_today(db, driver_id)
 
 
+@router.get("/today/overview")
+async def get_today_overview(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_receiver_or_above),
+):
+    """관리자/접수자용 — 오늘 전체 배송 현황 (배송확인 화면). 기사·완료사진·완료시각 포함."""
+    return await order_service.get_orders_today(db, None)
+
+
 @router.post("/dispatch/start-work")
 async def start_driver_work(
     db: AsyncSession = Depends(get_db),
