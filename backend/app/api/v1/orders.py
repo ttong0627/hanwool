@@ -11,7 +11,7 @@ _KST = ZoneInfo("Asia/Seoul")
 
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -979,6 +979,21 @@ _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 _ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
+# 흐림(초점) 검사 — 1024px 다운스케일 후 라플라시안 분산. 미만이면 흐린 사진으로 간주.
+# 실측 기준: 흔들린 사진 ~80~190, 선명한 사진 ~230~770 → 임계값 200으로 분리.
+_LAP_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
+BLUR_VAR_THRESHOLD = 200.0
+
+
+def _photo_sharpness(content: bytes):
+    """이미지 선명도(라플라시안 분산)를 반환. 분석 불가 시 None(차단하지 않음)."""
+    try:
+        gray = Image.open(BytesIO(content)).convert("L")
+        gray.thumbnail((1024, 1024))
+        return ImageStat.Stat(gray.filter(_LAP_KERNEL)).var[0]
+    except Exception:
+        return None
+
 
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """두 좌표 간 거리(미터). 배송지-기사 GPS 오차 판정용."""
@@ -991,6 +1006,20 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 COORD_MISMATCH_THRESHOLD_M = 30.0
+
+
+@router.post("/blur-check")
+async def blur_check(
+    file: UploadFile = File(...),
+    _: User = Depends(require_driver_or_above),
+):
+    """촬영 직후 흐림 검사 — 저장하지 않고 선명도만 판정해 흐리면 재촬영을 유도한다.
+    (앱 내 WebView 검사는 실기기에서 불안정해 서버 PIL 측정으로 일원화)"""
+    content = await file.read()
+    var = _photo_sharpness(content)
+    if var is None:
+        return {"sharp": True, "sharpness": None}  # 분석 불가 시 통과(차단 방지)
+    return {"sharp": var >= BLUR_VAR_THRESHOLD, "sharpness": round(var, 1)}
 
 
 @router.post("/{order_id}/photo")
