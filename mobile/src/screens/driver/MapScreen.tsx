@@ -1,6 +1,6 @@
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Modal, ScrollView, Alert,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -16,12 +16,14 @@ const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (J
 const T = {
   primary: '#F97316', dark: '#0F172A', bg: '#F1F5F9', card: '#FFFFFF',
   border: '#E2E8F0', text: '#0F172A', textSub: '#475569', textMuted: '#94A3B8',
-  success: '#10B981', warning: '#F59E0B',
+  success: '#10B981', warning: '#F59E0B', info: '#3B82F6', error: '#EF4444',
 }
 
 interface Order {
   id: number; customer_name: string; dong: string; delivery_address: string
   status: string; sequence?: number; lat?: number; lng?: number
+  customer_phone?: string; items_desc?: string; quantity?: number
+  detail_address?: string | null; item_code?: string | null; request?: string | null
 }
 
 function openKakaoNavi(address: string) {
@@ -30,26 +32,39 @@ function openKakaoNavi(address: string) {
   )
 }
 
-/* 카카오맵 HTML — 배송지 순번 핀 + 기사 위치 */
-function buildMapHtml(myLoc: { lat: number; lng: number } | null, orders: Order[]): string {
+/* 카카오맵 HTML — 배송지 순번 핀 + 기사 트럭(window.setMe로 갱신, 지도 리로드 없음) */
+function buildMapHtml(initialLoc: { lat: number; lng: number } | null, orders: Order[]): string {
   const valid = orders.filter((o) => o.lat != null && o.lng != null)
-  const center = myLoc || valid[0] || { lat: 37.4090, lng: 127.2574 }
+  const center = initialLoc || valid[0] || { lat: 37.4090, lng: 127.2574 }
   const markers = JSON.stringify(
     valid.map((o) => ({ lat: o.lat, lng: o.lng, seq: o.sequence ?? 0, done: o.status === 'delivered' })),
   )
-  const myJson = myLoc ? JSON.stringify(myLoc) : 'null'
+  const myJson = initialLoc ? JSON.stringify(initialLoc) : 'null'
   return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>html,body,#map{margin:0;padding:0;width:100%;height:100%;overflow:hidden}
 .pin{width:30px;height:30px;border-radius:50%;background:#F97316;color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)}
 .pin.done{background:#10B981}
-.me{width:18px;height:18px;border-radius:50%;background:#3B82F6;border:3px solid #fff;box-shadow:0 0 0 4px rgba(59,130,246,.3)}
+.truck{width:38px;height:38px;border-radius:50%;background:#fff;border:3px solid #3B82F6;box-shadow:0 0 0 6px rgba(59,130,246,.25);display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1}
 </style></head><body><div id="map"></div>
 <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false"></script>
 <script>
+var __map=null,__me=null,__pending=null;
+// RN에서 호출 — 트럭 마커 생성/이동 (지도 리로드 없이 위치만 갱신)
+window.setMe=function(lat,lng){
+  if(!__map){__pending={lat:lat,lng:lng};return;}
+  var pos=new kakao.maps.LatLng(lat,lng);
+  if(!__me){
+    __me=new kakao.maps.CustomOverlay({position:pos,content:'<div class="truck">🚚</div>',yAnchor:0.5,zIndex:10});
+    __me.setMap(__map);
+  } else { __me.setPosition(pos); }
+};
+// RN에서 호출 — 내 위치로 지도 이동
+window.panToMe=function(lat,lng){ if(__map){__map.panTo(new kakao.maps.LatLng(lat,lng));} };
 kakao.maps.load(function(){
   var center=new kakao.maps.LatLng(${center.lat},${center.lng});
   var map=new kakao.maps.Map(document.getElementById('map'),{center:center,level:5});
+  __map=map;
   var orders=${markers};
   var bounds=new kakao.maps.LatLngBounds();
   orders.forEach(function(o){
@@ -59,19 +74,77 @@ kakao.maps.load(function(){
     bounds.extend(pos);
   });
   var my=${myJson};
-  if(my){var mp=new kakao.maps.LatLng(my.lat,my.lng);
-    new kakao.maps.CustomOverlay({position:mp,content:'<div class="me"></div>',yAnchor:0.5}).setMap(map);
-    bounds.extend(mp);}
-  if(orders.length>0){map.setBounds(bounds);}
+  if(my){ window.setMe(my.lat,my.lng); bounds.extend(new kakao.maps.LatLng(my.lat,my.lng)); }
+  if(orders.length>0){ map.setBounds(bounds); }
+  if(__pending){ window.setMe(__pending.lat,__pending.lng); __pending=null; }
 });
 </script></body></html>`
+}
+
+function DetailRow({ icon, label, value, color }: { icon: any; label: string; value: string; color?: string }) {
+  return (
+    <View style={s.detailRow}>
+      <Ionicons name={icon} size={16} color={color ?? T.textMuted} style={{ marginTop: 1 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.detailLabel}>{label}</Text>
+        <Text style={[s.detailValue, color ? { color } : null]}>{value || '-'}</Text>
+      </View>
+    </View>
+  )
+}
+
+function StopDetailModal({ order, onClose }: { order: Order | null; onClose: () => void }) {
+  const insets = useSafeAreaInsets()
+  if (!order) return null
+  const addr = `${order.delivery_address ?? ''}${order.detail_address ? ` ${order.detail_address}` : ''}`.trim()
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.detailOverlay}>
+        <View style={[s.detailSheet, { paddingBottom: insets.bottom + 20 }]}>
+          <View style={s.detailHandle} />
+          <View style={s.detailHeader}>
+            <View style={s.stopSeq}><Text style={s.stopSeqText}>{order.sequence ?? '-'}</Text></View>
+            <Text style={s.detailName}>{order.customer_name} · {order.dong}</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={24} color={T.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ gap: 14, paddingTop: 6 }}>
+            <DetailRow icon="location-outline" label="배송지" value={addr || order.dong} />
+            <DetailRow icon="cube-outline" label="물품"
+              value={`${order.items_desc ?? '-'} · ${order.quantity ?? 1}개${order.item_code ? `  (코드: ${order.item_code})` : ''}`} />
+            {order.request ? <DetailRow icon="chatbox-ellipses-outline" label="요청사항" value={order.request} color={T.primary} /> : null}
+          </ScrollView>
+
+          <View style={s.detailActions}>
+            {order.customer_phone ? (
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.info }]} activeOpacity={0.85}
+                onPress={() => Linking.openURL(`tel:${order.customer_phone}`)}>
+                <Ionicons name="call" size={18} color="#fff" />
+                <Text style={s.actionText}>전화</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.primary }]} activeOpacity={0.85}
+              onPress={() => openKakaoNavi(order.delivery_address)}>
+              <Ionicons name="navigate" size={18} color="#fff" />
+              <Text style={s.actionText}>카카오내비</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  )
 }
 
 export function DriverMapScreen() {
   const insets = useSafeAreaInsets()
   const router = useRouter()
-  const [myLoc, setMyLoc] = useState<{ lat: number; lng: number } | null>(null)
+  const [, setMyLoc] = useState<{ lat: number; lng: number } | null>(null)
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null)
   const webRef = useRef<WebView>(null)
+  const myLocRef = useRef<{ lat: number; lng: number } | null>(null)
+  const watchRef = useRef<Location.LocationSubscription | null>(null)
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ['driver-route', 'A'],
@@ -79,25 +152,58 @@ export function DriverMapScreen() {
     staleTime: 30_000,
   })
 
+  // 트럭 위치를 WebView에 주입 (지도 리로드 없이 위치만 이동)
+  const pushMe = useCallback((lat: number, lng: number) => {
+    webRef.current?.injectJavaScript(`window.setMe && window.setMe(${lat},${lng}); true;`)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') return
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-        if (!cancelled) setMyLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude })
+        let perm = await Location.getForegroundPermissionsAsync()
+        if (perm.status !== 'granted' && perm.canAskAgain) {
+          perm = await Location.requestForegroundPermissionsAsync()
+        }
+        if (perm.status !== 'granted') {
+          Alert.alert(
+            '위치 권한 필요',
+            '내 위치를 지도에 표시하려면 위치 권한이 필요합니다.\n설정 > 애플리케이션 > 경안시장 배송 > 권한에서 "위치"를 허용해 주세요.',
+            [{ text: '확인' }, { text: '설정 열기', onPress: () => Linking.openSettings() }],
+          )
+          return
+        }
+        // 1) 마지막 위치 우선(즉시 표시)
+        const last = await Location.getLastKnownPositionAsync()
+        if (last && !cancelled) {
+          const p = { lat: last.coords.latitude, lng: last.coords.longitude }
+          myLocRef.current = p; setMyLoc(p); pushMe(p.lat, p.lng)
+        }
+        // 2) 실시간 추적 (트럭이 기사를 따라 이동)
+        watchRef.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+          (loc) => {
+            if (cancelled) return
+            const p = { lat: loc.coords.latitude, lng: loc.coords.longitude }
+            myLocRef.current = p; setMyLoc(p); pushMe(p.lat, p.lng)
+          },
+        )
       } catch { /* 위치 실패 무시 */ }
     })()
-    return () => { cancelled = true }
-  }, [])
+    return () => {
+      cancelled = true
+      watchRef.current?.remove()
+      watchRef.current = null
+    }
+  }, [pushMe])
 
   const sorted = useMemo(
     () => [...orders].sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999)),
     [orders],
   )
   const nextStops = sorted.filter((o) => o.status !== 'delivered').slice(0, 3)
-  const html = useMemo(() => buildMapHtml(myLoc, sorted), [myLoc, sorted])
+  // html은 주문(sorted)에만 의존 — GPS 갱신 시 리로드되지 않도록 myLoc 제외(초기값만 ref로 전달)
+  const html = useMemo(() => buildMapHtml(myLocRef.current, sorted), [sorted])
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
@@ -121,18 +227,32 @@ export function DriverMapScreen() {
             javaScriptEnabled
             domStorageEnabled
             startInLoadingState
+            onLoadEnd={() => { const p = myLocRef.current; if (p) pushMe(p.lat, p.lng) }}
           />
         )}
+
+        {/* 내 위치로 이동 버튼 */}
+        <TouchableOpacity
+          style={s.myLocBtn}
+          activeOpacity={0.85}
+          onPress={() => {
+            const p = myLocRef.current
+            if (!p) { Alert.alert('위치 확인 중', 'GPS 위치를 받는 중입니다. 잠시 후 다시 시도해 주세요.'); return }
+            webRef.current?.injectJavaScript(`window.panToMe && window.panToMe(${p.lat},${p.lng}); true;`)
+          }}
+        >
+          <Ionicons name="locate" size={20} color={T.primary} />
+        </TouchableOpacity>
       </View>
 
-      {/* 하단: 다음 배송지 3곳 */}
+      {/* 하단: 다음 배송지 3곳 — 탭하면 상세 */}
       <View style={[s.bottomSheet, { paddingBottom: insets.bottom + 12 }]}>
         <Text style={s.sheetTitle}>다음 배송지 {nextStops.length > 0 ? `(${nextStops.length})` : ''}</Text>
         {nextStops.length === 0 ? (
           <Text style={s.sheetEmpty}>남은 배송지가 없습니다</Text>
         ) : (
           nextStops.map((o) => (
-            <View key={o.id} style={s.stopRow}>
+            <TouchableOpacity key={o.id} style={s.stopRow} activeOpacity={0.7} onPress={() => setDetailOrder(o)}>
               <View style={s.stopSeq}><Text style={s.stopSeqText}>{o.sequence ?? '-'}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.stopName}>{o.customer_name} · {o.dong}</Text>
@@ -141,10 +261,12 @@ export function DriverMapScreen() {
               <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o.delivery_address)}>
                 <Ionicons name="navigate" size={16} color="#FFFFFF" />
               </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </View>
+
+      <StopDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />
     </View>
   )
 }
@@ -156,6 +278,11 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
   mapWrap: { flex: 1, backgroundColor: '#E5E7EB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  myLocBtn: {
+    position: 'absolute', right: 14, bottom: 14, width: 46, height: 46, borderRadius: 23,
+    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
+  },
 
   bottomSheet: { backgroundColor: T.card, paddingHorizontal: 16, paddingTop: 14, borderTopLeftRadius: 18, borderTopRightRadius: 18, gap: 8 },
   sheetTitle: { fontSize: 14, fontWeight: '800', color: T.text, marginBottom: 2 },
@@ -166,4 +293,16 @@ const s = StyleSheet.create({
   stopName: { fontSize: 14, fontWeight: '700', color: T.text },
   stopAddr: { fontSize: 12, color: T.textSub, marginTop: 1 },
   naviBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
+
+  detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  detailSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10 },
+  detailHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 12 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: T.border },
+  detailName: { flex: 1, fontSize: 18, fontWeight: '800', color: T.text },
+  detailRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  detailLabel: { fontSize: 11.5, color: T.textMuted, fontWeight: '700', marginBottom: 2 },
+  detailValue: { fontSize: 15, color: T.text, fontWeight: '600', lineHeight: 21 },
+  detailActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
+  actionText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 })

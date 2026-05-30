@@ -244,6 +244,12 @@ function DeliveryCompleteModal({
 
   return (
     <Modal transparent animationType="slide" onRequestClose={onCancel}>
+      {cameraOpen ? (
+        /* 카메라가 열린 동안엔 완료 시트를 아예 마운트하지 않음 — 한 화면에 하나만
+           렌더해, Android에서 카메라 네이티브 뷰가 시트 뒤에 깔려 전체 터치를 삼키는
+           '멈춤' 현상을 원천 차단한다. */
+        <CameraCaptureModal visible onCaptured={handleCaptured} onCancel={handleCameraCancel} />
+      ) : (
       <View style={$modal.overlay}>
         <View style={[$modal.sheet, { paddingBottom: insets.bottom + 24 }]}>
           {/* 핸들 바 */}
@@ -294,8 +300,6 @@ function DeliveryCompleteModal({
               <Text style={$modal.retakeText}>다시 촬영</Text>
             </TouchableOpacity>
           )}
-
-          <CameraCaptureModal visible={cameraOpen} onCaptured={handleCaptured} onCancel={handleCameraCancel} />
 
           {/* GPS POD 상태 표시 */}
           <View style={$modal.gpsRow}>
@@ -350,6 +354,7 @@ function DeliveryCompleteModal({
           </View>
         </View>
       </View>
+      )}
     </Modal>
   )
 }

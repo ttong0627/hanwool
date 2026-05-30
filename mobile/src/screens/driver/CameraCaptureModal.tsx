@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react'
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { Ionicons } from '@expo/vector-icons'
 
 /**
- * 배송 완료 사진 촬영 모달 — expo-camera로 후면(back) 카메라 강제.
+ * 배송 완료 사진 촬영 오버레이 — expo-camera로 후면(back) 카메라 강제.
  * (ImagePicker.launchCameraAsync의 cameraType은 일부 기기서 무시돼 전면이 열리는 문제 해결)
+ * ⚠️ RN Modal이 아닌 전체화면 절대배치 View — 부모 Modal(완료 시트) 위에 덮어 중첩 Modal 터치 충돌을 방지.
  * 촬영하면 onCaptured(uri) 호출. 취소 시 onCancel.
  */
 export function CameraCaptureModal({
@@ -21,6 +22,8 @@ export function CameraCaptureModal({
   const cameraRef = useRef<CameraView>(null)
   const [busy, setBusy] = useState(false)
 
+  if (!visible) return null
+
   const shoot = async () => {
     if (busy || !cameraRef.current) return
     setBusy(true)
@@ -35,7 +38,6 @@ export function CameraCaptureModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
       <View style={s.wrap}>
         {!permission ? (
           <View style={s.center}><ActivityIndicator color="#fff" size="large" /></View>
@@ -72,12 +74,11 @@ export function CameraCaptureModal({
           </>
         )}
       </View>
-    </Modal>
   )
 }
 
 const s = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: '#000' },
+  wrap: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000', zIndex: 50, elevation: 50 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
   msg: { color: '#fff', fontSize: 16, textAlign: 'center' },
   permBtn: { backgroundColor: '#F97316', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 12 },
