@@ -50,13 +50,15 @@ function useUpdateCheck() {
 
 function AuthGuard() {
   const user = useAuthStore((s) => s.user)
+  const hydrated = useAuthStore((s) => s.hydrated)
   const router = useRouter()
   const segments = useSegments()
   const navState = useRootNavigationState()
 
   useEffect(() => {
-    // 루트 네비게이터가 마운트된 후에만 이동 (mount 전 navigate 크래시 방지)
-    if (!navState?.key) return
+    // 루트 네비게이터 마운트 + 저장된 세션 복원이 끝난 뒤에만 이동
+    // (복원 전 튕기면 문자앱 갔다 올 때마다 로그인 화면으로 빠짐)
+    if (!navState?.key || !hydrated) return
 
     const inAuth = segments[0] === 'login'
     if (!user && !inAuth) {
@@ -66,13 +68,15 @@ function AuthGuard() {
       else if (user.role === 'super_admin') router.replace('/(admin)')
       else router.replace('/(customer)')
     }
-  }, [user, segments, navState?.key])
+  }, [user, segments, navState?.key, hydrated])
 
   return null
 }
 
 export default function RootLayout() {
   useUpdateCheck()
+  // 앱 시작 시 기기에 저장된 로그인 세션 복원 (배송앱 계속 유지)
+  useEffect(() => { useAuthStore.getState().hydrate() }, [])
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
