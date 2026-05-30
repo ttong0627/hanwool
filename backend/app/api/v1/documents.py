@@ -91,7 +91,10 @@ async def download_delivery_receipts_pdf(
     _=Depends(require_receiver_or_above),
 ):
     orders = await list_delivery_receipts(date_from, date_to, db, _)
-    date_label = date_from or today_kst().isoformat()
+    if date_from and date_to and date_from[:10] != date_to[:10]:
+        date_label = f"{date_from[:10]} ~ {date_to[:10]}"
+    else:
+        date_label = (date_from or today_kst().isoformat())[:10]
     pdf_bytes = generate_delivery_receipts_pdf(orders, date_label)
     return Response(
         content=pdf_bytes,

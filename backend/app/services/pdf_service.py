@@ -1,10 +1,13 @@
 """PDF 문서 생성 서비스 (ReportLab)"""
+from datetime import datetime, timezone
+from html import escape
 import io
 import os
 from typing import List
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
@@ -51,6 +54,27 @@ def _header_style():
 
 def _sub_style():
     return ParagraphStyle("sub", fontName=_F(), fontSize=10, alignment=TA_CENTER, spaceAfter=6, textColor=colors.grey)
+
+
+def _pdf_text(value) -> str:
+    if value is None:
+        return ""
+    return escape(str(value).strip()).replace("\n", "<br/>")
+
+
+def _fmt_delivery_time(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return str(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
 
 
 def generate_delivery_list_pdf(orders: List[dict], date_str: str) -> bytes:
@@ -277,55 +301,167 @@ def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(A4),
-        rightMargin=0.8 * cm,
-        leftMargin=0.8 * cm,
+        rightMargin=0.9 * cm,
+        leftMargin=0.9 * cm,
         topMargin=0.8 * cm,
-        bottomMargin=0.8 * cm,
+        bottomMargin=1.0 * cm,
         title="배송 수령증 목록",
     )
     elements: list = []
+
+    title_style = ParagraphStyle(
+        "receipt_title",
+        fontName=_FB(),
+        fontSize=18,
+        leading=22,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#111827"),
+    )
+    meta_style = ParagraphStyle(
+        "receipt_meta",
+        fontName=_F(),
+        fontSize=8,
+        leading=10,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor("#6B7280"),
+    )
+    small_style = ParagraphStyle(
+        "receipt_small",
+        fontName=_F(),
+        fontSize=7,
+        leading=9,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#374151"),
+    )
+    small_center_style = ParagraphStyle(
+        "receipt_small_center",
+        fontName=_F(),
+        fontSize=7,
+        leading=9,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#374151"),
+    )
+    small_bold_style = ParagraphStyle(
+        "receipt_small_bold",
+        fontName=_FB(),
+        fontSize=7,
+        leading=9,
+        alignment=TA_CENTER,
+        textColor=colors.white,
+    )
+    note_style = ParagraphStyle(
+        "receipt_note",
+        fontName=_F(),
+        fontSize=8,
+        leading=11,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#4B5563"),
+    )
+
     _logo = _logo_flowable()
+    title_block = [
+        Paragraph("배송 수령확인증", title_style),
+        Paragraph("(주)한울 · 경안시장 집배송 서비스", note_style),
+    ]
     if _logo is not None:
-        elements.append(_logo)
-        elements.append(Spacer(1, 0.1 * cm))
-    elements.append(Paragraph("배송 수령확인증", _header_style()))
-    elements.append(Paragraph("(주)한울 · 경안시장 집배송 서비스", _sub_style()))
-    elements.append(Paragraph(f"배송 완료일: {date_str}  |  총 {len(orders)}건", _sub_style()))
+        title_block.insert(0, _logo)
+    header = Table(
+        [[title_block, Paragraph(f"발행일: {datetime.now().strftime('%Y-%m-%d %H:%M')}<br/>조회기간: {date_str}", meta_style)]],
+        colWidths=[18.8 * cm, 8.1 * cm],
+    )
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.8, colors.HexColor("#111827")),
+    ]))
+    elements.append(header)
     elements.append(Spacer(1, 0.25 * cm))
 
-    headers = ["주문번호", "이름", "연락처", "배송동", "주소", "물품", "수량", "요청사항", "배송시간", "기사"]
-    rows = [headers]
+    signature_count = sum(1 for order in orders if order.get("delivery_signature_url"))
+    photo_count = sum(1 for order in orders if order.get("delivery_photo_url"))
+    driver_count = len({order.get("driver_id") for order in orders if order.get("driver_id")})
+    summary = Table(
+        [[
+            Paragraph("총 수령증", small_center_style), Paragraph(f"{len(orders)}건", small_center_style),
+            Paragraph("사진 증빙", small_center_style), Paragraph(f"{photo_count}건", small_center_style),
+            Paragraph("서명 증빙", small_center_style), Paragraph(f"{signature_count}건", small_center_style),
+            Paragraph("담당 기사", small_center_style), Paragraph(f"{driver_count}명", small_center_style),
+        ]],
+        colWidths=[2.4 * cm, 2.0 * cm, 2.4 * cm, 2.0 * cm, 2.4 * cm, 2.0 * cm, 2.4 * cm, 2.0 * cm],
+        hAlign="LEFT",
+    )
+    summary.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F9FAFB")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#E5E7EB")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E5E7EB")),
+        ("FONTNAME", (1, 0), (1, 0), _FB()),
+        ("FONTNAME", (3, 0), (3, 0), _FB()),
+        ("FONTNAME", (5, 0), (5, 0), _FB()),
+        ("FONTNAME", (7, 0), (7, 0), _FB()),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(summary)
+    elements.append(Spacer(1, 0.25 * cm))
+    elements.append(Paragraph(
+        "아래 내역은 배송 완료 처리된 주문의 수령 확인 자료입니다. 출력 후 현장 보관 또는 정산 증빙 용도로 사용할 수 있습니다.",
+        note_style,
+    ))
+    elements.append(Spacer(1, 0.2 * cm))
+
+    headers = ["주문번호", "수령인", "연락처", "배송동", "배송 주소", "물품/수량", "요청사항", "완료시간", "기사", "증빙", "확인"]
+    rows = [[Paragraph(header, small_bold_style) for header in headers]]
     for order in orders:
         rows.append([
-            order.get("order_no", ""),
-            order.get("customer_name", ""),
-            order.get("customer_phone", ""),
-            order.get("dong", ""),
-            order.get("delivery_address", ""),
-            order.get("items_desc", ""),
-            str(order.get("quantity", 1)),
-            order.get("request", ""),
-            order.get("delivered_at", ""),
-            order.get("driver_name", "") or "",
+            Paragraph(_pdf_text(order.get("order_no", "")), small_center_style),
+            Paragraph(_pdf_text(order.get("customer_name", "")), small_center_style),
+            Paragraph(_pdf_text(order.get("customer_phone", "")), small_center_style),
+            Paragraph(_pdf_text(order.get("dong", "")), small_center_style),
+            Paragraph(_pdf_text(order.get("delivery_address", "")), small_style),
+            Paragraph(_pdf_text(f"{order.get('items_desc') or '-'} / {order.get('quantity', 1)}개"), small_style),
+            Paragraph(_pdf_text(order.get("request") or "-"), small_style),
+            Paragraph(_pdf_text(_fmt_delivery_time(order.get("delivered_at"))), small_center_style),
+            Paragraph(_pdf_text(order.get("driver_name") or "-"), small_center_style),
+            Paragraph(
+                _pdf_text(
+                    "사진+서명" if order.get("delivery_photo_url") and order.get("delivery_signature_url")
+                    else "사진" if order.get("delivery_photo_url")
+                    else "서명" if order.get("delivery_signature_url")
+                    else "-"
+                ),
+                small_center_style,
+            ),
+            Paragraph("완료", small_center_style),
         ])
 
     table = Table(
         rows,
-        colWidths=[2.5*cm, 2.0*cm, 2.8*cm, 1.6*cm, 5.5*cm, 3.0*cm, 1.0*cm, 3.0*cm, 3.2*cm, 2.0*cm],
+        colWidths=[2.2*cm, 1.7*cm, 2.45*cm, 1.35*cm, 5.25*cm, 2.8*cm, 2.75*cm, 2.6*cm, 1.65*cm, 1.45*cm, 0.9*cm],
         repeatRows=1,
     )
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, -1), _F()),
         ("FONTNAME", (0, 0), (-1, 0), _FB()),
         ("FONTSIZE", (0, 0), (-1, -1), 7),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF7ED")]),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
     elements.append(table)
-    doc.build(elements)
+
+    def draw_footer(canvas, document):
+        canvas.saveState()
+        canvas.setFont(_F(), 7)
+        canvas.setFillColor(colors.HexColor("#6B7280"))
+        canvas.drawString(document.leftMargin, 0.45 * cm, "경안시장 집배송 서비스 · 배송 수령확인증")
+        canvas.drawRightString(landscape(A4)[0] - document.rightMargin, 0.45 * cm, f"{document.page}쪽")
+        canvas.restoreState()
+
+    doc.build(elements, onFirstPage=draw_footer, onLaterPages=draw_footer)
     return buffer.getvalue()
