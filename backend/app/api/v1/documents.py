@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_receiver_or_above, require_super_admin
+from app.api.v1.deps import require_privacy_owner, require_receiver_or_above
 from app.core.database import get_db
 from app.core.security import decrypt_field
 from app.models.order import Order, OrderStatus
@@ -153,9 +153,9 @@ async def download_labels(
 async def download_privacy_destruction_pdf(
     destroyed_at: str,
     reason: Optional[str] = Query(None),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_privacy_owner),
 ):
-    """개인정보 폐기 확인서 PDF — super_admin 전용"""
+    """개인정보 폐기 확인서 PDF — 개인정보 전담 최고관리자 전용"""
     name = decrypt_field(current_user.name_enc)
     info = {
         "destroyed_at": destroyed_at,

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin, require_admin_or_above, require_receiver_or_above, require_super_admin
+from app.api.v1.deps import require_admin, require_admin_or_above, require_privacy_owner, require_receiver_or_above, require_super_admin
 from app.core.database import get_db
 from app.models.complaint import Complaint
 from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
@@ -259,7 +259,7 @@ async def stats_by_market_date(
 
 
 @router.post("/privacy/destroy")
-async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_super_admin)):
+async def destroy_privacy(db: AsyncSession = Depends(get_db), current_user: User = Depends(require_privacy_owner)):
     result = await destroy_personal_data(db, current_user.id)
     return result
 
@@ -298,7 +298,7 @@ async def get_customer_detail_endpoint(
 @router.delete("/clear-test-data")
 async def clear_test_data(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_super_admin),
+    _: User = Depends(require_privacy_owner),
 ):
     """
     is_test=True 로 표시된 테스트 데이터 전체 삭제 — super_admin 전용.

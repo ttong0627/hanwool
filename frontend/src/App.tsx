@@ -33,6 +33,13 @@ function PrivateRoute({ children, roles }: { children: React.ReactNode; roles?: 
   return <>{children}</>
 }
 
+function PrivacyOwnerRoute({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+  if (!user) return <Navigate to="/login" replace />
+  if (!user.can_manage_privacy) return <Navigate to={roleToHome(user.role)} replace />
+  return <>{children}</>
+}
+
 export default function App() {
   const user = useAuthStore((s) => s.user)
 
@@ -57,7 +64,7 @@ export default function App() {
               <Route path="drivers" element={<PrivateRoute roles={['super_admin']}><Drivers /></PrivateRoute>} />
               <Route path="customers" element={<Customers />} />
               <Route path="reports" element={<Reports />} />
-              <Route path="privacy" element={<PrivateRoute roles={['super_admin']}><Privacy /></PrivateRoute>} />
+              <Route path="privacy" element={<PrivacyOwnerRoute><Privacy /></PrivacyOwnerRoute>} />
               <Route path="users" element={<PrivateRoute roles={['super_admin']}><StaffUsers /></PrivateRoute>} />
               <Route path="my-account" element={<MyAccount />} />
             </Routes>

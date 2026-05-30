@@ -113,6 +113,7 @@ class UserOut(BaseModel):
     is_elderly: Optional[bool] = None
     is_active: bool
     is_driver: bool = False
+    can_manage_privacy: bool = False
     created_at: datetime
 
     class Config:

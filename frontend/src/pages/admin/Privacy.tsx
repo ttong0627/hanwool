@@ -25,7 +25,7 @@ function ProtectionItem({ icon: Icon, text }: { icon: React.ElementType; text: s
 
 export function Privacy() {
   const user = useAuthStore((s) => s.user)
-  const isSuperAdmin = user?.role === 'super_admin'
+  const canManagePrivacy = Boolean(user?.can_manage_privacy)
 
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [confirmText, setConfirmText] = useState('')
@@ -95,8 +95,8 @@ export function Privacy() {
         </ul>
       </div>
 
-      {/* 테스트 데이터 초기화 (super_admin 전용) */}
-      {isSuperAdmin && (
+      {/* 테스트 데이터 초기화 (개인정보 전담 관리자 전용) */}
+      {canManagePrivacy && (
         <div className="card border-amber-200 bg-amber-50 space-y-3">
           <h2 className="font-semibold text-amber-900 flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-amber-600" />
@@ -160,11 +160,11 @@ export function Privacy() {
         </div>
       )}
 
-      {/* super_admin 전용 폐기 섹션 */}
-      {!isSuperAdmin ? (
+      {/* 개인정보 전담 관리자 전용 폐기 섹션 */}
+      {!canManagePrivacy ? (
         <div className="card border border-gray-200 bg-gray-50 text-center py-10">
           <Shield className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-500 font-medium">개인정보 폐기는 최고 관리자(super_admin)만 실행할 수 있습니다.</p>
+          <p className="text-gray-500 font-medium">개인정보 관리는 지정된 최고관리자만 실행할 수 있습니다.</p>
           <p className="text-xs text-gray-400 mt-1">현재 권한: {user?.role}</p>
         </div>
       ) : (

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import decode_token
+from app.core.config import settings
 from app.models.user import User
 
 bearer = HTTPBearer()
@@ -38,6 +39,14 @@ def require_roles(*roles: str):
 
 # super_admin 전용 (DB 접근, 개인정보 폐기, 계정 역할 변경)
 require_super_admin = require_roles("super_admin")
+
+
+async def require_privacy_owner(user: User = Depends(get_current_user)):
+    if user.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다.")
+    if settings.PRIVACY_OWNER_USER_ID is not None and user.id != settings.PRIVACY_OWNER_USER_ID:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개인정보 관리는 지정된 최고관리자만 가능합니다.")
+    return user
 
 # admin 이상 (운영 관리: 통계, 민원, 기사 관리)
 require_admin_or_above = require_roles("super_admin", "admin")

@@ -7,6 +7,7 @@ interface User {
   phone: string
   role: string
   dong?: string
+  can_manage_privacy?: boolean
 }
 
 interface AuthState {

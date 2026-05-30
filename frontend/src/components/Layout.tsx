@@ -49,9 +49,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
   const [managementMenuOpen, setManagementMenuOpen] = useState(false)
   const navs = ['admin', 'super_admin'].includes(user?.role || '') ? adminNavs : receiverNavs
-  const managementNavs = user?.role === 'super_admin'
-    ? adminManagementNavs
-    : adminManagementNavs.filter((item) => !item.superOnly)
+  const managementNavs = adminManagementNavs.filter((item) => {
+    if (item.to === '/admin/privacy') return user?.can_manage_privacy
+    return user?.role === 'super_admin' || !item.superOnly
+  })
 
   const handleLogout = () => {
     setManagementMenuOpen(false)

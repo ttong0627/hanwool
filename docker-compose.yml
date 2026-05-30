@@ -13,6 +13,41 @@ services:
       timeout: 5s
       retries: 5
 
+  backup_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hanwool}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: hanwool_backup_db
+    volumes:
+      - postgres_backup_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hanwool} -d hanwool_backup_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db_backup:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hanwool}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: hanwool_db
+      BACKUP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      BACKUP_POSTGRES_DB: hanwool_backup_db
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-7200}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./scripts/db_backup_loop.sh:/usr/local/bin/db_backup_loop.sh:ro
+      - ./scripts/restore_primary_from_backup.sh:/usr/local/bin/restore_primary_from_backup.sh:ro
+      - db_backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+      backup_db:
+        condition: service_healthy
+    command: ["sh", "/usr/local/bin/db_backup_loop.sh"]
+
   redis:
     image: redis:7-alpine
     healthcheck:
@@ -58,4 +93,6 @@ services:
 
 volumes:
   postgres_data:
+  postgres_backup_data:
+  db_backups:
   photos_data:

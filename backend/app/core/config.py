@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
-from typing import List
+from typing import List, Optional
 
 _INSECURE_DEFAULTS = {
     "hanwool-secret-key-change-in-production",
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     ENVIRONMENT: str = "development"
     ALLOW_DEMO_SEED: bool = False
+    PRIVACY_OWNER_USER_ID: Optional[int] = None
     # 테스트용 SMS 리다이렉트: 값이 있으면 모든 문자 수신번호를 이 번호로 강제 변경
     # 테스트 종료 시 .env에서 이 줄을 비우거나 삭제하면 정상 발송으로 복귀
     TEST_SMS_REDIRECT_PHONE: str = ""

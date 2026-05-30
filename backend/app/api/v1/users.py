@@ -11,6 +11,7 @@ from app.api.v1.deps import (
     require_receiver_or_above,
     require_super_admin,
 )
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone, verify_password
 from app.models.user import User, UserRole
@@ -55,6 +56,10 @@ def _to_out(user: User) -> UserOut:
         is_elderly=is_elderly,
         is_active=user.is_active,
         is_driver=bool(user.is_driver),
+        can_manage_privacy=(
+            user.role == "super_admin"
+            and (settings.PRIVACY_OWNER_USER_ID is None or user.id == settings.PRIVACY_OWNER_USER_ID)
+        ),
         created_at=user.created_at,
     )
 
