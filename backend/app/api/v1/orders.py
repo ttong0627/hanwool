@@ -403,9 +403,21 @@ async def start_driver_work(
         raise HTTPException(status_code=403, detail="기사 또는 기사 업무가 부여된 관리자만 배송업무를 시작할 수 있습니다.")
 
     today = today_kst()
+    # 목록 화면(get_orders_today)과 동일 기준: market_date==today 또는 (market_date 없고 created_at이 KST 오늘)
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    today_filter = or_(
+        Order.market_date == today,
+        and_(
+            Order.market_date.is_(None),
+            Order.created_at >= today_start_utc,
+            Order.created_at < today_end_utc,
+        ),
+    )
+
     active_orders_result = await db.execute(
         select(Order).where(
-            Order.market_date == today,
+            today_filter,
             Order.driver_id == current_user.id,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
@@ -414,17 +426,19 @@ async def start_driver_work(
     assigned_count = len(my_active_orders)
 
     if assigned_count > 0:
-        # 관리자가 미리 배차한 주문(assigned 상태)이 있으면 → 배송중으로 전환 (업무 시작 확정)
-        pre_assigned = [o for o in my_active_orders if o.status == OrderStatus.assigned]
+        # 배정(assigned) + 픽업완료(picked_up) 주문을 배송중으로 전환 (업무 시작 = 전체 출발)
+        pre_assigned = [o for o in my_active_orders if o.status in (OrderStatus.assigned, OrderStatus.picked_up)]
         if pre_assigned:
             now_utc = datetime.now(timezone.utc)
             for order in pre_assigned:
+                prev_status = order.status
                 order.status = OrderStatus.in_transit
-                order.picked_up_at = now_utc
+                if order.picked_up_at is None:
+                    order.picked_up_at = now_utc
                 await order_service.log_order_history(
                     db, order,
                     event_type="started",
-                    from_status=OrderStatus.assigned,
+                    from_status=prev_status,
                     to_status=OrderStatus.in_transit,
                     actor_user_id=current_user.id,
                     actor_role="driver",
@@ -440,18 +454,18 @@ async def start_driver_work(
         return {
             "status": "already_assigned",
             "assigned_count": assigned_count,
-            "message": "이미 배정된 배송업무가 있습니다.",
+            "message": "이미 모두 배송 중입니다.",
         }
 
     total_active = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.market_date == today,
+            today_filter,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
     )).scalar() or 0
     pending_count = (await db.execute(
         select(func.count()).select_from(Order).where(
-            Order.market_date == today,
+            today_filter,
             Order.driver_id == None,
             Order.status == OrderStatus.pending,
         )
