@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Modal, ScrollView, Alert,
+  Animated, PanResponder, Dimensions, FlatList,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,6 +15,10 @@ import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
 const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (JS 키 허용 도메인)
+
+// 드래그 바텀시트 스냅 높이 (살짝 / 중간 / 펼침)
+const { height: SCREEN_H } = Dimensions.get('window')
+const SNAP = { peek: 210, mid: Math.round(SCREEN_H * 0.5), full: Math.round(SCREEN_H * 0.85) }
 
 const T = {
   primary: '#F97316', dark: '#0F172A', bg: '#F1F5F9', card: '#FFFFFF',
@@ -248,6 +253,29 @@ export function DriverMapScreen() {
     }
   }
 
+  const sheetStops = useMemo(() => sorted.filter((o) => o.status !== 'delivered'), [sorted])
+  const heightAnim = useRef(new Animated.Value(SNAP.peek)).current
+  const heightRef = useRef(SNAP.peek)
+  const startH = useRef(SNAP.peek)
+  useEffect(() => {
+    const id = heightAnim.addListener(({ value }) => { heightRef.current = value })
+    return () => heightAnim.removeListener(id)
+  }, [heightAnim])
+  const sheetPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+      onPanResponderGrant: () => { startH.current = heightRef.current },
+      onPanResponderMove: (_, g) => {
+        heightAnim.setValue(Math.max(SNAP.peek, Math.min(SNAP.full, startH.current - g.dy)))
+      },
+      onPanResponderRelease: (_, g) => {
+        const cur = startH.current - g.dy
+        const target = [SNAP.peek, SNAP.mid, SNAP.full].reduce((a, b) => (Math.abs(b - cur) < Math.abs(a - cur) ? b : a))
+        Animated.spring(heightAnim, { toValue: target, useNativeDriver: false, bounciness: 1 }).start()
+      },
+    }),
+  ).current
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       <View style={s.header}>
@@ -295,26 +323,36 @@ export function DriverMapScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 하단: 다음 배송지 3곳 — 탭하면 상세 */}
-      <View style={[s.bottomSheet, { paddingBottom: insets.bottom + 12 }]}>
-        <Text style={s.sheetTitle}>다음 배송지 {nextStops.length > 0 ? `(${nextStops.length})` : ''}</Text>
-        {nextStops.length === 0 ? (
-          <Text style={s.sheetEmpty}>남은 배송지가 없습니다</Text>
-        ) : (
-          nextStops.map((o) => (
-            <TouchableOpacity key={o.id} style={s.stopRow} activeOpacity={0.7} onPress={() => setDetailOrder(o)}>
+      {/* 하단: 드래그 바텀시트 — 위로 끌어 전체 배송지 보기 */}
+      <Animated.View style={[s.sheet, { height: heightAnim }]}>
+        <View {...sheetPan.panHandlers} style={s.handleArea}>
+          <View style={s.handleBar} />
+          <Text style={s.sheetTitle}>
+            다음 배송지 {sheetStops.length}곳  <Text style={s.sheetHint}>· 위로 끌어 전체 보기</Text>
+          </Text>
+        </View>
+        <FlatList
+          data={sheetStops}
+          keyExtractor={(o) => String(o.id)}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 20, gap: 8 }}
+          ListEmptyComponent={<Text style={s.sheetEmpty}>남은 배송지가 없습니다</Text>}
+          renderItem={({ item: o }) => (
+            <TouchableOpacity style={s.stopRow} activeOpacity={0.7} onPress={() => setDetailOrder(o)}>
               <View style={s.stopSeq}><Text style={s.stopSeqText}>{o.sequence ?? '-'}</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={s.stopName}>{o.customer_name} · {o.dong}</Text>
-                <Text style={s.stopAddr} numberOfLines={1}>{o.delivery_address}</Text>
+                <Text style={s.stopName} numberOfLines={1}>{o.customer_name}</Text>
+                <Text style={s.stopAddr} numberOfLines={1}>{o.dong} · {o.delivery_address}</Text>
               </View>
+              <TouchableOpacity style={s.rowBtn} onPress={() => setMoveTarget(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="swap-vertical" size={18} color={T.primary} />
+              </TouchableOpacity>
               <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o.delivery_address)}>
                 <Ionicons name="navigate" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </TouchableOpacity>
-          ))
-        )}
-      </View>
+          )}
+        />
+      </Animated.View>
 
       <StopDetailModal
         order={detailOrder}
@@ -349,18 +387,26 @@ const s = StyleSheet.create({
   mapWrap: { flex: 1, backgroundColor: '#E5E7EB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   myLocBtn: {
-    position: 'absolute', right: 14, bottom: 14, width: 46, height: 46, borderRadius: 23,
+    position: 'absolute', right: 14, bottom: SNAP.peek + 12, width: 46, height: 46, borderRadius: 23,
     backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
   },
 
-  bottomSheet: { backgroundColor: T.card, paddingHorizontal: 16, paddingTop: 14, borderTopLeftRadius: 18, borderTopRightRadius: 18, gap: 8 },
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.card,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 12,
+  },
+  handleArea: { paddingTop: 8, paddingBottom: 8, paddingHorizontal: 16, alignItems: 'center' },
+  handleBar: { width: 44, height: 5, borderRadius: 3, backgroundColor: T.border, marginBottom: 8 },
+  sheetHint: { fontSize: 11, fontWeight: '500', color: T.textMuted },
+  rowBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: T.primary, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 14, fontWeight: '800', color: T.text, marginBottom: 2 },
   sheetEmpty: { fontSize: 13, color: T.textMuted, paddingVertical: 8 },
   stopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: T.bg, borderRadius: 12, padding: 10 },
   stopSeq: { width: 28, height: 28, borderRadius: 14, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
   stopSeqText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
-  stopName: { fontSize: 14, fontWeight: '700', color: T.text },
+  stopName: { fontSize: 19, fontWeight: '800', color: T.text },
   stopAddr: { fontSize: 12, color: T.textSub, marginTop: 1 },
   naviBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
 
