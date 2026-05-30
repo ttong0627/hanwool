@@ -3,7 +3,7 @@
     "name": "경안시장 배송",
     "slug": "hanwool-delivery",
     "scheme": "hanwool",
-    "version": "1.0.19",
+    "version": "1.0.20",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

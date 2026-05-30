@@ -65,10 +65,9 @@ export function DriverProfileScreen() {
   const { data: statsData } = useQuery({
     queryKey: ['driver-stats', user?.id],
     queryFn: async () => {
-      const res = await api.get('/orders', {
-        params: { driver_id: user?.id, page: 1, page_size: 200 },
-      })
-      const items = res.data.items ?? []
+      // 기사 본인 오늘 주문 — /orders는 receiver 이상 권한이라 기사는 403. /orders/today는 기사면 본인 주문 반환.
+      const res = await api.get('/orders/today')
+      const items = Array.isArray(res.data) ? res.data : (res.data?.items ?? [])
       const total     = items.length
       const done      = items.filter((o: any) => o.status === 'delivered').length
       const inProg    = items.filter((o: any) => ['assigned', 'picked_up', 'in_transit'].includes(o.status)).length
