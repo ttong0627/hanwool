@@ -177,7 +177,13 @@ async def stats_by_dong(db: AsyncSession = Depends(get_db), _=Depends(require_ad
 
 @router.get("/stats/drivers")
 async def driver_stats(db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
-    today_start = datetime.combine(today_kst(), datetime.min.time())
+    from zoneinfo import ZoneInfo
+    _KST = ZoneInfo("Asia/Seoul")
+    today_start = (
+        datetime.combine(today_kst(), datetime.min.time())
+        .replace(tzinfo=_KST)
+        .astimezone(timezone.utc)
+    )
     result = await db.execute(
         select(
             Order.driver_id,

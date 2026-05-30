@@ -1075,7 +1075,11 @@ async def auto_sequence(
     _: User = Depends(require_receiver_or_above),
 ):
     """오늘 접수된 주문의 배송순번을 기사별로 자동 계산하고 저장 + WS 푸시"""
-    today_start = datetime.combine(today_kst(), datetime.min.time())
+    today_start = (
+        datetime.combine(today_kst(), datetime.min.time())
+        .replace(tzinfo=_KST)
+        .astimezone(timezone.utc)
+    )
     q = select(Order).where(
         Order.created_at >= today_start,
         Order.driver_id.isnot(None),
@@ -1231,7 +1235,11 @@ async def regeocode_unresolved_orders(
     _: User = Depends(require_receiver_or_above),
 ):
     """오늘 좌표 미확인 주문 전체를 백그라운드에서 재매칭 — 즉시 반환"""
-    today_start = datetime.combine(today_kst(), datetime.min.time())
+    today_start = (
+        datetime.combine(today_kst(), datetime.min.time())
+        .replace(tzinfo=_KST)
+        .astimezone(timezone.utc)
+    )
     result = await db.execute(
         select(Order.id).where(
             Order.created_at >= today_start,
