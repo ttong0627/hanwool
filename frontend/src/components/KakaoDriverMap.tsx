@@ -12,6 +12,7 @@ interface DriverPin {
 interface Props {
   drivers: DriverPin[]
   apiKey?: string
+  focusTarget?: { lat: number; lng: number } | null
 }
 
 interface KakaoMap {
@@ -82,7 +83,7 @@ const MARKET_MARKER_CONTENT = `
   <div style="width:2px;height:8px;background:rgba(234,88,12,0.6);margin-top:2px;"></div>
 </div>`
 
-export function KakaoDriverMap({ drivers, apiKey }: Props) {
+export function KakaoDriverMap({ drivers, apiKey, focusTarget }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<KakaoMap | null>(null)
   const markersRef = useRef<KakaoMarker[]>([])
@@ -157,6 +158,17 @@ export function KakaoDriverMap({ drivers, apiKey }: Props) {
     })
   }, [drivers])
 
+  // 외부 지정 좌표로 지도 이동 (기사 카드 클릭 등)
+  useEffect(() => {
+    if (!focusTarget || !mapRef.current || !window.kakao?.maps) return
+    mapRef.current.setCenter(new window.kakao.maps.LatLng(focusTarget.lat, focusTarget.lng))
+  }, [focusTarget])
+
+  const moveToMarket = () => {
+    if (!mapRef.current || !window.kakao?.maps) return
+    mapRef.current.setCenter(new window.kakao.maps.LatLng(MARKET_LAT, MARKET_LNG))
+  }
+
   if (!apiKey) {
     return (
       <div className="card flex flex-col items-center justify-center h-48 text-center gap-2 bg-gray-50">
@@ -170,10 +182,19 @@ export function KakaoDriverMap({ drivers, apiKey }: Props) {
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full rounded-xl overflow-hidden border border-gray-200"
-      style={{ height: 360 }}
-    />
+    <div className="relative">
+      <div
+        ref={containerRef}
+        className="w-full rounded-xl overflow-hidden border border-gray-200"
+        style={{ height: 360 }}
+      />
+      <button
+        type="button"
+        onClick={moveToMarket}
+        className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-brand-700 shadow hover:bg-brand-50"
+      >
+        🏪 시장이동
+      </button>
+    </div>
   )
 }

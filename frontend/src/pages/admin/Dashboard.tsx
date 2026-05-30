@@ -76,9 +76,11 @@ function StatCard({
 function DriverLocationCard({
   driver,
   location,
+  onFocus,
 }: {
   driver: DriverStatus
   location: DriverLocation | null
+  onFocus?: (loc: { lat: number; lng: number }) => void
 }) {
   const [now, setNow] = useState(Date.now())
 
@@ -93,7 +95,8 @@ function DriverLocationCard({
 
   return (
     <div
-      className="card-elevated rounded-xl p-3.5 flex items-center gap-3"
+      onClick={isOnline && location && onFocus ? () => onFocus({ lat: location.lat, lng: location.lng }) : undefined}
+      className={`card-elevated rounded-xl p-3.5 flex items-center gap-3 ${isOnline && location ? 'cursor-pointer hover:ring-2 hover:ring-brand-200' : ''}`}
       style={isOnline ? { boxShadow: `inset 3px 0 0 ${color}, 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06)` } : {}}
     >
       <div
@@ -131,6 +134,7 @@ function DriverLocationCard({
           href={`https://map.kakao.com/link/map/${driver.name},${location.lat},${location.lng}`}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
           className="text-xs font-bold shrink-0 hover:underline transition-colors"
           style={{ color }}
           aria-label={`${driver.name} 기사 카카오맵에서 보기`}
@@ -228,6 +232,7 @@ export function Dashboard() {
   })
 
   const [driverLocations, setDriverLocations] = useState<Map<number, DriverLocation>>(new Map())
+  const [focusTarget, setFocusTarget] = useState<{ lat: number; lng: number } | null>(null)
 
   const handleWsMessage = useCallback(
     (data: unknown) => {
@@ -342,6 +347,7 @@ export function Dashboard() {
           <div className="map-premium">
             <KakaoDriverMap
               apiKey={KAKAO_MAP_KEY}
+              focusTarget={focusTarget}
               drivers={drivers
                 .map((d) => {
                   const loc = driverLocations.get(d.id)
@@ -358,6 +364,7 @@ export function Dashboard() {
                 key={driver.id}
                 driver={driver}
                 location={driverLocations.get(driver.id) ?? null}
+                onFocus={(loc) => setFocusTarget(loc)}
               />
             ))}
           </div>

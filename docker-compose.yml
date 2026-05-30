@@ -31,6 +31,9 @@ services:
       REDIS_URL: redis://redis:6379/0
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      # 업로드 사진/서명 영구 보존 — 재빌드(up -d --build) 시에도 유지
+      - photos_data:/app/photos
     depends_on:
       db:
         condition: service_healthy
@@ -55,3 +58,4 @@ services:
 
 volumes:
   postgres_data:
+  photos_data:

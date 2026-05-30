@@ -674,7 +674,7 @@ async def get_order_history_by_order_no(
     return [order_service.serialize_order_history(row) for row in result.scalars().all()]
 
 
-@router.get("/{order_id}")
+@router.get("/{order_id:int}")
 async def get_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -707,7 +707,7 @@ async def get_order_history(
     return [order_service.serialize_order_history(row) for row in result.scalars().all()]
 
 
-@router.put("/{order_id}", response_model=dict)
+@router.put("/{order_id:int}", response_model=dict)
 async def edit_order(
     order_id: int,
     data: OrderEditRequest,
@@ -952,7 +952,7 @@ async def hard_delete_order(
     return {"message": "주문이 완전히 삭제되었습니다."}
 
 
-@router.delete("/{order_id}")
+@router.delete("/{order_id:int}")
 async def cancel_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
