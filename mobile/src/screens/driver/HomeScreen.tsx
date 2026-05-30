@@ -20,6 +20,7 @@ import { useAutoSaveCache, loadOrdersFromCache } from '@/hooks/useOfflineOrders'
 import { ScanModal } from './ScanModal'
 import { CameraCaptureModal } from './CameraCaptureModal'
 import { SignaturePad } from './SignaturePad'
+import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 
 const API_BASE = BASE_URL
 
@@ -82,7 +83,7 @@ async function compressPhoto(uri: string): Promise<string> {
 }
 
 /* ── 사진 업로드 (POD GPS 포함) ─────────────────────────────────── */
-async function uploadPhoto(
+export async function uploadPhoto(
   orderId: number,
   photoUri: string,
   podLat?: number,
@@ -101,7 +102,7 @@ async function uploadPhoto(
 }
 
 /* ── 수령인 서명 업로드 (base64 PNG) ─────────────────────────────── */
-async function uploadSignature(orderId: number, base64: string): Promise<void> {
+export async function uploadSignature(orderId: number, base64: string): Promise<void> {
   await api.post(`/orders/${orderId}/signature`, { image_base64: base64 })
 }
 
@@ -144,7 +145,7 @@ async function autoSendDepartureJobs(jobs: { phone: string; message: string }[])
   await sendDepartureJobs(jobs)
 }
 
-async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
+export async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
   const available = await SMS.isAvailableAsync()
   if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
 
@@ -210,9 +211,9 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 }
 
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
-function DeliveryCompleteModal({
+export function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null) => void; onCancel: () => void }) {
+}: { order: { id: number; customer_name: string; dong: string; delivery_address: string; detail_address?: string | null; items_desc?: string | null; quantity?: number | null; request?: string | null; lat?: number | null; lng?: number | null }; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
@@ -502,12 +503,12 @@ function TransferModal({ order, drivers, onConfirm, onCancel }: {
 
 /* ── 배송 카드 ───────────────────────────────────────────────────── */
 function DeliveryCard({
-  order, seqInfo, editMode, onMove, onNavi, onCall, onStatus, onDelay, onTransfer, retrying, onRetry, apiBase,
+  order, seqInfo, editMode, onMoveStop, onNavi, onCall, onStatus, onDelay, onTransfer, retrying, onRetry, apiBase,
 }: {
   order: Order
   seqInfo?: { index: number; total: number }
   editMode: boolean
-  onMove: (dir: 'up' | 'down') => void
+  onMoveStop: () => void
   onNavi: () => void
   onCall: () => void
   onStatus: () => void
@@ -539,26 +540,17 @@ function DeliveryCard({
           <Text style={$card.dong}>{order.dong}</Text>
         </View>
 
-        {/* 순번 편집 버튼 */}
-        {editMode && seqInfo && (
-          <View style={$card.seqCtrl}>
-            <TouchableOpacity
-              style={[$card.seqBtn, seqInfo.index === 0 && $card.seqBtnOff]}
-              onPress={() => onMove('up')}
-              disabled={seqInfo.index === 0}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="chevron-up" size={16} color={seqInfo.index === 0 ? T.border : T.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[$card.seqBtn, seqInfo.index === seqInfo.total - 1 && $card.seqBtnOff]}
-              onPress={() => onMove('down')}
-              disabled={seqInfo.index === seqInfo.total - 1}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="chevron-down" size={16} color={seqInfo.index === seqInfo.total - 1 ? T.border : T.primary} />
-            </TouchableOpacity>
-          </View>
+        {/* 순서 이동 버튼 */}
+        {editMode && !isDone && (
+          <TouchableOpacity
+            onPress={onMoveStop}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: T.primary, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}
+          >
+            <Ionicons name="swap-vertical" size={15} color={T.primary} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: T.primary }}>순서 이동</Text>
+          </TouchableOpacity>
         )}
       </View>
 
@@ -662,6 +654,7 @@ export function DriverHomeScreen() {
   const [completeTarget, setCompleteTarget] = useState<Order | null>(null)
   const [transferTarget, setTransferTarget] = useState<Order | null>(null)
   const [editSeqMode, setEditSeqMode] = useState(false)
+  const [moveTarget, setMoveTarget] = useState<Order | null>(null)
   const [localOrders, setLocalOrders] = useState<Order[]>([])
   const [isResequencing, setIsResequencing] = useState(false)
   const [scanVisible, setScanVisible] = useState(false)
@@ -1039,7 +1032,7 @@ export function DriverHomeScreen() {
             order={order}
             seqInfo={activeSeqMap.get(order.id)}
             editMode={editSeqMode}
-            onMove={(dir) => moveOrder(order.id, dir)}
+            onMoveStop={() => setMoveTarget(order)}
             onNavi={() => openKakaoNavi(order.delivery_address)}
             onCall={() => Linking.openURL(`tel:${order.customer_phone}`)}
             onStatus={() => handleStatusUpdate(order)}
@@ -1058,6 +1051,19 @@ export function DriverHomeScreen() {
           order={completeTarget}
           onConfirm={(uri, lat, lng, force, sig) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig)}
           onCancel={() => setCompleteTarget(null)}
+        />
+      )}
+      {moveTarget && (
+        <MoveStopModal
+          stop={moveTarget}
+          activeOrders={localOrders.filter((o) => o.status !== 'delivered').sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999))}
+          onSelect={(newIndex) => {
+            const active = localOrders.filter((o) => o.status !== 'delivered').sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999))
+            const deliveredCount = localOrders.filter((o) => o.status === 'delivered').length
+            const seqs = reorderedSequences(active, moveTarget.id, newIndex, deliveredCount)
+            if (seqs.length) { setIsResequencing(true); resequenceMutation.mutate(seqs) }
+          }}
+          onClose={() => setMoveTarget(null)}
         />
       )}
       {transferTarget && (

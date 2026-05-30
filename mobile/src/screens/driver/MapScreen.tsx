@@ -7,8 +7,10 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { WebView } from 'react-native-webview'
 import * as Location from 'expo-location'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
+import { DeliveryCompleteModal, uploadPhoto, uploadSignature, sendMmsWithPhoto } from './HomeScreen'
+import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
 const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (JS 키 허용 도메인)
@@ -37,7 +39,7 @@ function buildMapHtml(initialLoc: { lat: number; lng: number } | null, orders: O
   const valid = orders.filter((o) => o.lat != null && o.lng != null)
   const center = initialLoc || valid[0] || { lat: 37.4090, lng: 127.2574 }
   const markers = JSON.stringify(
-    valid.map((o) => ({ lat: o.lat, lng: o.lng, seq: o.sequence ?? 0, done: o.status === 'delivered' })),
+    valid.map((o) => ({ id: o.id, lat: o.lat, lng: o.lng, seq: o.sequence ?? 0, done: o.status === 'delivered' })),
   )
   const myJson = initialLoc ? JSON.stringify(initialLoc) : 'null'
   return `<!DOCTYPE html><html><head>
@@ -61,6 +63,7 @@ window.setMe=function(lat,lng){
 };
 // RN에서 호출 — 내 위치로 지도 이동
 window.panToMe=function(lat,lng){ if(__map){__map.panTo(new kakao.maps.LatLng(lat,lng));} };
+window.sel=function(id){ if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage('stop:'+id);} };
 kakao.maps.load(function(){
   var center=new kakao.maps.LatLng(${center.lat},${center.lng});
   var map=new kakao.maps.Map(document.getElementById('map'),{center:center,level:5});
@@ -69,8 +72,8 @@ kakao.maps.load(function(){
   var bounds=new kakao.maps.LatLngBounds();
   orders.forEach(function(o){
     var pos=new kakao.maps.LatLng(o.lat,o.lng);
-    var el='<div class="pin'+(o.done?' done':'')+'">'+o.seq+'</div>';
-    new kakao.maps.CustomOverlay({position:pos,content:el,yAnchor:0.5}).setMap(map);
+    var el='<div class="pin'+(o.done?' done':'')+'" onclick="sel('+o.id+')">'+o.seq+'</div>';
+    new kakao.maps.CustomOverlay({position:pos,content:el,yAnchor:0.5,clickable:true}).setMap(map);
     bounds.extend(pos);
   });
   var my=${myJson};
@@ -93,7 +96,7 @@ function DetailRow({ icon, label, value, color }: { icon: any; label: string; va
   )
 }
 
-function StopDetailModal({ order, onClose }: { order: Order | null; onClose: () => void }) {
+function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order | null; onClose: () => void; onComplete: () => void; onMove: () => void }) {
   const insets = useSafeAreaInsets()
   if (!order) return null
   const addr = `${order.delivery_address ?? ''}${order.detail_address ? ` ${order.detail_address}` : ''}`.trim()
@@ -131,6 +134,19 @@ function StopDetailModal({ order, onClose }: { order: Order | null; onClose: () 
               <Text style={s.actionText}>카카오내비</Text>
             </TouchableOpacity>
           </View>
+
+          {order.status !== 'delivered' && (
+            <View style={[s.detailActions, { marginTop: 10 }]}>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.textSub, flex: 0.7 }]} activeOpacity={0.85} onPress={onMove}>
+                <Ionicons name="swap-vertical" size={18} color="#fff" />
+                <Text style={s.actionText}>순서 이동</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.success }]} activeOpacity={0.85} onPress={onComplete}>
+                <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                <Text style={s.actionText}>배송완료하기</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -142,6 +158,9 @@ export function DriverMapScreen() {
   const router = useRouter()
   const [, setMyLoc] = useState<{ lat: number; lng: number } | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
+  const [completeTarget, setCompleteTarget] = useState<Order | null>(null)
+  const [moveTarget, setMoveTarget] = useState<Order | null>(null)
+  const qc = useQueryClient()
   const webRef = useRef<WebView>(null)
   const myLocRef = useRef<{ lat: number; lng: number } | null>(null)
   const watchRef = useRef<Location.LocationSubscription | null>(null)
@@ -205,6 +224,30 @@ export function DriverMapScreen() {
   // html은 주문(sorted)에만 의존 — GPS 갱신 시 리로드되지 않도록 myLoc 제외(초기값만 ref로 전달)
   const html = useMemo(() => buildMapHtml(myLocRef.current, sorted), [sorted])
 
+  const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null) => {
+    setCompleteTarget(null)
+    try { await uploadPhoto(order.id, uri, lat, lng, force) } catch { /* 업로드 실패해도 완료 진행 */ }
+    if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
+    try {
+      const data = await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+      if (data?.sms_to && data?.sms_message) await sendMmsWithPhoto(data.sms_to, data.sms_message, uri)
+    } catch { Alert.alert('오류', '배달 완료 처리 중 문제가 발생했습니다.') }
+    qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
+  }
+
+  const handleMoveSelect = (newIndex: number) => {
+    if (!moveTarget) return
+    const active = sorted.filter((o) => o.status !== 'delivered')
+    const deliveredCount = orders.filter((o) => o.status === 'delivered').length
+    const seqs = reorderedSequences(active, moveTarget.id, newIndex, deliveredCount)
+    setMoveTarget(null)
+    if (seqs.length) {
+      api.put('/orders/resequence', { sequences: seqs })
+        .then(() => qc.invalidateQueries({ queryKey: ['driver-route', 'A'] }))
+        .catch(() => Alert.alert('오류', '순서 변경에 실패했습니다.'))
+    }
+  }
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       <View style={s.header}>
@@ -228,6 +271,13 @@ export function DriverMapScreen() {
             domStorageEnabled
             startInLoadingState
             onLoadEnd={() => { const p = myLocRef.current; if (p) pushMe(p.lat, p.lng) }}
+            onMessage={(e) => {
+              const d = e.nativeEvent.data
+              if (d && d.indexOf('stop:') === 0) {
+                const found = orders.find((x) => x.id === Number(d.slice(5)))
+                if (found) setDetailOrder(found)
+              }
+            }}
           />
         )}
 
@@ -266,7 +316,27 @@ export function DriverMapScreen() {
         )}
       </View>
 
-      <StopDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />
+      <StopDetailModal
+        order={detailOrder}
+        onClose={() => setDetailOrder(null)}
+        onComplete={() => { setCompleteTarget(detailOrder); setDetailOrder(null) }}
+        onMove={() => { setMoveTarget(detailOrder); setDetailOrder(null) }}
+      />
+      {completeTarget && (
+        <DeliveryCompleteModal
+          order={completeTarget}
+          onConfirm={(uri, lat, lng, force, sig) => handleComplete(completeTarget, uri, lat, lng, force, sig)}
+          onCancel={() => setCompleteTarget(null)}
+        />
+      )}
+      {moveTarget && (
+        <MoveStopModal
+          stop={moveTarget}
+          activeOrders={sorted.filter((o) => o.status !== 'delivered')}
+          onSelect={handleMoveSelect}
+          onClose={() => setMoveTarget(null)}
+        />
+      )}
     </View>
   )
 }
