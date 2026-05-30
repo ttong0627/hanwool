@@ -10,7 +10,7 @@ import { WebView } from 'react-native-webview'
 import * as Location from 'expo-location'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
-import { DeliveryCompleteModal, uploadPhoto, uploadSignature, sendMmsWithPhoto } from './HomeScreen'
+import { DeliveryCompleteModal, uploadPhoto, uploadSignature, sendMmsWithPhoto, describeApiError } from './HomeScreen'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
@@ -237,11 +237,19 @@ export function DriverMapScreen() {
     setCompleteTarget(null)
     try { await uploadPhoto(order.id, uri, lat, lng, force) } catch { /* 업로드 실패해도 완료 진행 */ }
     if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
+    let data: { sms_to?: string; sms_message?: string } | undefined
     try {
-      const data = await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
-      if (data?.sms_to && data?.sms_message) await sendMmsWithPhoto(data.sms_to, data.sms_message, uri)
-    } catch { Alert.alert('오류', '배달 완료 처리 중 문제가 발생했습니다.') }
+      data = await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+    } catch (e) {
+      Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
+      return
+    }
+    // 서버에 '배달 완료' 저장 완료 → 화면 갱신.
     qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
+    // 문자 발송은 완료와 분리 — 실패해도 배달 완료에는 영향 없음.
+    if (data?.sms_to && data?.sms_message) {
+      try { await sendMmsWithPhoto(data.sms_to, data.sms_message, uri) } catch { /* 문자 실패 무시 */ }
+    }
   }
 
   const handleMoveSelect = (newIndex: number) => {

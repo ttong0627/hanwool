@@ -146,7 +146,8 @@ async function autoSendDepartureJobs(jobs: { phone: string; message: string }[])
 }
 
 export async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
-  const available = await SMS.isAvailableAsync()
+  let available = false
+  try { available = await SMS.isAvailableAsync() } catch { available = false }
   if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
 
   // 압축 후 file:// 그대로 첨부하면 문자앱이 못 읽어 사진이 빠진다.
@@ -167,6 +168,13 @@ export async function sendMmsWithPhoto(phone: string, message: string, photoUri:
     // 사진 첨부 발송이 막히면 텍스트만이라도 문자앱이 열리도록 재시도
     try { await SMS.sendSMSAsync([phone], message, {}) } catch { /* 취소/미지원 */ }
   }
+}
+
+/* axios 에러를 사용자에게 보여줄 짧은 문구로 변환 (상태코드 + 서버 메시지) */
+export function describeApiError(e: unknown): string {
+  const err = e as { response?: { status?: number; data?: { detail?: string } }; message?: string }
+  if (err?.response) return `(${err.response.status ?? '?'}) ${err.response.data?.detail ?? '서버 오류'}`.trim()
+  return err?.message ?? '네트워크 오류'
 }
 
 function openKakaoNavi(address: string) {
@@ -813,11 +821,19 @@ export function DriverHomeScreen() {
     if (signatureBase64) {
       try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
     }
+    let data: StatusResponse | undefined
     try {
-      const data = await api.put<StatusResponse>(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
-      qc.invalidateQueries({ queryKey: ['driver-route'] })
-      if (data.sms_to && data.sms_message) await sendMmsWithPhoto(data.sms_to, data.sms_message, photoUri)
-    } catch { Alert.alert('오류', '배달 완료 처리 중 문제가 발생했습니다.') }
+      data = await api.put<StatusResponse>(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+    } catch (e) {
+      Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
+      return
+    }
+    // 여기까지 왔으면 서버에 '배달 완료'가 저장됨 → 화면 갱신.
+    qc.invalidateQueries({ queryKey: ['driver-route'] })
+    // 문자 발송은 완료와 분리 — 문자앱 미지원·취소 등으로 실패해도 배달 완료에는 영향 없음.
+    if (data?.sms_to && data?.sms_message) {
+      try { await sendMmsWithPhoto(data.sms_to, data.sms_message, photoUri) } catch { /* 문자 실패는 완료에 영향 없음 */ }
+    }
   }
 
   const handleRetryUpload = async (orderId: number) => {
