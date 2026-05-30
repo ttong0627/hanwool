@@ -8,6 +8,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SMS from 'expo-sms'
 import * as ImageManipulator from 'expo-image-manipulator'
+import * as FileSystem from 'expo-file-system'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
@@ -141,10 +142,14 @@ async function sendMmsWithPhoto(phone: string, message: string, photoUri: string
   const available = await SMS.isAvailableAsync()
   if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
 
-  // 카메라 원본 경로는 일부 기기에서 MMS 첨부가 실패해 문자앱이 안 열림 → 표준 JPG로 압축 후 첨부
+  // 압축 후 file:// 그대로 첨부하면 문자앱이 못 읽어 사진이 빠진다.
+  // Android는 content://(FileProvider)로 변환해야 첨부가 실제로 전달된다. iOS는 file:// 그대로 OK.
   let attachUri = ''
   if (photoUri) {
-    try { attachUri = await compressPhoto(photoUri) } catch { attachUri = '' }
+    try {
+      const compressed = await compressPhoto(photoUri)
+      attachUri = Platform.OS === 'android' ? await FileSystem.getContentUriAsync(compressed) : compressed
+    } catch { attachUri = '' }
   }
   try {
     const options = attachUri
