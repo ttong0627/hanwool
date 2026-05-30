@@ -50,6 +50,7 @@ interface Order {
   status: string; dong: string; delivery_address: string; items_desc?: string
   quantity: number; sequence?: number; delivery_photo_url?: string
   lat?: number; lng?: number; coord_mismatch?: boolean
+  request?: string; detail_address?: string; item_code?: string
 }
 
 const COORD_WARN_THRESHOLD_M = 30
@@ -98,13 +99,22 @@ async function uploadPhoto(
 /* ── MMS 발송 ────────────────────────────────────────────────────── */
 async function sendMmsWithPhoto(phone: string, message: string, photoUri: string): Promise<void> {
   const available = await SMS.isAvailableAsync()
-  if (!available) return
+  if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
+
+  // 카메라 원본 경로는 일부 기기에서 MMS 첨부가 실패해 문자앱이 안 열림 → 표준 JPG로 압축 후 첨부
+  let attachUri = ''
+  if (photoUri) {
+    try { attachUri = await compressPhoto(photoUri) } catch { attachUri = '' }
+  }
   try {
-    const options = photoUri
-      ? { attachments: { uri: photoUri, mimeType: 'image/jpeg', filename: 'delivery.jpg' } }
+    const options = attachUri
+      ? { attachments: { uri: attachUri, mimeType: 'image/jpeg', filename: 'delivery.jpg' } }
       : {}
     await SMS.sendSMSAsync([phone], message, options)
-  } catch { /* 사용자 취소 또는 기기 미지원 */ }
+  } catch {
+    // 사진 첨부 발송이 막히면 텍스트만이라도 문자앱이 열리도록 재시도
+    try { await SMS.sendSMSAsync([phone], message, {}) } catch { /* 취소/미지원 */ }
+  }
 }
 
 function openKakaoNavi(address: string) {
@@ -164,13 +174,28 @@ function DeliveryCompleteModal({
     : null
   const coordWarn = distanceM != null && distanceM > COORD_WARN_THRESHOLD_M
 
-  // 모달 열릴 때 GPS 자동 캡처 (백그라운드, 실패해도 진행)
+  // 모달 열릴 때 GPS 자동 캡처 (권한 상태 확인 → 요청 → 거부 시 설정 안내)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') return
+        let perm = await Location.getForegroundPermissionsAsync()
+        if (perm.status !== 'granted' && perm.canAskAgain) {
+          perm = await Location.requestForegroundPermissionsAsync()
+        }
+        if (perm.status !== 'granted') {
+          if (!cancelled) {
+            Alert.alert(
+              '위치 권한 필요',
+              '배송 위치 확인을 위해 위치 권한이 필요합니다.\n설정 > 애플리케이션 > 경안시장 배송 > 권한에서 "위치"를 허용해 주세요.',
+              [{ text: '확인' }, { text: '설정 열기', onPress: () => Linking.openSettings() }],
+            )
+          }
+          return
+        }
+        // 마지막 위치 우선(빠름) 후, 정확한 위치로 갱신
+        const last = await Location.getLastKnownPositionAsync()
+        if (last && !cancelled) setPodCoords({ lat: last.coords.latitude, lng: last.coords.longitude })
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
         if (!cancelled) setPodCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude })
       } catch { /* GPS 실패는 무시 — 사진만으로도 POD 유효 */ }
@@ -181,7 +206,12 @@ function DeliveryCompleteModal({
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync()
     if (status !== 'granted') { Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.'); return }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, allowsEditing: false })
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsEditing: false,
+      cameraType: ImagePicker.CameraType.back,
+    })
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri)
   }
 
@@ -225,7 +255,19 @@ function DeliveryCompleteModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={$modal.addressText} numberOfLines={2}>{order.delivery_address}</Text>
+          <Text style={$modal.addressText} numberOfLines={2}>
+            {order.delivery_address}{order.detail_address ? ` ${order.detail_address}` : ''}
+          </Text>
+          {(order.items_desc || order.request) && (
+            <View style={$modal.infoBox}>
+              {order.items_desc ? (
+                <Text style={$modal.infoLine}>📦 {order.items_desc} · {order.quantity ?? 1}개</Text>
+              ) : null}
+              {order.request ? (
+                <Text style={[$modal.infoLine, { color: T.primary }]}>📌 요청: {order.request}</Text>
+              ) : null}
+            </View>
+          )}
 
           {/* 사진 촬영 영역 */}
           <TouchableOpacity style={$modal.photoBox} onPress={takePhoto} activeOpacity={0.85}>
@@ -996,6 +1038,8 @@ const $modal = StyleSheet.create({
   gpsText:      { fontSize: 12, fontWeight: '600' },
   warnBanner:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', padding: 12, borderRadius: 10, marginBottom: 8 },
   warnText:     { fontSize: 12.5, color: '#DC2626', flex: 1, fontWeight: '600', lineHeight: 18 },
+  infoBox:      { backgroundColor: '#F8FAFC', borderRadius: 10, padding: 10, marginTop: 8, gap: 4 },
+  infoLine:     { fontSize: 13, color: '#334155', fontWeight: '600', lineHeight: 18 },
   notice:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.bg, padding: 12, borderRadius: 10, marginBottom: 20 },
   noticeText:   { fontSize: 12, color: T.textSub, flex: 1, lineHeight: 18 },
   btnRow:       { flexDirection: 'row', gap: 10 },
