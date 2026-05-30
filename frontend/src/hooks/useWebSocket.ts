@@ -29,8 +29,10 @@ export function useWebSocket(room: string, onMessage: (data: unknown) => void) {
 
     const token = localStorage.getItem('access_token') || ''
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${window.location.host}/ws/${room}?token=${encodeURIComponent(token)}`
-    const ws = new WebSocket(url)
+    const url = `${protocol}://${window.location.host}/ws/${room}`
+    const ws = token
+      ? new WebSocket(url, ['access-token', token])
+      : new WebSocket(url)
 
     ws.onopen = () => startHeartbeat(ws)
 

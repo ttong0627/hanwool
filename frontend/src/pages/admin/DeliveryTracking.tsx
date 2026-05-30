@@ -453,7 +453,7 @@ export function DeliveryTracking() {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     let ws: WebSocket
     try {
-      ws = new WebSocket(`${protocol}://${window.location.host}/ws?token=${token}`)
+      ws = new WebSocket(`${protocol}://${window.location.host}/ws/admin`, ['access-token', token])
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)

@@ -4,7 +4,7 @@
 
 /* ── Semantic Design Tokens (/design-system) ─────────────────── */
 :root {
-  --surface-base:     #f8f9fb;
+  --surface-base:     #f5f7fa;
   --surface-card:     #ffffff;
   --surface-raised:   #ffffff;
   --surface-overlay:  rgba(0, 0, 0, 0.48);
@@ -14,9 +14,9 @@
   --text-muted:       #9ca3af;
   --text-inverse:     #ffffff;
 
-  --border-subtle:    #f0f1f3;
-  --border-default:   #e5e7eb;
-  --border-strong:    #d1d5db;
+  --border-subtle:    #e9edf2;
+  --border-default:   #dfe4ea;
+  --border-strong:    #c9d1da;
 
   --brand:            #f97316;
   --brand-dark:       #ea580c;
@@ -24,14 +24,14 @@
   --brand-glow:       rgba(249, 115, 22, 0.28);
 
   --radius-sm:  6px;
-  --radius:     10px;
-  --radius-lg:  14px;
-  --radius-xl:  18px;
-  --radius-2xl: 24px;
+  --radius:     8px;
+  --radius-lg:  10px;
+  --radius-xl:  12px;
+  --radius-2xl: 16px;
 
-  --shadow-sm:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow:      0 2px 8px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
-  --shadow-lg:   0 8px 24px rgba(0,0,0,0.09), 0 2px 6px rgba(0,0,0,0.05);
+  --shadow-sm:   0 1px 2px rgba(16,24,40,0.05), 0 1px 1px rgba(16,24,40,0.03);
+  --shadow:      0 8px 24px rgba(16,24,40,0.08), 0 1px 2px rgba(16,24,40,0.04);
+  --shadow-lg:   0 18px 48px rgba(16,24,40,0.12), 0 4px 12px rgba(16,24,40,0.06);
   --shadow-brand: 0 4px 16px var(--brand-glow);
 
   --transition-fast:   150ms cubic-bezier(0.16,1,0.3,1);
@@ -47,13 +47,22 @@
 
   body {
     font-family: 'Pretendard Variable', 'Pretendard', 'Noto Sans KR', sans-serif;
-    background-color: var(--surface-base);
+    background:
+      linear-gradient(180deg, #f8fafc 0%, var(--surface-base) 48%, #eef2f7 100%);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     word-break: keep-all;
     overflow-wrap: break-word;
     line-height: 1.6;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+  }
+
+  main {
+    scrollbar-gutter: stable;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -114,9 +123,10 @@
 
   /* 버튼 기본 (/ui-ux-pro-max §2-Touch, §7) */
   .btn-primary {
-    @apply bg-brand-500 hover:bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg
-           transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer;
-    box-shadow: var(--shadow-sm);
+    @apply bg-brand-500 hover:bg-brand-600 text-white font-semibold px-4 py-2
+           transition-all active:scale-[0.98] cursor-pointer;
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(16,24,40,0.08), 0 8px 18px rgba(249,115,22,0.16);
     transition-duration: 200ms;
     transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -128,8 +138,10 @@
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-gray-700 font-semibold px-4 py-2 rounded-lg
-           border border-gray-200 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer;
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-semibold px-4 py-2
+           border transition-all active:scale-[0.98] cursor-pointer;
+    border-color: var(--border-default);
+    border-radius: var(--radius);
     box-shadow: var(--shadow-sm);
     transition-duration: 200ms;
     transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
@@ -138,29 +150,34 @@
   .btn-secondary:disabled { @apply opacity-50 cursor-not-allowed; transform: none !important; }
 
   .btn-danger {
-    @apply bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded-lg
-           transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer;
+    @apply bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2
+           transition-all active:scale-[0.98] cursor-pointer;
+    border-radius: var(--radius);
     box-shadow: var(--shadow-sm);
     transition-duration: 200ms;
   }
 
   /* 카드 (/design-system 토큰 활용) */
   .card {
-    @apply bg-white rounded-xl border p-4;
+    @apply bg-white border p-4;
     border-color: var(--border-subtle);
+    border-radius: var(--radius);
     box-shadow: var(--shadow-sm);
-    transition: box-shadow var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
   .card-hover:hover {
+    border-color: var(--border-default);
     box-shadow: var(--shadow);
   }
 
   /* 인풋 (/ui-ux-pro-max §8-Forms) */
   .input {
-    @apply w-full border rounded-lg px-3 py-2 text-sm bg-white
+    @apply w-full border px-3 py-2 text-sm bg-white
            focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400
            placeholder:text-gray-400;
     border-color: var(--border-default);
+    border-radius: var(--radius);
+    box-shadow: inset 0 1px 1px rgba(16,24,40,0.02);
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
   .input:disabled { @apply bg-gray-50 text-gray-400 cursor-not-allowed; }
@@ -203,28 +220,28 @@
   /* ── 프리미엄 카드 (엘리베이션 + hover 부상) ── */
   .card-elevated {
     background: #ffffff;
-    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
     box-shadow:
-      0 1px 2px rgba(0,0,0,0.04),
-      0 4px 16px rgba(0,0,0,0.06),
-      0 0 0 1px rgba(0,0,0,0.03);
-    transition: box-shadow var(--transition-base), transform var(--transition-base);
+      0 1px 2px rgba(16,24,40,0.04),
+      0 10px 28px rgba(16,24,40,0.07);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-base);
   }
   .card-elevated:hover {
+    border-color: var(--border-default);
     box-shadow:
-      0 4px 12px rgba(0,0,0,0.07),
-      0 16px 40px rgba(0,0,0,0.09),
-      0 0 0 1px rgba(0,0,0,0.04);
-    transform: translateY(-2px);
+      0 4px 12px rgba(16,24,40,0.07),
+      0 18px 44px rgba(16,24,40,0.10);
+    transform: translateY(-1px);
   }
 
   /* ── 글래스모피즘 패널 (지도 오버레이, 모달 서브 등) ── */
   .glass-panel {
-    background: rgba(255,255,255,0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255,255,255,0.75);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(223,228,234,0.9);
+    box-shadow: 0 12px 32px rgba(16,24,40,0.10), 0 1px 2px rgba(16,24,40,0.04);
   }
   .glass-panel-dark {
     background: rgba(15,23,41,0.82);
@@ -236,12 +253,12 @@
 
   /* ── 지도 프리미엄 컨테이너 ── */
   .map-premium {
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius);
     overflow: hidden;
+    border: 1px solid var(--border-subtle);
     box-shadow:
-      0 0 0 1px rgba(0,0,0,0.06),
-      0 4px 20px rgba(0,0,0,0.10),
-      0 12px 48px rgba(0,0,0,0.08);
+      0 1px 2px rgba(16,24,40,0.04),
+      0 12px 36px rgba(16,24,40,0.10);
   }
 
   /* ── 기사 컬러 드라이버 칩 ── */
@@ -277,11 +294,12 @@
 
   /* ── 프리미엄 인풋 ── */
   .input-premium {
-    @apply w-full border rounded-xl px-3.5 py-2.5 text-sm bg-white
+    @apply w-full border px-3.5 py-2.5 text-sm bg-white
            focus:outline-none focus:ring-2 focus:ring-brand-400/30 focus:border-brand-400
            placeholder:text-gray-400 transition-all;
     border-color: var(--border-default);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border-radius: var(--radius);
+    box-shadow: inset 0 1px 1px rgba(16,24,40,0.02), 0 1px 2px rgba(16,24,40,0.04);
   }
 
   /* ── 스태거 애니메이션 (카드 그리드 순차 진입) ── */

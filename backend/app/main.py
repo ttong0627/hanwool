@@ -129,14 +129,31 @@ app.include_router(app_meta.router, prefix="/api/v1")
 app.mount("/photos", StaticFiles(directory="photos"), name="photos")
 
 
+def _websocket_auth_token(websocket: WebSocket, query_token: str) -> tuple[str, str | None]:
+    if query_token:
+        return query_token, None
+
+    protocols = [
+        protocol.strip()
+        for protocol in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        if protocol.strip()
+    ]
+    if len(protocols) >= 2 and protocols[0] == "access-token":
+        return protocols[1], "access-token"
+
+    return "", None
+
+
 @app.websocket("/ws/{room}")
 async def websocket_endpoint(websocket: WebSocket, room: str, token: str = Query(default="")):
     from app.core.security import decode_token
-    payload = decode_token(token)
+
+    auth_token, accept_subprotocol = _websocket_auth_token(websocket, token)
+    payload = decode_token(auth_token)
     if not payload or payload.get("type") != "access":
         await websocket.close(code=4001)
         return
-    await manager.connect(websocket, room)
+    await manager.connect(websocket, room, subprotocol=accept_subprotocol)
     try:
         while True:
             data = await websocket.receive_json()
