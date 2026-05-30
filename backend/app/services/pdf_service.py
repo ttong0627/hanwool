@@ -259,6 +259,19 @@ def generate_complaint_report_pdf(complaint: dict) -> bytes:
     return buffer.getvalue()
 
 
+def _logo_flowable():
+    """수령확인증 상단 로고. 없거나 오류면 None."""
+    path = "app/assets/hanwool_logo.png"
+    if not os.path.exists(path):
+        return None
+    try:
+        img = Image(path, width=1.6 * cm, height=1.6 * cm, kind="proportional")
+        img.hAlign = "CENTER"
+        return img
+    except Exception:
+        return None
+
+
 def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -270,11 +283,15 @@ def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
         bottomMargin=0.8 * cm,
         title="배송 수령증 목록",
     )
-    elements = [
-        Paragraph("배송 수령증 목록", _header_style()),
-        Paragraph(f"배송 완료일: {date_str}  |  총 {len(orders)}건", _sub_style()),
-        Spacer(1, 0.25 * cm),
-    ]
+    elements: list = []
+    _logo = _logo_flowable()
+    if _logo is not None:
+        elements.append(_logo)
+        elements.append(Spacer(1, 0.1 * cm))
+    elements.append(Paragraph("배송 수령확인증", _header_style()))
+    elements.append(Paragraph("(주)한울 · 경안시장 집배송 서비스", _sub_style()))
+    elements.append(Paragraph(f"배송 완료일: {date_str}  |  총 {len(orders)}건", _sub_style()))
+    elements.append(Spacer(1, 0.25 * cm))
 
     headers = ["주문번호", "이름", "연락처", "배송동", "주소", "물품", "수량", "요청사항", "배송시간", "기사"]
     rows = [headers]

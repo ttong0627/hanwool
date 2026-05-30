@@ -50,6 +50,7 @@ export function DeliveryReceipts() {
   const [dateFrom, setDateFrom] = useState(today)
   const [dateTo, setDateTo] = useState(today)
   const [search, setSearch] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const { data: rows = [], isLoading } = useQuery<ReceiptOrder[]>({
     queryKey: ['delivery-receipts', dateFrom, dateTo],
@@ -69,7 +70,36 @@ export function DeliveryReceipts() {
     )
   }, [rows, search])
 
-  const pdfUrl = `/api/v1/documents/delivery-receipts.pdf?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
+  async function fetchReceiptsPdf(): Promise<Blob> {
+    const r = await api.get('/documents/delivery-receipts.pdf', {
+      params: { date_from: dateFrom || undefined, date_to: dateTo || undefined },
+      responseType: 'blob',
+    })
+    return r.data as Blob
+  }
+  async function handlePrint() {
+    if (busy) return
+    try {
+      setBusy(true)
+      const url = URL.createObjectURL(await fetchReceiptsPdf())
+      const w = window.open(url, '_blank')
+      if (!w) { URL.revokeObjectURL(url); alert('팝업이 차단되었습니다. 팝업을 허용해 주세요.') }
+    } catch { alert('수령확인증 생성에 실패했습니다.') } finally { setBusy(false) }
+  }
+  async function handleDownloadPdf() {
+    if (busy) return
+    try {
+      setBusy(true)
+      const url = URL.createObjectURL(await fetchReceiptsPdf())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `배송수령확인증_${dateFrom}_${dateTo}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1500)
+    } catch { alert('PDF 저장에 실패했습니다.') } finally { setBusy(false) }
+  }
 
   return (
     <div className="p-6 space-y-4 page-fade-in">
@@ -79,11 +109,11 @@ export function DeliveryReceipts() {
           <p className="text-sm text-gray-500 mt-0.5">일자별 배송 완료 내역과 사진, 서명을 확인합니다.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => window.print()} className="btn-secondary flex items-center gap-1.5 text-sm">
+          <button type="button" disabled={busy} onClick={handlePrint} className="btn-secondary flex items-center gap-1.5 text-sm disabled:opacity-50">
             <Printer className="h-4 w-4" />인쇄
           </button>
-          <button onClick={() => window.open(pdfUrl)} className="btn-primary flex items-center gap-1.5 text-sm">
-            <Download className="h-4 w-4" />PDF 저장
+          <button type="button" disabled={busy} onClick={handleDownloadPdf} className="btn-primary flex items-center gap-1.5 text-sm disabled:opacity-50">
+            <Download className="h-4 w-4" />{busy ? '생성 중…' : 'PDF 저장'}
           </button>
         </div>
       </div>
