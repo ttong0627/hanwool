@@ -98,12 +98,12 @@ async function uploadPhoto(
 }
 
 /* ── MMS 발송 ────────────────────────────────────────────────────── */
-// 전체 출발 시 수신자별 순차 발송 (단체문자=번호 노출이라 개인정보 보호상 1:1 반복)
-async function sendBroadcastSms(phones: string[], message: string): Promise<void> {
-  if (!phones?.length) return
+// 전체 출발 시 주문별 개인화 메시지를 수신자별 순차 발송 (번호 노출 방지 + 순번별 ETA 안내)
+async function sendDepartureJobs(jobs: { phone: string; message: string }[]): Promise<void> {
+  if (!jobs?.length) return
   const available = await SMS.isAvailableAsync()
   if (!available) { Alert.alert('문자 미지원', '이 기기에서는 문자를 보낼 수 없습니다.'); return }
-  for (const phone of phones) {
+  for (const { phone, message } of jobs) {
     try { await SMS.sendSMSAsync([phone], message, {}) }
     catch { /* 취소/미지원 — 다음 수신자로 진행 */ }
   }
@@ -653,14 +653,14 @@ export function DriverHomeScreen() {
     mutationFn: () => api.post('/orders/dispatch/start-work').then((r) => r.data),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['driver-route'] })
-      const recipients: string[] = data?.sms_recipients || []
-      if (recipients.length && data?.sms_message) {
+      const jobs: { phone: string; message: string }[] = data?.sms_jobs || []
+      if (jobs.length) {
         Alert.alert(
           '배송업무 시작',
-          `${data.message || '배송을 시작합니다.'}\n\n고객 ${recipients.length}곳에 출발 문자를 보낼까요?`,
+          `${data.message || '배송을 시작합니다.'}\n\n고객 ${jobs.length}곳에 출발 문자를 보낼까요?`,
           [
             { text: '나중에', style: 'cancel' },
-            { text: '출발 문자 보내기', onPress: () => sendBroadcastSms(recipients, data.sms_message) },
+            { text: '출발 문자 보내기', onPress: () => sendDepartureJobs(jobs) },
           ],
         )
       } else {

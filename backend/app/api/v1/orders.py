@@ -446,15 +446,12 @@ async def start_driver_work(
                 )
             await db.flush()
             await _push_route_to_drivers(pre_assigned)
-            from app.core.security import decrypt_field
-            phones = [decrypt_field(o.customer_phone_enc) for o in pre_assigned]
-            sms_recipients, sms_message = sms_service.build_departure_broadcast(phones)
+            sms_jobs = sms_service.build_departure_messages(pre_assigned)
             return {
                 "status": "assigned",
                 "assigned_count": len(pre_assigned),
                 "message": f"오늘 배송 {len(pre_assigned)}건을 시작합니다.",
-                "sms_recipients": sms_recipients,
-                "sms_message": sms_message,
+                "sms_jobs": sms_jobs,
             }
         return {
             "status": "already_assigned",
@@ -797,7 +794,8 @@ async def update_status(
     from app.core.security import decrypt_field
     customer_phone = decrypt_field(order.customer_phone_enc)
     customer_name = decrypt_field(order.customer_name_enc)
-    sms_message = sms_service.get_sms_message(status, customer_name)
+    eta = sms_service.eta_text(order.sequence) if status == OrderStatus.in_transit else "30분 이내"
+    sms_message = sms_service.get_sms_message(status, customer_name, eta=eta)
 
     # 완료 문자: MMS 사진 첨부가 일부 기기서 실패 → 서버 호스팅 사진 링크를 본문에 추가(항상 열람 가능)
     if status == OrderStatus.delivered and order.delivery_photo_path and sms_message:

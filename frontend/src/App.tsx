@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/Login'
 import { Dashboard } from '@/pages/admin/Dashboard'
 import { Orders } from '@/pages/admin/Orders'
 import { DeliveryTracking } from '@/pages/admin/DeliveryTracking'
+import { DeliveryCompleted } from '@/pages/admin/DeliveryCompleted'
 import { DeliveryDispatch } from '@/pages/admin/DeliveryDispatch'
 import { DeliveryReceipts } from '@/pages/admin/DeliveryReceipts'
 import { Drivers } from '@/pages/admin/Drivers'
@@ -50,6 +51,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="orders" element={<Orders />} />
               <Route path="delivery-tracking" element={<DeliveryTracking />} />
+              <Route path="delivery-completed" element={<DeliveryCompleted />} />
               <Route path="dispatch" element={<DeliveryDispatch />} />
               <Route path="delivery-receipts" element={<DeliveryReceipts />} />
               <Route path="drivers" element={<Drivers />} />

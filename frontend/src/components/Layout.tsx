@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut,
   Shield, QrCode, UserCog, MapPin, Route, UserCircle, FileCheck2,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, PackageCheck,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
@@ -13,6 +13,7 @@ const adminNavs = [
   { to: '/admin',                    icon: LayoutDashboard, label: '대시보드' },
   { to: '/admin/orders',             icon: ClipboardList,   label: '주문 관리' },
   { to: '/admin/delivery-tracking',  icon: MapPin,          label: '배송 확인' },
+  { to: '/admin/delivery-completed', icon: PackageCheck,    label: '배송 완료' },
   { to: '/admin/dispatch',           icon: Route,           label: '배차 관리' },
   { to: '/admin/delivery-receipts',  icon: FileCheck2,      label: '배송 수령증' },
   { to: '/admin/drivers',            icon: Truck,           label: '기사 관리' },
