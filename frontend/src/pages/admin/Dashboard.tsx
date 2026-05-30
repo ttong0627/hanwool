@@ -240,11 +240,12 @@ export function Dashboard() {
       if (msg?.type === 'location' && msg.driver_id && msg.lat && msg.lng) {
         setDriverLocations((prev) => {
           const next = new Map(prev)
+          // 폰/서버 시계 오차를 피하려고 "대시보드가 받은 시각"을 기준으로 통일한다.
           next.set(msg.driver_id!, {
             driver_id: msg.driver_id!,
             lat: msg.lat!,
             lng: msg.lng!,
-            timestamp: msg.timestamp ?? Date.now(),
+            timestamp: Date.now(),
           })
           return next
         })
@@ -257,6 +258,31 @@ export function Dashboard() {
 
   useWebSocket('admin', handleWsMessage)
   useWebSocket('driver-location', handleWsMessage)
+
+  // 진입/주기 백필 — WS가 없거나 새로고침·재접속해도 마지막 위치가 사라지지 않게 한다.
+  // 서버가 준 age_seconds(서버 기준 경과초)를 대시보드 시각 체계로 환산해 머지(더 최신 WS값은 유지).
+  const { data: backfill } = useQuery<{ driver_id: number; lat: number; lng: number; age_seconds: number }[]>({
+    queryKey: ['driver-locations-backfill'],
+    queryFn: () => api.get('/deliveries/drivers/locations').then((r) => r.data),
+    refetchInterval: 20_000,
+  })
+
+  useEffect(() => {
+    if (!backfill?.length) return
+    setDriverLocations((prev) => {
+      const next = new Map(prev)
+      const now = Date.now()
+      for (const loc of backfill) {
+        if (loc.driver_id == null || loc.lat == null || loc.lng == null) continue
+        const ts = now - Math.max(0, loc.age_seconds) * 1000
+        const existing = next.get(loc.driver_id)
+        // 이미 더 최신(실시간 WS) 값이 있으면 덮어쓰지 않는다.
+        if (existing && existing.timestamp >= ts) continue
+        next.set(loc.driver_id, { driver_id: loc.driver_id, lat: loc.lat, lng: loc.lng, timestamp: ts })
+      }
+      return next
+    })
+  }, [backfill])
 
   const inProgress = (todayOrders || []).filter((o: { status: string }) =>
     ['assigned', 'picked_up', 'in_transit'].includes(o.status),

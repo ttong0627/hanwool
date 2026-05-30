@@ -864,9 +864,10 @@ export function DriverHomeScreen() {
     handleStatusUpdate(matched)
   }
 
-  useLocationTracking(myId, API_BASE)
-
   const activeOrders = localOrders.filter((o) => o.status !== 'delivered')
+  // 배송 시작~완료 동안만 위치 추적 — 픽업/출발한 주문이 하나라도 있으면 ON, 모두 완료되면 OFF (배터리·프라이버시 보호)
+  const isTracking = activeOrders.some((o) => o.status === 'picked_up' || o.status === 'in_transit')
+  useLocationTracking(myId, isTracking)
   const doneOrders = localOrders.filter((o) => o.status === 'delivered')
   const assignedOrders = localOrders.filter((o) => o.status === 'assigned')
   const otherDrivers = allDrivers.filter((d) => String(d.id) !== String(myId))

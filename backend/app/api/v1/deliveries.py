@@ -1,16 +1,37 @@
+import json
+import time
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import redis.asyncio as aioredis
+
 from app.api.v1.deps import get_current_user, require_admin_or_receiver
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.delivery import Delivery
-from app.models.order import Order
 from app.models.user import User
 from app.services.order_service import get_orders_today
 from app.services.route_service import optimize_route
+from app.websocket.handler import manager
 
 router = APIRouter(prefix="/deliveries", tags=["배송"])
+
+# 기사 실시간 위치 — 휘발성 데이터라 Redis에 저장(TTL). 폰 시계 문제를 피하려고 서버 시각으로 기록.
+DRIVER_LOC_PREFIX = "driver:loc:"
+DRIVER_LOC_TTL = 120  # 초 — 이 시간 동안 신호 없으면 자동 만료
+
+# 이벤트 루프 전역에서 재사용하는 Redis 클라이언트(매 요청 풀 생성으로 인한 소켓 누수 방지)
+_redis_client = None
+
+
+def _redis():
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_client
 
 
 @router.get("/route")
@@ -39,6 +60,35 @@ async def get_optimized_route(
     return optimize_route(enriched)
 
 
+class DriverLocationIn(BaseModel):
+    lat: float
+    lng: float
+
+
+@router.post("/driver-location")
+async def report_driver_location(
+    body: DriverLocationIn,
+    current_user: User = Depends(get_current_user),
+):
+    """기사 앱(포그라운드/백그라운드)이 주기적으로 호출.
+    서버 시각으로 기록해 폰 시계 오차 문제를 제거하고, Redis 저장 + 관리자 실시간 브로드캐스트."""
+    ts = int(time.time() * 1000)
+    r = _redis()
+    await r.setex(
+        f"{DRIVER_LOC_PREFIX}{current_user.id}",
+        DRIVER_LOC_TTL,
+        json.dumps({"driver_id": current_user.id, "lat": body.lat, "lng": body.lng, "ts": ts}),
+    )
+    await manager.broadcast("driver-location", {
+        "type": "location",
+        "driver_id": current_user.id,
+        "lat": body.lat,
+        "lng": body.lng,
+        "timestamp": ts,
+    })
+    return {"ok": True, "timestamp": ts}
+
+
 @router.post("/{order_id}/location")
 async def update_driver_location(
     order_id: int,
@@ -59,21 +109,25 @@ async def update_driver_location(
 
 
 @router.get("/drivers/locations")
-async def get_all_driver_locations(db: AsyncSession = Depends(get_db), _=Depends(require_admin_or_receiver)):
-    result = await db.execute(
-        select(Delivery, Order)
-        .join(Order, Delivery.order_id == Order.id)
-        .where(Order.status.in_(["assigned", "picked_up", "in_transit"]))
-    )
+async def get_all_driver_locations(_=Depends(require_admin_or_receiver)):
+    """관리자 대시보드 진입 시 백필용 — Redis에 저장된 마지막 위치를 반환.
+    age_seconds(서버 기준 경과초)를 함께 줘서 폰/PC 시계와 무관하게 온라인 판정이 가능하다."""
+    r = _redis()
+    now_ms = int(time.time() * 1000)
     locations = []
-    for delivery, order in result.all():
+    async for key in r.scan_iter(match=f"{DRIVER_LOC_PREFIX}*", count=100):
+        raw = await r.get(key)
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        ts = int(data.get("ts") or now_ms)
         locations.append({
-            "driver_id": delivery.driver_id,
-            "order_id": delivery.order_id,
-            "order_no": order.order_no,
-            "dong": order.dong,
-            "lat": delivery.current_lat,
-            "lng": delivery.current_lng,
-            "updated_at": delivery.updated_at.isoformat() if delivery.updated_at else None,
+            "driver_id": data.get("driver_id"),
+            "lat": data.get("lat"),
+            "lng": data.get("lng"),
+            "age_seconds": max(0.0, (now_ms - ts) / 1000),
         })
     return locations

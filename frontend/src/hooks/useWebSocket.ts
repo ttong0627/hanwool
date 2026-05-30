@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 
 const HEARTBEAT_INTERVAL = 20_000  // 20초마다 ping
 const RECONNECT_DELAY = 3_000
-const LOCATION_TIMEOUT = 30_000    // 30초 이상 위치 없으면 "위치 없음"
+const LOCATION_TIMEOUT = 45_000    // 45초 이상 위치 없으면 "위치 없음" (전송 10초 주기 대비 여유 확보 → 깜빡임 방지)
 
 export function useWebSocket(room: string, onMessage: (data: unknown) => void) {
   const wsRef = useRef<WebSocket | null>(null)
