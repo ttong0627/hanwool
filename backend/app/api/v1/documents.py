@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date as _date, datetime, time as _time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +22,7 @@ from app.services.pdf_service import (generate_complaint_report_pdf,
 from app.services.qr_service import generate_labels_pdf
 
 router = APIRouter(prefix="/documents", tags=["문서"])
+_KST = ZoneInfo("Asia/Seoul")
 
 
 @router.get("/delivery-list.pdf")
@@ -66,13 +68,15 @@ async def list_delivery_receipts(
     _=Depends(require_receiver_or_above),
 ):
     q = select(Order).where(Order.status == OrderStatus.delivered)
+    # 날짜는 KST 기준 입력 → delivered_at(UTC 저장)과 비교 위해 UTC 경계로 변환
     if date_from:
-        q = q.where(Order.delivered_at >= datetime.fromisoformat(date_from))
+        d_from = _date.fromisoformat(date_from[:10])
+        from_utc = datetime.combine(d_from, _time.min).replace(tzinfo=_KST).astimezone(timezone.utc)
+        q = q.where(Order.delivered_at >= from_utc)
     if date_to:
-        dt_to = datetime.fromisoformat(date_to)
-        if len(date_to) == 10:
-            dt_to = dt_to.replace(hour=23, minute=59, second=59, microsecond=999999)
-        q = q.where(Order.delivered_at <= dt_to)
+        d_to = _date.fromisoformat(date_to[:10])
+        to_utc = datetime.combine(d_to + timedelta(days=1), _time.min).replace(tzinfo=_KST).astimezone(timezone.utc)
+        q = q.where(Order.delivered_at < to_utc)
     q = q.order_by(Order.delivered_at.desc().nullslast(), Order.order_no.asc())
     orders = [decrypt_order(order) for order in (await db.execute(q)).scalars().all()]
     orders = await attach_driver_info(db, orders)
