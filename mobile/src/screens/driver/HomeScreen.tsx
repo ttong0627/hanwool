@@ -19,6 +19,7 @@ import { useLocationTracking } from '@/hooks/useLocationTracking'
 import { useAutoSaveCache, loadOrdersFromCache } from '@/hooks/useOfflineOrders'
 import { ScanModal } from './ScanModal'
 import { CameraCaptureModal } from './CameraCaptureModal'
+import { SignaturePad } from './SignaturePad'
 
 const API_BASE = BASE_URL
 
@@ -97,6 +98,11 @@ async function uploadPhoto(
   await api.post(`/orders/${orderId}/photo`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+}
+
+/* ── 수령인 서명 업로드 (base64 PNG) ─────────────────────────────── */
+async function uploadSignature(orderId: number, base64: string): Promise<void> {
+  await api.post(`/orders/${orderId}/signature`, { image_base64: base64 })
 }
 
 /* ── MMS 발송 ────────────────────────────────────────────────────── */
@@ -206,10 +212,12 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
 function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean) => void; onCancel: () => void }) {
+}: { order: Order; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [signature, setSignature] = useState<string | null>(null)
+  const [signOpen, setSignOpen] = useState(false)
   const insets = useSafeAreaInsets()
 
   // 배송지 좌표와 기사 GPS 거리(m). 좌표 미매칭 주문은 경안시장 폴백(37.4292,127.2551)이라 경고 스킵.
@@ -260,7 +268,7 @@ function DeliveryCompleteModal({
 
   const submit = () => {
     if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
-    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force) }
+    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force, signature) }
     if (coordWarn) {
       Alert.alert(
         '⚠️ 위치 경고',
@@ -276,6 +284,7 @@ function DeliveryCompleteModal({
   }
 
   return (
+    <>
     <Modal transparent animationType="slide" onRequestClose={onCancel}>
       {cameraOpen ? (
         /* 카메라가 열린 동안엔 완료 시트를 아예 마운트하지 않음 — 한 화면에 하나만
@@ -334,6 +343,23 @@ function DeliveryCompleteModal({
             </TouchableOpacity>
           )}
 
+          {/* 수령인 서명 (선택) */}
+          <TouchableOpacity
+            onPress={() => setSignOpen(true)}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginBottom: 4, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5,
+              borderColor: signature ? T.success : T.primary,
+              backgroundColor: signature ? 'rgba(34,197,94,0.08)' : 'rgba(249,115,22,0.06)',
+            }}
+          >
+            <Ionicons name={signature ? 'checkmark-circle' : 'create-outline'} size={18} color={signature ? T.success : T.primary} />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: signature ? T.success : T.primary }}>
+              {signature ? '서명 완료 — 다시 받기' : '사인 받기 (선택)'}
+            </Text>
+          </TouchableOpacity>
+
           {/* GPS POD 상태 표시 */}
           <View style={$modal.gpsRow}>
             <Ionicons
@@ -389,6 +415,12 @@ function DeliveryCompleteModal({
       </View>
       )}
     </Modal>
+    <SignaturePad
+      visible={signOpen}
+      onSave={(b64) => { setSignature(b64); setSignOpen(false) }}
+      onCancel={() => setSignOpen(false)}
+    />
+    </>
   )
 }
 
@@ -778,12 +810,15 @@ export function DriverHomeScreen() {
   const markRetry = (id: number, uri: string) => { retryQueue.current.set(id, uri); setRetryKeys([...retryQueue.current.keys()]) }
   const clearRetry = (id: number) => { retryQueue.current.delete(id); setRetryKeys([...retryQueue.current.keys()]) }
 
-  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean) => {
+  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null) => {
     setCompleteTarget(null)
     try { await uploadPhoto(order.id, photoUri, podLat, podLng, force); clearRetry(order.id) }
     catch {
       markRetry(order.id, photoUri)
       Alert.alert('사진 업로드 실패', '배달 완료는 처리됩니다.\n나중에 재시도 버튼으로 재업로드할 수 있습니다.', [{ text: '확인' }])
+    }
+    if (signatureBase64) {
+      try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
     }
     try {
       const data = await api.put<StatusResponse>(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
@@ -1021,7 +1056,7 @@ export function DriverHomeScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng, force) => handleDeliveryComplete(completeTarget, uri, lat, lng, force)}
+          onConfirm={(uri, lat, lng, force, sig) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}

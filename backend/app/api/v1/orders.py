@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import os
 import uuid
+import base64
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -1063,6 +1064,48 @@ async def upload_delivery_photo(
         "coord_distance_m": distance_m,
         "coord_mismatch": order.coord_mismatch,
     }
+
+
+@router.post("/{order_id}/signature")
+async def upload_delivery_signature(
+    order_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_driver_or_above),
+):
+    """수령인 서명(PNG base64)을 저장 — 배송 완료 시 선택. 사진 업로드와 동일 권한."""
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    if current_user.role == "driver" and order.driver_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 서명 등록할 수 있습니다.")
+
+    raw = ((body or {}).get("image_base64") or "").strip()
+    if raw.startswith("data:") and "," in raw:
+        raw = raw.split(",", 1)[1]
+    try:
+        content = base64.b64decode(raw, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="서명 이미지 형식이 올바르지 않습니다.")
+    if not content:
+        raise HTTPException(status_code=400, detail="서명 데이터가 비어 있습니다.")
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="서명 파일 크기는 5MB를 초과할 수 없습니다.")
+    try:
+        Image.open(BytesIO(content)).verify()
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지입니다.")
+
+    os.makedirs(PHOTO_DIR, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.png"
+    filepath = os.path.join(PHOTO_DIR, filename)
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(content)
+
+    order.delivery_signature_path = filename
+    await db.flush()
+    return {"signature_url": f"/photos/{filename}", "order_no": order.order_no}
 
 
 @router.post("/sequence/auto")

@@ -24,6 +24,7 @@ interface OverviewOrder {
   notes?: string | null
   driver_name?: string | null
   delivery_photo_url?: string | null
+  delivery_signature_url?: string | null
   delivered_at?: string | null
   lat?: number | null
   lng?: number | null
@@ -163,6 +164,19 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
             <InfoRow label="요청사항"><span className={order.request ? 'font-medium text-brand-700' : 'text-gray-400'}>{order.request || '없음'}</span></InfoRow>
             {order.notes ? <InfoRow label="메모">{order.notes}</InfoRow> : null}
             <InfoRow label="기사"><span className="inline-flex items-center gap-1"><Truck className="h-4 w-4 text-gray-400" />{order.driver_name || '-'}</span></InfoRow>
+            {order.delivery_signature_url && (
+              <InfoRow label="서명">
+                <button
+                  type="button"
+                  title="서명 크게 보기"
+                  onClick={() => order.delivery_signature_url && onZoom(order.delivery_signature_url)}
+                  className="inline-flex items-center gap-1 rounded border border-gray-200 bg-white px-1.5 py-1 hover:border-brand-300"
+                >
+                  <img src={order.delivery_signature_url} alt="수령인 서명" className="h-8 w-20 rounded bg-white object-contain" />
+                  <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
+                </button>
+              </InfoRow>
+            )}
 
             {/* 기사 POD 좌표 + 지도 */}
             <InfoRow label="기사 좌표">
