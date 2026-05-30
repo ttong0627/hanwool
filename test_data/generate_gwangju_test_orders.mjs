@@ -163,5 +163,6 @@ function writeWorkbook(count, fileName) {
 }
 
 fs.mkdirSync(outputDir, { recursive: true });
+writeWorkbook(17, "gwangju_4dong_test_orders_17.xlsx");
 writeWorkbook(30, "gwangju_4dong_test_orders_30.xlsx");
 writeWorkbook(65, "gwangju_4dong_test_orders_65.xlsx");
