@@ -85,7 +85,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db), _: User = Depends(re
 async def list_dispatch_requests(
     status_filter: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin_or_above),
+    _: User = Depends(require_super_admin),
 ):
     from app.core.security import decrypt_field
 
@@ -122,7 +122,7 @@ async def resolve_dispatch_request(
     request_id: int,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin_or_above),
+    current_user: User = Depends(require_super_admin),
 ):
     driver_ids = body.get("driver_ids", [])
     if not isinstance(driver_ids, list) or not driver_ids:
@@ -176,7 +176,7 @@ async def stats_by_dong(db: AsyncSession = Depends(get_db), _=Depends(require_ad
 
 
 @router.get("/stats/drivers")
-async def driver_stats(db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
+async def driver_stats(db: AsyncSession = Depends(get_db), _=Depends(require_super_admin)):
     from zoneinfo import ZoneInfo
     _KST = ZoneInfo("Asia/Seoul")
     today_start = (
@@ -197,7 +197,7 @@ async def driver_stats(db: AsyncSession = Depends(get_db), _=Depends(require_adm
 
 
 @router.get("/stats/drivers/period")
-async def driver_stats_period(days: int = 30, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
+async def driver_stats_period(days: int = 30, db: AsyncSession = Depends(get_db), _=Depends(require_super_admin)):
     """기간별 기사 누적 배송 통계"""
     since = datetime.now(timezone.utc) - timedelta(days=days)
     result = await db.execute(

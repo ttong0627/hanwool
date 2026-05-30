@@ -20,11 +20,12 @@ router = APIRouter(prefix="/users", tags=["사용자"])
 
 _CREATABLE_ROLES = {
     "super_admin": {"super_admin", "admin", "receiver", "driver", "customer"},
-    "admin": {"receiver", "driver", "customer"},
+    "admin": {"customer"},
     "receiver": {"customer"},
 }
 
 ELDERLY_AGE = 65
+STAFF_OR_DRIVER_ROLES = {"super_admin", "admin", "receiver", "driver"}
 
 
 def _calc_age(birth_year: int) -> int:
@@ -66,6 +67,11 @@ async def create_user(
 ):
     allowed = _CREATABLE_ROLES.get(current_user.role, set())
     target_role = data.role or "customer"
+    if target_role in STAFF_OR_DRIVER_ROLES and current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="스태프·기사 계정 생성은 최고관리자만 가능합니다.",
+        )
     if target_role not in allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -108,6 +114,13 @@ async def list_users(
 ):
     q = select(User).where(User.deleted_at == None)
     if current_user.role == "receiver":
+        q = q.where(User.role == "customer", User.is_active == True)
+    elif current_user.role != "super_admin":
+        if role and any(r.strip() != "customer" for r in role.split(",") if r.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="스태프·기사 계정 조회는 최고관리자만 가능합니다.",
+            )
         q = q.where(User.role == "customer", User.is_active == True)
     elif role == 'driver':
         # 기사 역할이거나 기사 업무가 부여된 관리자 모두 포함
@@ -157,12 +170,17 @@ async def search_by_phone(
 async def get_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if current_user.role != "super_admin" and (user.role in STAFF_OR_DRIVER_ROLES or user.is_driver):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="스태프·기사 계정 조회는 최고관리자만 가능합니다.",
+        )
     return _to_out(user)
 
 
@@ -171,12 +189,19 @@ async def update_user(
     user_id: int,
     data: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_receiver_or_above),
+    current_user: User = Depends(require_receiver_or_above),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if current_user.role != "super_admin" and (
+        user.role in STAFF_OR_DRIVER_ROLES or data.is_driver is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="스태프·기사 계정 수정은 최고관리자만 가능합니다.",
+        )
     if data.name:
         user.name_enc = encrypt_field(data.name)
     if data.phone:
@@ -207,7 +232,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin_or_above),
+    current_user: User = Depends(require_admin_or_above),
 ):
     result = await db.execute(select(User).where(User.id == user_id, User.deleted_at == None))
     user = result.scalar_one_or_none()
@@ -215,6 +240,11 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     if user.role == "super_admin":
         raise HTTPException(status_code=400, detail="총관리자 계정은 삭제할 수 없습니다.")
+    if current_user.role != "super_admin" and (user.role in STAFF_OR_DRIVER_ROLES or user.is_driver):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="스태프·기사 계정 삭제는 최고관리자만 가능합니다.",
+        )
 
     from datetime import datetime, timezone
 
@@ -228,12 +258,17 @@ async def reset_password(
     user_id: int,
     data: PasswordResetRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin_or_above),
+    current_user: User = Depends(require_admin_or_above),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if current_user.role != "super_admin" and (user.role in STAFF_OR_DRIVER_ROLES or user.is_driver):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="스태프·기사 계정 비밀번호 초기화는 최고관리자만 가능합니다.",
+        )
     user.password_hash = hash_password(data.password)
     return _to_out(user)
 

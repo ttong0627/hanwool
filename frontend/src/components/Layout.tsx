@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut,
   Shield, QrCode, UserCog, MapPin, Route, UserCircle, FileCheck2,
-  PanelLeftClose, PanelLeftOpen, PackageCheck,
+  PanelLeftClose, PanelLeftOpen, PackageCheck, Settings,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
@@ -14,14 +14,17 @@ const adminNavs = [
   { to: '/admin/orders',             icon: ClipboardList,   label: '주문 관리' },
   { to: '/admin/delivery-tracking',  icon: MapPin,          label: '배송 확인' },
   { to: '/admin/delivery-completed', icon: PackageCheck,    label: '배송 완료' },
-  { to: '/admin/dispatch',           icon: Route,           label: '배차 관리' },
   { to: '/admin/delivery-receipts',  icon: FileCheck2,      label: '배송 수령증' },
-  { to: '/admin/drivers',            icon: Truck,           label: '기사 관리' },
-  { to: '/admin/customers',          icon: Users,           label: '고객 관리' },
   { to: '/admin/reports',            icon: BarChart3,       label: '통계·보고서' },
-  { to: '/admin/privacy',            icon: Shield,          label: '개인정보' },
-  { to: '/admin/users',              icon: UserCog,         label: '사용자 관리' },
-  { to: '/admin/my-account',         icon: UserCircle,      label: '내 계정' },
+]
+
+const adminManagementNavs = [
+  { to: '/admin/dispatch',  icon: Route,      label: '배차 관리', superOnly: true },
+  { to: '/admin/drivers',   icon: Truck,      label: '기사 관리', superOnly: true },
+  { to: '/admin/customers', icon: Users,      label: '고객 관리' },
+  { to: '/admin/users',     icon: UserCog,    label: '사용자 관리', superOnly: true },
+  { to: '/admin/my-account', icon: UserCircle, label: '내 계정' },
+  { to: '/admin/privacy',   icon: Shield,     label: '개인정보', superOnly: true },
 ]
 
 const receiverNavs = [
@@ -42,10 +45,19 @@ const ROLE_LABELS: Record<string, string> = {
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const managementMenuRef = useRef<HTMLDivElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
+  const [managementMenuOpen, setManagementMenuOpen] = useState(false)
   const navs = ['admin', 'super_admin'].includes(user?.role || '') ? adminNavs : receiverNavs
+  const managementNavs = user?.role === 'super_admin'
+    ? adminManagementNavs
+    : adminManagementNavs.filter((item) => !item.superOnly)
 
-  const handleLogout = () => { logout(); navigate('/login') }
+  const handleLogout = () => {
+    setManagementMenuOpen(false)
+    logout()
+    navigate('/login')
+  }
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev
@@ -53,6 +65,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       return next
     })
   }
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!managementMenuRef.current?.contains(event.target as Node)) {
+        setManagementMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [])
 
   return (
     <div className="flex h-screen" style={{ background: 'var(--surface-base)' }}>
@@ -134,7 +156,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* 사용자 섹션 */}
-        <div className="p-2.5 border-t border-white/5">
+        <div ref={managementMenuRef} className="relative p-2.5 border-t border-white/5">
+          {['admin', 'super_admin'].includes(user?.role || '') && managementMenuOpen && (
+            <div
+              className={cn(
+                'absolute bottom-[calc(100%-0.25rem)] z-30 rounded-lg border border-white/10 bg-slate-950/95 p-1.5 shadow-2xl shadow-black/30 backdrop-blur',
+                sidebarCollapsed ? 'left-2 w-52' : 'left-2 right-2'
+              )}
+            >
+              {managementNavs.map(({ to, icon: Icon, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  onClick={() => setManagementMenuOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-orange-500/15 text-brand-300'
+                        : 'text-slate-300 hover:bg-white/7 hover:text-white'
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{label}</span>
+                </NavLink>
+              ))}
+            </div>
+          )}
           {!sidebarCollapsed && (
             <div
               className="rounded-xl px-3 py-2.5 mb-1.5"
@@ -151,8 +200,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <div className="text-xs font-semibold text-slate-200 truncate">{user?.name}</div>
                   <div className="text-[10px] text-slate-500">{ROLE_LABELS[user?.role ?? ''] ?? user?.role}</div>
                 </div>
+                {['admin', 'super_admin'].includes(user?.role || '') && (
+                  <button
+                    type="button"
+                    onClick={() => setManagementMenuOpen((prev) => !prev)}
+                    title="관리자 메뉴"
+                    className={cn(
+                      'ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors',
+                      managementMenuOpen ? 'bg-white/10 text-brand-300' : 'hover:bg-white/8 hover:text-slate-100'
+                    )}
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
+          )}
+          {sidebarCollapsed && ['admin', 'super_admin'].includes(user?.role || '') && (
+            <button
+              type="button"
+              onClick={() => setManagementMenuOpen((prev) => !prev)}
+              title="관리자 메뉴"
+              className={cn(
+                'mb-1.5 flex w-full items-center justify-center rounded-lg py-2.5 text-slate-500 transition-all duration-150',
+                managementMenuOpen ? 'bg-white/10 text-brand-300' : 'hover:bg-white/8 hover:text-slate-100'
+              )}
+            >
+              <Settings className="h-4 w-4" />
+            </button>
           )}
           <button
             onClick={handleLogout}

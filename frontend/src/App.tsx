@@ -29,7 +29,7 @@ function roleToHome(role: string): string {
 function PrivateRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const user = useAuthStore((s) => s.user)
   if (!user) return <Navigate to="/login" replace />
-  if (roles && !roles.includes(user.role)) return <Navigate to="/login" replace />
+  if (roles && !roles.includes(user.role)) return <Navigate to={roleToHome(user.role)} replace />
   return <>{children}</>
 }
 
@@ -52,13 +52,13 @@ export default function App() {
               <Route path="orders" element={<Orders />} />
               <Route path="delivery-tracking" element={<DeliveryTracking />} />
               <Route path="delivery-completed" element={<DeliveryCompleted />} />
-              <Route path="dispatch" element={<DeliveryDispatch />} />
+              <Route path="dispatch" element={<PrivateRoute roles={['super_admin']}><DeliveryDispatch /></PrivateRoute>} />
               <Route path="delivery-receipts" element={<DeliveryReceipts />} />
-              <Route path="drivers" element={<Drivers />} />
+              <Route path="drivers" element={<PrivateRoute roles={['super_admin']}><Drivers /></PrivateRoute>} />
               <Route path="customers" element={<Customers />} />
               <Route path="reports" element={<Reports />} />
-              <Route path="privacy" element={<Privacy />} />
-              <Route path="users" element={<StaffUsers />} />
+              <Route path="privacy" element={<PrivateRoute roles={['super_admin']}><Privacy /></PrivateRoute>} />
+              <Route path="users" element={<PrivateRoute roles={['super_admin']}><StaffUsers /></PrivateRoute>} />
               <Route path="my-account" element={<MyAccount />} />
             </Routes>
           </Layout>

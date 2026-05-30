@@ -20,6 +20,7 @@ from app.api.v1.deps import (
     require_admin_or_above,
     require_driver_or_above,
     require_receiver_or_above,
+    require_super_admin,
 )
 from app.core.database import AsyncSessionLocal, get_db
 from app.models.address_resolution_log import AddressResolutionLog
@@ -534,7 +535,7 @@ async def start_driver_work(
 @router.get("/dispatch/today-status")
 async def get_today_dispatch_status(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin_or_above),
+    _: User = Depends(require_super_admin),
 ):
     today = today_kst()
     today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
@@ -598,7 +599,7 @@ async def get_today_dispatch_status(
 async def dispatch_orders_priority(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin_or_above),
+    current_user: User = Depends(require_super_admin),
 ):
     driver_ids: list[int] = body.get("driver_ids", [])
     return await _dispatch_today_orders(
@@ -775,6 +776,8 @@ async def update_status(
     elif current_user.role not in {"super_admin", "admin", "receiver"}:
         raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
     elif driver_id is not None:
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="기사 배정은 최고관리자만 가능합니다.")
         driver_result = await db.execute(
             select(User).where(User.id == driver_id, or_(User.role == "driver", User.is_driver == True), User.is_active == True)
         )
@@ -813,7 +816,7 @@ async def assign_driver(
     order_id: int,
     driver_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_receiver_or_above),
+    current_user: User = Depends(require_super_admin),
 ):
     order = await order_service.update_order_status(
         db,
@@ -843,7 +846,7 @@ async def transfer_order(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    is_admin = current_user.role in ("super_admin", "admin")
+    is_admin = current_user.role == "super_admin"
     if not is_admin and order.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 인계할 수 있습니다.")
 
