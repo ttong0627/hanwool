@@ -568,7 +568,7 @@ function DeliveryCard({
         onPress={isDone ? undefined : onStatus}
         disabled={isDone}
       >
-        <Text style={$card.name}>{order.customer_name} 어르신</Text>
+        <Text style={$card.name}>{order.customer_name} 고객님</Text>
         <View style={$card.addressRow}>
           <Ionicons name="location-outline" size={14} color={T.textMuted} style={{ marginTop: 1 }} />
           <Text style={$card.address}>
@@ -874,7 +874,7 @@ export function DriverHomeScreen() {
       return
     }
     if (matched.status === 'delivered') {
-      Alert.alert('이미 완료', `${matched.customer_name} 어르신 주문은 이미 배송 완료되었습니다.`)
+      Alert.alert('이미 완료', `${matched.customer_name} 고객님 주문은 이미 배송 완료되었습니다.`)
       return
     }
     handleStatusUpdate(matched)
