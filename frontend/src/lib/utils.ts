@@ -61,7 +61,11 @@ export const STATUS_FILTER_OPTIONS = [
   { value: 'delivered', label: '배송완료' },
 ]
 
-export const DONG_LIST = ['경안동', '송정동', '쌍령동', '탄벌동']
+export const DONG_LIST = [
+  '경안동', '송정동', '쌍령동', '탄벌동',
+  '고산동', '매산동', '목동', '목현동', '문형동', '삼동',
+  '양벌동', '역동', '장지동', '중대동', '직동', '추자동', '태전동', '회덕동',
+]
 
 export function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -81,7 +85,9 @@ export function formatNumber(n: number): string {
 }
 
 export function detectDong(address: string): string | null {
-  for (const dong of DONG_LIST) {
+  // 긴 이름 우선 매칭 — "목현동" 주소가 "목동"으로 오탐되는 것을 방지
+  const byLengthDesc = [...DONG_LIST].sort((a, b) => b.length - a.length)
+  for (const dong of byLengthDesc) {
     if (address.includes(dong)) return dong
   }
   return null

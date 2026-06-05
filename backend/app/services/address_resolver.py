@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.address_resolution_log import AddressResolutionLog
 from app.services.route_service import get_kakao_coordinates
 
-SERVICE_DONGS = {"경안동", "송정동", "쌍령동", "탄벌동"}
+SERVICE_DONGS = {
+    "경안동", "송정동", "쌍령동", "탄벌동",
+    "고산동", "매산동", "목동", "목현동", "문형동", "삼동",
+    "양벌동", "역동", "장지동", "중대동", "직동", "추자동", "태전동", "회덕동",
+}
 GWANGJU_PREFIX = "경기도 광주시"
 
 

@@ -4,14 +4,15 @@ import { AlertTriangle, Camera, CheckCircle2, ListOrdered, MapPin, Phone, Refres
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DriverTone, getDriverTone } from '@/lib/driverColors'
+import { DONG_LIST } from '@/lib/utils'
 
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined
 // 경안시장: 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
 const MARKET_LAT = 37.4090
 const MARKET_LNG = 127.2574
 
-// 동 표시 순서 (배차 우선순위 동일)
-const DONG_ORDER = ['경안동', '탄벌동', '송정동', '쌍령동']
+// 동 표시 순서 — 배송 허용동 단일 소스(@/lib/utils, 18개 동)
+const DONG_ORDER = DONG_LIST
 
 type KakaoAny = any
 type DriverFilter = number | 'all' | 'unassigned'

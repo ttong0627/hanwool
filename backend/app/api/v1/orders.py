@@ -40,8 +40,9 @@ from app.schemas.order import (
 )
 from app.services import order_service, sms_service
 from app.services.address_service import geocode_address as _geocode_address
-from app.services.address_resolver import apply_resolution_to_order, log_address_resolution, resolve_address
+from app.services.address_resolver import apply_resolution_to_order, log_address_resolution, resolve_address, SERVICE_DONGS
 from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
+from app.services.zone_service import load_zone_priority
 from app.services.route_service import (
     analyze_sequence_quality,
     optimize_route,
@@ -53,7 +54,7 @@ router = APIRouter(prefix="/orders", tags=["주문"])
 
 PHOTO_DIR = "photos"
 AUTO_ASSIGN_LIMIT = 40
-VALID_DONGS = {'경안동', '송정동', '쌍령동', '탄벌동'}
+VALID_DONGS = SERVICE_DONGS  # 배송 허용동 단일 소스 (address_resolver.SERVICE_DONGS, 18개 동)
 DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
 
 
@@ -134,8 +135,8 @@ async def _dispatch_today_orders(
 ) -> dict:
     from app.core.security import decrypt_field
 
-    if not driver_ids or not (1 <= len(driver_ids) <= 4):
-        raise HTTPException(status_code=400, detail="기사는 1~4명까지 배정할 수 있습니다.")
+    if not driver_ids or not (1 <= len(driver_ids) <= 18):
+        raise HTTPException(status_code=400, detail="기사는 1~18명까지 배정할 수 있습니다.")
 
     driver_result = await db.execute(
         select(User.id).where(
@@ -173,7 +174,8 @@ async def _dispatch_today_orders(
         for o in today_orders
     ]
 
-    groups = run_dispatch(dispatch_orders_list, driver_ids)
+    zone_priority = await load_zone_priority(db)
+    groups = run_dispatch(dispatch_orders_list, driver_ids, zone_priority)
 
     # 배차 결과(driver_id 배정)를 토대로 geo-최적화 순번 재계산
     order_driver_map: dict[int, int] = {
@@ -196,7 +198,7 @@ async def _dispatch_today_orders(
         if order_driver_map.get(o.id)
     ]
     if geo_order_dicts:
-        geo_optimized = optimize_route(geo_order_dicts)
+        geo_optimized = optimize_route(geo_order_dicts, zone_priority)
         geo_seq_map: dict[int, int] = {
             item["id"]: item["sequence"]
             for item in geo_optimized
@@ -1184,7 +1186,8 @@ async def auto_sequence(
         for o in today_orders
     ]
 
-    optimized = optimize_route(order_dicts)
+    zone_priority = await load_zone_priority(db)
+    optimized = optimize_route(order_dicts, zone_priority)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
     changed_count = 0
     for order in today_orders:

@@ -36,9 +36,6 @@ router = APIRouter(prefix="/addresses", tags=["주소"])
 _GWANGJU_RECT = "127.10,37.30,127.60,37.65"
 _PREFIX = "경기도 광주시 "
 
-# 4개 배송 동 road_code prefix (경기도 광주시 행정동)
-_DELIVERY_DONG_EMD = {"경안동", "송정동", "쌍령동", "탄벌동"}
-
 
 class AddressResolveIn(BaseModel):
     address: str

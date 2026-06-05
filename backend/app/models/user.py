@@ -17,13 +17,6 @@ class UserRole(str, PyEnum):
     customer = "customer"
 
 
-class DongArea(str, PyEnum):
-    gyeongan = "경안동"
-    songjeong = "송정동"
-    ssangnyeong = "쌍령동"
-    tanbul = "탄벌동"
-
-
 class User(Base):
     __tablename__ = "users"
 

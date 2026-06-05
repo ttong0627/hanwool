@@ -1,5 +1,6 @@
-export const DONG_LIST = ['경안동', '송정동', '쌍령동', '탄벌동'] as const
-export type Dong = typeof DONG_LIST[number]
+// 배송 허용동 단일 소스 — @/lib/utils 의 DONG_LIST(18개) 재사용
+export { DONG_LIST } from '@/lib/utils'
+export type Dong = string
 
 export const COL_KEYS = [
   'customer_name',

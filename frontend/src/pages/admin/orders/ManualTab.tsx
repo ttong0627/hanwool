@@ -814,7 +814,7 @@ export function ManualTab() {
             </p>
             <p className="text-xs mt-0.5 text-red-600">
               감지된 동: {[...new Set(rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).map((r) => r.dong).filter(Boolean))].join(', ')}
-              &nbsp;— 배송 가능 지역: 경안동·송정동·쌍령동·탄벌동
+              &nbsp;— 배송 가능 지역: {DONG_LIST.join('·')}
             </p>
             {isAdmin && <p className="text-xs mt-1 text-amber-700 font-medium">배송동 열의 "강제등록"을 눌러 허용할 수 있습니다.</p>}
           </div>

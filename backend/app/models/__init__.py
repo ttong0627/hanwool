@@ -1,4 +1,4 @@
-from app.models.user import User, UserRole, DongArea
+from app.models.user import User, UserRole
 from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.order_history import OrderHistory
 from app.models.delivery import Delivery
@@ -14,7 +14,6 @@ from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunSta
 __all__ = [
     "User",
     "UserRole",
-    "DongArea",
     "Order",
     "OrderStatus",
     "OrderTransfer",
