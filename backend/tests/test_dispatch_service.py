@@ -1,6 +1,7 @@
-"""배차 알고리즘 단위 테스트 — 누락 0 / 기존 동선 회귀 / 신규 동 흡수 검증.
+"""배차 알고리즘 단위 테스트 — 누락 0 / 균등 분배 / 경계 검증.
 
-dispatch_service는 순수 함수(DB 비의존)이므로 dong_priority dict 주입만으로 검증한다.
+배차는 동 우선순위 없이 주문 수 기준으로 기사에 균등 분배한다(같은 동은 같은 기사).
+순번은 route_service가 거리 기반으로 매기므로 여기서는 분배만 검증한다.
 pytest 없이도 `python tests/test_dispatch_service.py`로 직접 실행 가능.
 """
 import os
@@ -10,14 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.services.dispatch_service import DispatchOrder, run_dispatch  # noqa: E402
 
-# 프로덕션 보정과 동일한 우선순위(경안1·탄벌2·송정3·쌍령4 + 신규 5~18)
-ZONE_PRIORITY = {
-    "경안동": 1, "탄벌동": 2, "송정동": 3, "쌍령동": 4,
-    "고산동": 5, "매산동": 6, "목동": 7, "목현동": 8, "문형동": 9, "삼동": 10,
-    "양벌동": 11, "역동": 12, "장지동": 13, "중대동": 14, "직동": 15,
-    "추자동": 16, "태전동": 17, "회덕동": 18,
-}
-ALL_DONGS = list(ZONE_PRIORITY.keys())
+DONGS = [
+    "경안동", "탄벌동", "송정동", "쌍령동",
+    "고산동", "매산동", "목동", "목현동", "문형동", "삼동",
+    "양벌동", "역동", "장지동", "중대동", "직동", "추자동", "태전동", "회덕동",
+]
 
 
 def _mk(i: int, dong: str) -> DispatchOrder:
@@ -42,80 +40,61 @@ def _all_ids(groups) -> set[int]:
 
 
 def test_no_leak_all_driver_counts():
-    """18개 동 전부 주문 × 다양한 기사 수 → 누락 0"""
+    """18개 동 전부 주문 × 다양한 기사 수 → 누락 0, 그룹 수 일치"""
     for n in [1, 2, 3, 4, 5, 10, 18]:
-        orders = _make_orders({d: 2 for d in ALL_DONGS})
+        orders = _make_orders({d: 2 for d in DONGS})
         input_ids = {o.id for o in orders}
-        groups = run_dispatch(orders, list(range(1, n + 1)), ZONE_PRIORITY)
+        groups = run_dispatch(orders, list(range(1, n + 1)))
         assert _all_ids(groups) == input_ids, f"n={n} 누락 발생"
         assert len(groups) == n, f"n={n} 그룹 수 불일치"
 
 
-def test_regression_legacy_groups():
-    """기존 4개 동만 × 2/3/4명 → 보정된 priority로 기존 고정 그룹 동선 유지"""
-    # 2명
-    orders = _make_orders({d: 3 for d in ["경안동", "탄벌동", "송정동", "쌍령동"]})
-    g = run_dispatch(orders, [1, 2], ZONE_PRIORITY)
-    assert g[0].dongs == ["경안동", "쌍령동"]
-    assert g[1].dongs == ["탄벌동", "송정동"]
-    # 3명
-    orders = _make_orders({d: 3 for d in ["경안동", "탄벌동", "송정동", "쌍령동"]})
-    g = run_dispatch(orders, [1, 2, 3], ZONE_PRIORITY)
-    assert g[0].dongs == ["경안동", "탄벌동"]
-    assert g[1].dongs == ["송정동"]
-    assert g[2].dongs == ["쌍령동"]
-    # 4명
-    orders = _make_orders({d: 3 for d in ["경안동", "탄벌동", "송정동", "쌍령동"]})
-    g = run_dispatch(orders, [1, 2, 3, 4], ZONE_PRIORITY)
-    assert [grp.dongs for grp in g] == [["경안동"], ["탄벌동"], ["송정동"], ["쌍령동"]]
+def test_same_dong_same_driver():
+    """같은 동의 주문은 같은 기사에 배정된다(동선 흩어짐 방지)"""
+    orders = _make_orders({d: 3 for d in DONGS})
+    groups = run_dispatch(orders, list(range(1, 5)))
+    dong_to_drivers: dict[str, set[int]] = {}
+    for g in groups:
+        for o in g.orders:
+            dong_to_drivers.setdefault(o.dong, set()).add(g.driver_id)
+    for dong, drivers in dong_to_drivers.items():
+        assert len(drivers) == 1, f"{dong}이 여러 기사에 분산됨: {drivers}"
 
 
-def test_preserve_and_attach_new_dong():
-    """4개 동 + 신규 1개 × 2명 → 기존 2그룹 유지 + 신규 동 최소부하 그룹 흡수, 누락 0"""
-    orders = _make_orders({"경안동": 2, "탄벌동": 2, "송정동": 2, "쌍령동": 2, "고산동": 2})
-    input_ids = {o.id for o in orders}
-    g = run_dispatch(orders, [1, 2], ZONE_PRIORITY)
-    assert _all_ids(g) == input_ids
-    # 고산동이 어느 한 그룹에 포함되어야 한다
-    assert any("고산동" in grp.dongs for grp in g)
+def test_balanced_distribution():
+    """주문 수 기준 균등 분배 — 기사 간 부하 편차가 과하지 않음"""
+    # 18개 동 각 5건 = 90건 / 3명 → 기사당 ~30건
+    orders = _make_orders({d: 5 for d in DONGS})
+    groups = run_dispatch(orders, [1, 2, 3])
+    counts = sorted(len(g.orders) for g in groups)
+    assert _all_ids(groups) == {o.id for o in orders}
+    # 균등 분배이므로 최대-최소 편차가 한 동 크기(5) 이내
+    assert counts[-1] - counts[0] <= 5, f"부하 편차 과다: {counts}"
 
 
-def test_generic_distribution_balanced():
-    """n>=5: 연속 블록 균등 분배 — 빈 기사 없이 전 동 배정"""
-    orders = _make_orders({d: 1 for d in ALL_DONGS})  # 18개 동 각 1건
-    input_ids = {o.id for o in orders}
-    g = run_dispatch(orders, list(range(1, 6)), ZONE_PRIORITY)  # 5명
-    assert _all_ids(g) == input_ids
-    # 각 기사 부하가 과도하게 쏠리지 않음 (평균 3.6, 허용 범위)
-    counts = sorted(len(grp.orders) for grp in g)
-    assert counts[0] >= 1 and counts[-1] <= 6
+def test_more_drivers_than_dongs():
+    """기사 수 > 동 수 → 누락 0, 빈 기사 허용"""
+    orders = _make_orders({"경안동": 2, "송정동": 2})
+    groups = run_dispatch(orders, [1, 2, 3, 4, 5])
+    assert _all_ids(groups) == {o.id for o in orders}
+    assert len(groups) == 5
 
 
 def test_boundaries():
     """경계: 기사 0/19 → ValueError, 주문 없음 → 빈 그룹"""
     try:
-        run_dispatch([], [], ZONE_PRIORITY)
+        run_dispatch([], [])
         assert False, "기사 0명은 ValueError여야 함"
     except ValueError:
         pass
     try:
-        run_dispatch([], list(range(1, 20)), ZONE_PRIORITY)
+        run_dispatch([], list(range(1, 20)))
         assert False, "기사 19명은 ValueError여야 함"
     except ValueError:
         pass
-    # 주문 0건 × 3명 → 빈 그룹 3개
-    g = run_dispatch([], [1, 2, 3], ZONE_PRIORITY)
+    g = run_dispatch([], [1, 2, 3])
     assert _all_ids(g) == set()
-
-
-def test_unknown_dong_not_leaked():
-    """priority 매핑에 없는 동도 누락되지 않고 배정된다(999 폴백)"""
-    orders = _make_orders({"경안동": 1, "없는동": 1})
-    input_ids = {o.id for o in orders}
-    for n in [1, 2, 5]:
-        os_ = _make_orders({"경안동": 1, "없는동": 1})
-        g = run_dispatch(os_, list(range(1, n + 1)), ZONE_PRIORITY)
-        assert _all_ids(g) == input_ids, f"n={n} 미등록 동 누락"
+    assert len(g) == 3
 
 
 def _run_all():

@@ -14,7 +14,7 @@ import httpx
 from app.core.config import settings
 
 # 경안시장 기준 지리적 순서: 인접(경안동) → 북서(탄벌동) → 북동(송정동) → 서외곽(쌍령동)
-# 동 우선순위는 delivery_zones DB(zone_service.load_zone_priority)에서 주입받는다.
+# 배송 순번은 동 우선순위 없이 순수 거리(지도 좌표/도로) 기반으로만 정한다.
 # 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
 MARKET_LOCATION = {"lat": 37.4090, "lng": 127.2574}
 
@@ -231,50 +231,25 @@ def road_aware_tsp(points: list[dict], start_lat: float, start_lng: float) -> li
 # 메인 배송순번 최적화
 # ──────────────────────────────────────────────
 
-def _dong_priority_key(order: dict, dong_priority: dict[str, int]) -> int:
-    dong: str = order.get("service_dong") or order.get("dong") or ""
-    return dong_priority.get(dong, 99)
-
-
-def _optimize_by_priority_dong(
-    driver_orders: list[dict], start_lat: float, start_lng: float, dong_priority: dict[str, int]
+def _optimize_by_distance(
+    driver_orders: list[dict], start_lat: float, start_lng: float
 ) -> list[dict]:
-    """배송동 우선순위를 먼저 지키고, 각 배송동 내부에서 이동거리를 줄인다."""
-    ordered_all: list[dict] = []
-    cur_lat, cur_lng = start_lat, start_lng
-
-    priority_values = sorted({_dong_priority_key(order, dong_priority) for order in driver_orders})
-    for priority in priority_values:
-        dong_orders = [order for order in driver_orders if _dong_priority_key(order, dong_priority) == priority]
-        if not dong_orders:
-            continue
-
-        has_road = any(_road_key(order.get("delivery_address", "") or "") for order in dong_orders)
-        if has_road:
-            ordered = road_aware_tsp(dong_orders, cur_lat, cur_lng)
-        else:
-            ordered = nearest_neighbor_tsp(dong_orders, cur_lat, cur_lng)
-
-        ordered_all.extend(ordered)
-        last_with_coord = next((order for order in reversed(ordered) if _has_coord(order)), None)
-        if last_with_coord:
-            cur_lat, cur_lng = last_with_coord["lat"], last_with_coord["lng"]
-
-    return ordered_all
+    """동 구분 없이 거리(도로/좌표) 기반으로만 배송 순번을 정한다."""
+    has_road = any(_road_key(order.get("delivery_address", "") or "") for order in driver_orders)
+    if has_road:
+        return road_aware_tsp(driver_orders, start_lat, start_lng)
+    return nearest_neighbor_tsp(driver_orders, start_lat, start_lng)
 
 
-def optimize_route(orders: list[dict], dong_priority: Optional[dict[str, int]] = None) -> list[dict]:
+def optimize_route(orders: list[dict]) -> list[dict]:
     """
-    기사별로 독립적으로 순번 계산.
+    기사별로 독립적으로 순번 계산. 동 우선순위 없이 순수 거리(지도) 기반.
     orders: [{"id": int, "driver_id": int, "dong": str, "lat": float, "lng": float,
               "delivery_address": str, ...}, ...]
-    dong_priority: 동 우선순위 매핑(delivery_zones). None이면 우선순위 미적용(좌표 기반만).
     반환: sequence 필드가 부여된 동일 orders 리스트
     """
     if not orders:
         return []
-
-    dong_priority = dong_priority or {}
 
     # 기사별 그룹화
     driver_groups: dict[int, list[dict]] = {}
@@ -291,7 +266,7 @@ def optimize_route(orders: list[dict], dong_priority: Optional[dict[str, int]] =
         start_lat = MARKET_LOCATION["lat"]
         start_lng = MARKET_LOCATION["lng"]
 
-        ordered = _optimize_by_priority_dong(driver_orders, start_lat, start_lng, dong_priority)
+        ordered = _optimize_by_distance(driver_orders, start_lat, start_lng)
 
         for i, o in enumerate(ordered):
             o["sequence"] = i + 1
