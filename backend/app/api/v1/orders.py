@@ -12,7 +12,7 @@ _KST = ZoneInfo("Asia/Seoul")
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -54,6 +54,27 @@ router = APIRouter(prefix="/orders", tags=["주문"])
 PHOTO_DIR = "photos"
 AUTO_ASSIGN_LIMIT = 40
 VALID_DONGS = SERVICE_DONGS  # 배송 허용동 단일 소스 (address_resolver.SERVICE_DONGS, 18개 동)
+
+
+def _assert_elderly_eligible(birth_year: Optional[int], role: str) -> None:
+    """65세 이상 자격 서버 검증.
+
+    - admin/super_admin은 현장 예외를 위해 bypass.
+    - birth_year 미제공 시 통과(입력 필드 점진 도입 — 클라이언트 경고와 병행).
+    - 제공된 경우 만 나이(올해-출생연도) 65세 미만이면 차단.
+    """
+    if role in {"admin", "super_admin"}:
+        return
+    if not birth_year:
+        return
+    from datetime import date
+
+    age = date.today().year - birth_year
+    if age < 65:
+        raise HTTPException(
+            status_code=400,
+            detail=f"65세 이상만 신청 가능합니다. (출생연도 {birth_year}, 만 {age}세 추정)",
+        )
 DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
 
 
@@ -136,6 +157,10 @@ async def _dispatch_today_orders(
 
     if not driver_ids or not (1 <= len(driver_ids) <= 18):
         raise HTTPException(status_code=400, detail="기사는 1~18명까지 배정할 수 있습니다.")
+
+    # 동시 배차 직렬화 — 트랜잭션 advisory lock으로 이중 배차(같은 주문 중복 배정) 방지.
+    # 다른 배차 요청은 이 트랜잭션이 끝날 때까지 대기한다.
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 2026060601})
 
     driver_result = await db.execute(
         select(User.id).where(
@@ -298,6 +323,7 @@ async def create_single_order(
     current_user: User = Depends(require_receiver_or_above),
 ):
     """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
+    _assert_elderly_eligible(data.birth_year, current_user.role)
     address_resolution = await resolve_address(data.delivery_address, db)
     effective_dong = address_resolution.service_dong or data.dong
 
@@ -350,6 +376,8 @@ async def create_order(
             raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
         if not is_reception_open():
             raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
+
+    _assert_elderly_eligible(data.birth_year, current_user.role)
 
     if current_user.role == "customer":
         data.customer_id = current_user.id

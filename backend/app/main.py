@@ -6,10 +6,11 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.api.v1 import auth, users, orders, deliveries, complaints, documents, admin, addresses, app_meta
 from app.core.config import settings
@@ -165,3 +166,37 @@ async def websocket_endpoint(websocket: WebSocket, room: str, token: str = Query
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "경안시장 집배송 서비스"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """의존성(DB·Redis) 준비 상태 — 컨테이너 healthcheck용.
+
+    DB 연결 실패 시 503(컨테이너 unhealthy 표시). Redis는 캐시/세션이므로
+    실패해도 degraded로 표시하되 200을 유지한다(DB가 핵심 의존성).
+    """
+    checks = {"db": "down", "redis": "down"}
+    status_code = 200
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        logger.error("health_ready DB check failed: %s", exc)
+        status_code = 503
+
+    try:
+        import redis.asyncio as aioredis
+
+        client = aioredis.from_url(settings.REDIS_URL)
+        await client.ping()
+        await client.aclose()
+        checks["redis"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("health_ready Redis check failed: %s", exc)
+
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ok" if status_code == 200 else "degraded", **checks},
+    )

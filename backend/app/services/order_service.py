@@ -61,6 +61,7 @@ async def create_order(
             phone=data.customer_phone,
             dong=resolved_dong or "경안동",
             address=data.delivery_address or "",
+            birth_year=getattr(data, "birth_year", None),
             is_test=is_test,
         )
         if customer and not customer_id:
@@ -247,6 +248,18 @@ def serialize_order_history(history: OrderHistory) -> dict:
     }
 
 
+# 허용되는 배송 상태 전이 (그 외 전환은 admin/super_admin만 강제 가능)
+ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    OrderStatus.pending: {OrderStatus.assigned, OrderStatus.cancelled},
+    OrderStatus.assigned: {OrderStatus.picked_up, OrderStatus.in_transit, OrderStatus.pending, OrderStatus.cancelled},
+    OrderStatus.picked_up: {OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.cancelled},
+    OrderStatus.in_transit: {OrderStatus.delivered, OrderStatus.delayed, OrderStatus.cancelled},
+    OrderStatus.delayed: {OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.cancelled},
+    OrderStatus.delivered: set(),
+    OrderStatus.cancelled: set(),
+}
+
+
 async def update_order_status(
     db: AsyncSession,
     order_id: int,
@@ -263,6 +276,15 @@ async def update_order_status(
         return None
     previous_status = order.status
     previous_driver_id = order.driver_id
+    # 상태 전이 화이트리스트 검증 — 같은 상태 재설정은 허용(no-op), admin은 강제 전환 가능
+    if status != previous_status and actor_role not in {"admin", "super_admin"}:
+        if status not in ALLOWED_TRANSITIONS.get(previous_status, set()):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"허용되지 않은 배송 상태 전환입니다: {previous_status} → {status}",
+            )
     order.status = status
     if status == OrderStatus.assigned and driver_id:
         order.driver_id = driver_id

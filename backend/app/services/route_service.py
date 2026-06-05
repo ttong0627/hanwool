@@ -356,7 +356,7 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
 
     headers = {"Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}"}
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
         # ── 전략 1: 주소 검색 (원본 + 광주시 접두) ─────────────────────────
         for query in [address, f"경기도 광주시 {address}"]:
             try:
@@ -432,7 +432,7 @@ async def get_kakao_route_distance(
         "summary": "true",
     }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
             resp = await client.get(url, params=params, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
