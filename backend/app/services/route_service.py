@@ -2,7 +2,7 @@
 경안시장 배송 경로 최적화 서비스
 - roadAwareTSP: 도로명 기준 그룹핑 → 건물번호 순 → 2-opt
 - nearestNeighborTSP: 좌표 기반 최근접 이웃 → 2-opt (fallback)
-- 동 우선순위: 경안동 → 송정동 → 쌍령동 → 탄벌동
+- 방향 동선: 경안시장 출발 → 좌우 스윕 → 성남 방향 종료
 - Kakao Geocoding / Mobility API 연동
 """
 import math
@@ -13,10 +13,12 @@ import httpx
 
 from app.core.config import settings
 
-# 경안시장 기준 지리적 순서: 인접(경안동) → 북서(탄벌동) → 북동(송정동) → 서외곽(쌍령동)
-# 배송 순번은 동 우선순위 없이 순수 거리(지도 좌표/도로) 기반으로만 정한다.
-# 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
+# 경안시장 (배송 출발점) — 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
 MARKET_LOCATION = {"lat": 37.4090, "lng": 127.2574}
+
+# 성남 방향 기준점 (성남시청 인근) — 시장→성남 진행축을 정의한다.
+# 배송 순번은 시장에서 출발해 좌우로 쓸며 성남 방향에서 종료(기사 퇴근 동선 단축).
+SOUTH_ANCHOR = {"lat": 37.4200, "lng": 127.1267}
 
 JUMP_THRESHOLD_M = 300
 WALK_THRESHOLD_M = 120
@@ -231,14 +233,63 @@ def road_aware_tsp(points: list[dict], start_lat: float, start_lng: float) -> li
 # 메인 배송순번 최적화
 # ──────────────────────────────────────────────
 
-def _optimize_by_distance(
+def _to_local_xy(lat: float, lng: float, ref_lat: float) -> tuple[float, float]:
+    """위경도를 ref_lat 기준 평면 미터 좌표로 근사 (x=동서, y=남북)."""
+    return (lng * 111_320 * math.cos(math.radians(ref_lat)), lat * 110_540)
+
+
+def _optimize_directional(
     driver_orders: list[dict], start_lat: float, start_lng: float
 ) -> list[dict]:
-    """동 구분 없이 거리(도로/좌표) 기반으로만 배송 순번을 정한다."""
-    has_road = any(_road_key(order.get("delivery_address", "") or "") for order in driver_orders)
-    if has_road:
-        return road_aware_tsp(driver_orders, start_lat, start_lng)
-    return nearest_neighbor_tsp(driver_orders, start_lat, start_lng)
+    """시장 출발 → 좌우 스윕 → 성남 방향 종료 경로.
+
+    시장→성남(SOUTH_ANCHOR) 진행축으로 주문을 밴드로 나누고, 각 밴드 안에서
+    좌우(진행축에 수직)로 정렬하되 밴드마다 방향을 교대(부스트로피돈)한다.
+    가장 성남에 가까운 밴드가 마지막이 되어 퇴근 동선이 성남 방향으로 빠진다.
+    좌표 없는 주문은 누락 없이 맨 뒤에 붙인다.
+    """
+    coord_orders = [o for o in driver_orders if _has_coord(o)]
+    no_coord = [o for o in driver_orders if not _has_coord(o)]
+    if not coord_orders:
+        return no_coord
+
+    ref = start_lat
+    sx, sy = _to_local_xy(start_lat, start_lng, ref)
+    ax, ay = _to_local_xy(SOUTH_ANCHOR["lat"], SOUTH_ANCHOR["lng"], ref)
+    ux, uy = ax - sx, ay - sy
+    ulen = math.hypot(ux, uy) or 1.0
+    ux, uy = ux / ulen, uy / ulen      # 진행축 단위벡터 (시장→성남)
+    vx, vy = -uy, ux                   # 좌우축 (진행축에 수직)
+
+    def _proj(o: dict) -> tuple[float, float]:
+        px, py = _to_local_xy(o["lat"], o["lng"], ref)
+        dx, dy = px - sx, py - sy
+        return (dx * ux + dy * uy, dx * vx + dy * vy)  # (진행도, 좌우)
+
+    items = [(o, *_proj(o)) for o in coord_orders]
+    a_values = [a for _, a, _ in items]
+    a_min, a_max = min(a_values), max(a_values)
+    span = (a_max - a_min) or 1.0
+
+    n_bands = max(1, round(math.sqrt(len(items))))
+    band_w = span / n_bands
+
+    bands: dict[int, list] = {}
+    for o, a, b in items:
+        idx = min(n_bands - 1, int((a - a_min) / band_w))
+        bands.setdefault(idx, []).append((o, b))
+
+    ordered: list[dict] = []
+    for i in range(n_bands):
+        grp = bands.get(i)
+        if not grp:
+            continue
+        # 밴드마다 좌우 방향 교대 → 좌에서 우로, 다음 밴드는 우에서 좌로 쓸기
+        grp.sort(key=lambda x: x[1], reverse=(i % 2 == 1))
+        ordered.extend(o for o, _ in grp)
+
+    ordered.extend(no_coord)
+    return ordered
 
 
 def optimize_route(orders: list[dict]) -> list[dict]:
@@ -266,7 +317,7 @@ def optimize_route(orders: list[dict]) -> list[dict]:
         start_lat = MARKET_LOCATION["lat"]
         start_lng = MARKET_LOCATION["lng"]
 
-        ordered = _optimize_by_distance(driver_orders, start_lat, start_lng)
+        ordered = _optimize_directional(driver_orders, start_lat, start_lng)
 
         for i, o in enumerate(ordered):
             o["sequence"] = i + 1
