@@ -42,7 +42,7 @@ const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInp
   delivery_address: { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
   detail_address:   { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
   items_desc:       { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
-  item_code:        { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
+  // item_code: 자동 일련번호(GA1-0001~) — 직접 입력 불가, 메타 없음
   quantity:         { lang: 'en', inputMode: 'numeric', hint: '숫자', hintColor: 'text-slate-600', hintBg: 'bg-slate-100 border-slate-300' },
   request:          { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
 }
@@ -124,7 +124,7 @@ export function ManualTab() {
         detail_address: row.detail_address || undefined,
         dong: row.dong,
         items_desc: row.items_desc || undefined,
-        item_code: row.item_code || undefined,
+        item_code: `GA1-${String(rowIdx + 1).padStart(4, '0')}`,  // 자동 일련번호 (입력값 무시)
         quantity: row.quantity,
         request: row.request || undefined,
         lat: row.lat,
@@ -299,12 +299,16 @@ export function ManualTab() {
   }, [])
 
   const DONG_COL = COL_KEYS.indexOf('dong')
+  const CODE_COL = COL_KEYS.indexOf('item_code')
+  // 배송동(자동 판정)·물품코드(자동 일련번호)는 키보드 이동에서 건너뜀
+  const SKIP_COLS = new Set([DONG_COL, CODE_COL])
   const nextCol = (cur: number, dir: 1 | -1) => {
     let n = cur + dir
-    if (n === DONG_COL) n += dir
+    while (SKIP_COLS.has(n)) n += dir
     return Math.max(0, Math.min(COL_KEYS.length - 1, n))
   }
   const LAST_COL = COL_KEYS.length - 1
+  const itemCodeFor = (rowIdx: number) => `GA1-${String(rowIdx + 1).padStart(4, '0')}`
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
@@ -375,6 +379,7 @@ export function ManualTab() {
         const colIdx = startCol + ci
         const key = COL_KEYS[colIdx]
         if (!key) return
+        if (key === 'item_code') return  // 물품코드는 자동 일련번호 — 붙여넣기 값 무시
         const val = cell.trim()
         if (key === 'customer_phone') {
           newRows[rowIdx] = { ...newRows[rowIdx], [key]: formatPhone(val) }
@@ -754,16 +759,13 @@ export function ManualTab() {
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
                             type="text"
-                            inputMode="numeric"
-                            lang="en"
+                            readOnly
+                            tabIndex={-1}
                             autoComplete="off"
-                            className={cellCls + ' text-center font-mono'}
-                            value={row.item_code}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => updateCell(rowIdx, 'item_code', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
-                            onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                            placeholder="—"
+                            className={cellCls + ' text-center font-mono text-gray-500 bg-gray-50 cursor-default'}
+                            value={itemCodeFor(rowIdx)}
+                            title="물품 코드는 자동 일련번호입니다 (입력 불가)"
+                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; focusCell(rowIdx, nextCol(colIdx, 1)) }}
                           />
                         ) : (
                           <input
