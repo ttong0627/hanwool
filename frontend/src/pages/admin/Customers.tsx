@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Users, Search, X, Edit2, ShieldCheck, Phone, MapPin,
+  Users, Search, X, Edit2, Phone, MapPin,
   Package, CheckCircle, Calendar, ChevronLeft, ChevronRight,
   Clock, Star, UserCheck, ArrowLeft, Truck,
 } from 'lucide-react'
@@ -22,7 +22,6 @@ interface Customer {
   address?: string
   birth_year?: number
   age?: number
-  is_elderly?: boolean
   is_active: boolean
   created_at: string
   order_count: number
@@ -149,7 +148,7 @@ function EditCustomerModal({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              출생연도 <span className="text-gray-400 font-normal text-xs">(65세 이상 검증용)</span>
+              출생연도
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -284,12 +283,6 @@ function CustomerCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm font-black text-gray-900">{customer.name}</span>
-            {customer.is_elderly && (
-              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                <ShieldCheck className="h-3 w-3" />
-                65+
-              </span>
-            )}
             {!customer.is_active && (
               <span className="shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">비활성</span>
             )}
@@ -393,12 +386,6 @@ function CustomerDetailPanel({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-2xl font-bold">{detail.name}</h2>
-              {detail.is_elderly && (
-                <span className="flex items-center gap-1 text-xs bg-white/20 px-2 py-0.5 rounded-full font-semibold">
-                  <ShieldCheck className="w-3 h-3" />
-                  65세 이상 수혜대상
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-1.5 mt-1 opacity-90">
               <Phone className="w-3.5 h-3.5" />
@@ -569,16 +556,15 @@ function CustomerDetailPanel({
 export function Customers() {
   const [search, setSearch] = useState('')
   const [dongFilter, setDongFilter] = useState('')
-  const [elderlyOnly, setElderlyOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editing, setEditing] = useState<Customer | null>(null)
 
   const { data: listData, isLoading } = useQuery<CustomerListResponse>({
-    queryKey: ['customers', search, dongFilter, elderlyOnly, page],
+    queryKey: ['customers', search, dongFilter, page],
     queryFn: () =>
       api.get('/admin/customers', {
-        params: { search, dong: dongFilter, elderly_only: elderlyOnly, page, page_size: 30 },
+        params: { search, dong: dongFilter, page, page_size: 30 },
       }).then((r) => r.data),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
@@ -626,16 +612,6 @@ export function Customers() {
           <option value="">전체 동</option>
           {DONG_LIST.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer whitespace-nowrap">
-          <input
-            type="checkbox"
-            checked={elderlyOnly}
-            onChange={(e) => { setElderlyOnly(e.target.checked); resetPage() }}
-            className="rounded"
-          />
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
-          65세↑만
-        </label>
       </div>
 
       {/* 분할 패널 */}

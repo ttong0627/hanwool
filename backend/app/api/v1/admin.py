@@ -274,13 +274,12 @@ async def get_customer_stats(db: AsyncSession = Depends(get_db), _=Depends(requi
 async def list_customers_endpoint(
     search: str = "",
     dong: str = "",
-    elderly_only: bool = False,
     page: int = 1,
     page_size: int = 30,
     db: AsyncSession = Depends(get_db),
     _=Depends(require_admin),
 ):
-    return await list_customers(db, search, dong, elderly_only, page, page_size)
+    return await list_customers(db, search, dong, page, page_size)
 
 
 @router.get("/customers/{customer_id}")

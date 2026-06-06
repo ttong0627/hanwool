@@ -31,8 +31,6 @@ interface CustomerStats {
   returning: number
   returning_rate: number
   active_30d: number
-  elderly_count: number
-  elderly_rate: number
   top_customers: TopCustomer[]
   by_dong: { dong: string; count: number }[]
 }
@@ -161,19 +159,14 @@ function GovTab({
         </div>
       </div>
 
-      {/* 65세 이상 수혜자 현황 */}
+      {/* 고객 현황 */}
       {customerStats && (
         <div className="card-elevated rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <ShieldCheck className="w-4 h-4 text-blue-500" />
-            <h2 className="font-semibold text-gray-800">65세 이상 수혜 현황</h2>
+            <h2 className="font-semibold text-gray-800">고객 현황</h2>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-xl">
-              <div className="text-3xl font-black text-blue-700">{customerStats.elderly_count.toLocaleString()}</div>
-              <div className="text-sm text-blue-600 font-medium mt-1">65세 이상 수혜자</div>
-              <div className="text-xs text-blue-400 mt-0.5">전체 고객의 {customerStats.elderly_rate}%</div>
-            </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="text-center p-4 bg-indigo-50 rounded-xl">
               <div className="text-3xl font-black text-indigo-700">{customerStats.total.toLocaleString()}</div>
               <div className="text-sm text-indigo-600 font-medium mt-1">전체 등록 고객</div>
@@ -689,7 +682,7 @@ export function Reports() {
       {/* 탭 설명 */}
       <div className={`card-elevated rounded-xl px-4 py-3 text-sm border-l-4 ${tab === 'gov' ? 'border-blue-400 text-blue-700' : 'border-brand-400 text-brand-700'}`}>
         {tab === 'gov'
-          ? '복지 서비스 완료율, 65세 이상 수혜자 현황, 동별 서비스 균형을 중심으로 행정 목적 보고서를 제공합니다.'
+          ? '복지 서비스 완료율, 고객 현황, 동별 서비스 균형을 중심으로 행정 목적 보고서를 제공합니다.'
           : '장날 물량 추이, 기사 실적, 최다 이용 고객, 동별 수요를 중심으로 시장 운영 현황 보고서를 제공합니다.'}
       </div>
 

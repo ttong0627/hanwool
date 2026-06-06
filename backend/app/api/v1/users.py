@@ -26,7 +26,6 @@ _CREATABLE_ROLES = {
     "receiver": {"customer"},
 }
 
-ELDERLY_AGE = 65
 STAFF_OR_DRIVER_ROLES = {"super_admin", "admin", "receiver", "driver"}
 
 
@@ -43,7 +42,6 @@ def _to_out(user: User) -> UserOut:
             birth_year = None
 
     age = _calc_age(birth_year) if birth_year else None
-    is_elderly = age is not None and age >= ELDERLY_AGE
 
     return UserOut(
         id=user.id,
@@ -54,7 +52,6 @@ def _to_out(user: User) -> UserOut:
         address=decrypt_field(user.address_enc) if user.address_enc else None,
         birth_year=birth_year,
         age=age,
-        is_elderly=is_elderly,
         is_active=user.is_active,
         is_driver=bool(user.is_driver),
         can_manage_privacy=(

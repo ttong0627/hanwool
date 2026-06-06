@@ -74,7 +74,7 @@ export function LoginPage() {
           <div className="mt-10 space-y-2 text-left">
             {[
               { dot: 'bg-green-400', text: '실시간 배송 현황 추적' },
-              { dot: 'bg-brand-400', text: '65세↑ 수혜 대상 자동 확인' },
+              { dot: 'bg-brand-400', text: '광주시 18개 동 배송 관리' },
               { dot: 'bg-blue-400',  text: '장날(3·8일) 자동 접수 관리' },
             ].map(({ dot, text }) => (
               <div key={text} className="flex items-center gap-3 text-slate-400 text-sm">

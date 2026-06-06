@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
-# birth_year_enc: AES-256 암호화된 출생연도 (65세 이상 검증용)
+# birth_year_enc: AES-256 암호화된 출생연도 (고객 기본정보)
 
 
 class UserRole(str, PyEnum):

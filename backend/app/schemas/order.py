@@ -18,7 +18,7 @@ class OrderCreate(BaseModel):
     weight_estimate: Optional[str] = None
     dong_override: bool = False
     pickup_location: str = "경안시장"
-    birth_year: Optional[int] = None  # 65세 자격 검증용 (출생연도)
+    birth_year: Optional[int] = None  # 출생연도 (고객 기본정보)
 
 
 class SingleOrderCreate(BaseModel):
@@ -35,7 +35,7 @@ class SingleOrderCreate(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     dong_override: bool = False
-    birth_year: Optional[int] = None  # 65세 자격 검증용 (출생연도)
+    birth_year: Optional[int] = None  # 출생연도 (고객 기본정보)
 
 
 class OrderUpdate(BaseModel):

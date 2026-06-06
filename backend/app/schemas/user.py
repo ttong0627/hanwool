@@ -110,7 +110,6 @@ class UserOut(BaseModel):
     address: Optional[str] = None
     birth_year: Optional[int] = None
     age: Optional[int] = None
-    is_elderly: Optional[bool] = None
     is_active: bool
     is_driver: bool = False
     can_manage_privacy: bool = False

@@ -30,7 +30,6 @@ interface Customer {
   address: string
   birth_year?: number
   age?: number
-  is_elderly?: boolean
 }
 
 interface MarketStatus {
@@ -242,8 +241,6 @@ export function OrderForm() {
     },
   })
 
-  const elderlyWarning =
-    selectedCustomer && selectedCustomer.age !== undefined && !selectedCustomer.is_elderly
   const currentWeight = watch('weight_estimate')
 
   return (
@@ -397,13 +394,8 @@ export function OrderForm() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-gray-900">{c.name}</span>
-                          {c.is_elderly && (
-                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
-                              65세↑
-                            </span>
-                          )}
-                          {c.age !== undefined && !c.is_elderly && (
-                            <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                          {c.age !== undefined && (
+                            <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
                               {c.age}세
                             </span>
                           )}
@@ -432,11 +424,6 @@ export function OrderForm() {
                   {selectedCustomer.phone} · {selectedCustomer.dong}
                 </p>
               </div>
-              {selectedCustomer.is_elderly && (
-                <span className="text-xs bg-blue-500 text-white px-2.5 py-1 rounded-full font-bold shrink-0">
-                  ✓ 65세↑
-                </span>
-              )}
               <button
                 type="button"
                 onClick={clearCustomer}
@@ -444,20 +431,6 @@ export function OrderForm() {
               >
                 <X className="w-4 h-4" />
               </button>
-            </div>
-          )}
-
-          {/* 65세 미만 경고 */}
-          {elderlyWarning && (
-            <div className="flex items-start gap-3 bg-orange-50 border-2 border-orange-200 rounded-xl px-4 py-3">
-              <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
-              <div className="text-sm text-orange-800" style={{ wordBreak: 'keep-all' }}>
-                <p className="font-bold">수혜 자격 확인 필요</p>
-                <p>
-                  {selectedCustomer?.name}님 ({selectedCustomer?.age}세)은 65세 미만입니다.
-                  담당자 승인 후 접수하세요.
-                </p>
-              </div>
             </div>
           )}
 

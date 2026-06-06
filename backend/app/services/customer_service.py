@@ -114,7 +114,6 @@ def _decrypt_customer(c: User, order_count: int = 0, last_order_at: datetime | N
         "address": decrypt_field(c.address_enc) if c.address_enc else "",
         "birth_year": birth_year,
         "age": age,
-        "is_elderly": age >= 65 if age is not None else None,
         "is_active": c.is_active,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "order_count": order_count,
@@ -159,7 +158,6 @@ async def list_customers(
     db: AsyncSession,
     search: str = "",
     dong: str = "",
-    elderly_only: bool = False,
     page: int = 1,
     page_size: int = 30,
 ) -> dict:
@@ -198,8 +196,6 @@ async def list_customers(
             name_hit = search in data["name"]
             if not phone_hit and not name_hit:
                 continue
-        if elderly_only and not data.get("is_elderly"):
-            continue
         customers.append(data)
 
     return {
@@ -359,28 +355,12 @@ async def customer_stats(db: AsyncSession) -> dict:
         .group_by(_order_identity_expr())
     )).scalars().all())
 
-    current_year = datetime.now(timezone.utc).year
-    all_customers = (await db.execute(
-        select(User).where(User.id.in_(select(scoped_users.c.id)))
-    )).scalars().all()
-    elderly_count = 0
-    for customer in all_customers:
-        if customer.birth_year_enc:
-            try:
-                birth_year = int(decrypt_field(customer.birth_year_enc))
-                if current_year - birth_year >= 65:
-                    elderly_count += 1
-            except Exception:
-                pass
-
     return {
         "total": total,
         "new_this_month": new_this_month,
         "returning": returning,
         "returning_rate": round(returning / total * 100) if total else 0,
         "active_30d": active_count,
-        "elderly_count": elderly_count,
-        "elderly_rate": round(elderly_count / total * 100) if total else 0,
         "top_customers": top_customers,
         "by_dong": by_dong,
     }
