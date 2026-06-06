@@ -23,7 +23,9 @@ function isNewer(a: string, b: string): boolean {
   return false
 }
 
-/* 앱 시작 시 서버 최신 버전 확인 → 새 버전이면 업데이트 안내 */
+/* 앱 시작 시 서버 버전 확인
+   - 현재 < min_supported : 강제 업데이트(닫기 불가, '업데이트'만)
+   - 현재 < latest        : 권장 업데이트('나중에' 허용) */
 function useUpdateCheck() {
   useEffect(() => {
     let done = false
@@ -32,10 +34,25 @@ function useUpdateCheck() {
         const current = Constants.expoConfig?.version ?? '0.0.0'
         const { data } = await api.get('/app/version')
         if (done || !data?.latest) return
+
+        const minSupported = data.min_supported ?? '0.0.0'
+
+        // 강제 업데이트: 최소 지원 버전 미만이면 닫을 수 없는 안내
+        if (isNewer(minSupported, current)) {
+          Alert.alert(
+            '업데이트 필수',
+            `이 버전(${current})은 더 이상 사용할 수 없습니다.\n필수 버전: ${data.latest}\n\n계속하려면 업데이트해 주세요.`,
+            [{ text: '지금 업데이트', onPress: () => Linking.openURL(data.apk_url) }],
+            { cancelable: false },
+          )
+          return
+        }
+
+        // 권장 업데이트: 최신보다 낮으면 선택적 안내
         if (isNewer(data.latest, current)) {
           Alert.alert(
             '새 버전 안내',
-            `새 버전(${data.latest})이 출시됐습니다.\n현재 버전: ${current}\n\n최신 버전으로 업데이트해 주세요.`,
+            `새 버전(${data.latest})이 출시됐습니다.\n현재 버전: ${current}`,
             [
               { text: '나중에', style: 'cancel' },
               { text: '업데이트', onPress: () => Linking.openURL(data.apk_url) },
