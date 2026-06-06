@@ -821,9 +821,15 @@ async def update_status(
     # 링크(URL)는 보이스피싱으로 오인돼 고객이 누르지 않으므로 문자 본문에 넣지 않는다.
 
     result = order_service.decrypt_order(order)
-    sms_to, sms_message = sms_service.resolve_sms_recipient(customer_phone, sms_message)
-    result["sms_to"] = sms_to
-    result["sms_message"] = sms_message
+    # 발송할 문자가 있는 상태(예: 완료)에서만 수신정보를 내려보낸다.
+    # 출발(in_transit) 등 빈 템플릿은 문자를 발송하지 않는다(완료 문자만).
+    if sms_message:
+        sms_to, sms_message = sms_service.resolve_sms_recipient(customer_phone, sms_message)
+        result["sms_to"] = sms_to
+        result["sms_message"] = sms_message
+    else:
+        result["sms_to"] = None
+        result["sms_message"] = None
     return result
 
 

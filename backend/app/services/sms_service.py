@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.core.security import decrypt_field
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -27,7 +26,7 @@ def resolve_sms_recipient(actual_phone: str, message: str) -> tuple[str, str]:
 
 SMS_TEMPLATES = {
     "assigned": "[경안시장 배송] {name}님, 배송기사가 배정되었습니다. 곧 출발할 예정입니다.",
-    "in_transit": "[경안시장 배송] {name}님, 배송기사가 출발했습니다. 도착 예정: {eta}\n앞 순서 배송 상황에 따라 다소 늦어질 수 있으니 조금만 기다려 주세요.",
+    "in_transit": "",  # 배송 출발 문자 미발송 — 완료 문자만 발송 (형 지시)
     "delivered": "[경안시장 배송] {name}님, 배달이 완료되었습니다. 경안시장을 이용해 주셔서 감사합니다.",
     "cancelled": "[경안시장 배송] {name}님, 주문이 취소되었습니다. 문의: 경안시장 배송센터",
     "delayed": "[경안시장 배송] {name}님, 배송이 지연되고 있습니다. 담당자가 곧 연락드리겠습니다.",
@@ -83,23 +82,12 @@ def build_departure_broadcast(phones: list[str]) -> tuple[list[str], str]:
 
 
 def build_departure_messages(orders) -> list[dict]:
-    """전체 출발 시 주문별 개인화 메시지 — 순번 기반 ETA + 대기 안내.
+    """배송 출발 문자는 발송하지 않는다 — 완료 문자만 발송한다(형 지시).
 
-    1:1 발송이라 이름 포함이 안전. 각 메시지에 테스트 리다이렉트(resolve_sms_recipient) 적용.
-    반환: [{"phone": 수신번호, "message": 본문}, ...]
+    과거에는 전체 출발 시 주문별 출발 안내 SMS를 만들었으나, 출발 문자를 끄기로 해
+    항상 빈 목록을 반환한다. (완료 문자는 사진 업로드 시 별도 경로로 발송됨)
     """
-    jobs: list[dict] = []
-    for o in orders:
-        phone = decrypt_field(o.customer_phone_enc)
-        name = decrypt_field(o.customer_name_enc)
-        body = (
-            f"[경안시장 배송] {name}님, 주문하신 상품 배송이 출발했습니다.\n"
-            f"도착 예정: {eta_text(o.sequence)}\n"
-            f"앞 순서 배송 상황에 따라 다소 늦어질 수 있으니 조금만 기다려 주세요. 감사합니다.\n- 경안시장 배송센터"
-        )
-        to, msg = resolve_sms_recipient(phone, body)
-        jobs.append({"phone": to, "message": msg})
-    return jobs
+    return []
 
 
 async def notify_order_status(order, status: str, eta: str = "30분 이내") -> bool:
