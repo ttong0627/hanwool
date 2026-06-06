@@ -38,10 +38,16 @@ interface Order {
   detail_address?: string | null; item_code?: string | null; request?: string | null
 }
 
-function openKakaoNavi(address: string) {
-  Linking.openURL(`kakaomap://route?ep=${encodeURIComponent(address)}&by=CAR`).catch(() =>
-    Linking.openURL(`https://map.kakao.com/link/to/${encodeURIComponent(address)}`),
-  )
+function openKakaoNavi(dest: { lat?: number | null; lng?: number | null; delivery_address: string }) {
+  const name = encodeURIComponent(dest.delivery_address || '배송지')
+  // 카카오맵 길찾기는 도착지를 '좌표'로 받아야 목적지가 정확히 찍힌다.
+  if (dest.lat != null && dest.lng != null) {
+    Linking.openURL(`kakaomap://route?ep=${dest.lat},${dest.lng}&by=CAR`).catch(() =>
+      Linking.openURL(`https://map.kakao.com/link/to/${name},${dest.lat},${dest.lng}`),
+    )
+  } else {
+    Linking.openURL(`https://map.kakao.com/link/search/${name}`).catch(() => {})
+  }
 }
 
 /* 카카오맵 HTML — 배송지 순번 핀 + 기사 트럭(window.setMe로 갱신, 지도 리로드 없음) */
@@ -139,7 +145,7 @@ function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order 
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.primary }]} activeOpacity={0.85}
-              onPress={() => openKakaoNavi(order.delivery_address)}>
+              onPress={() => openKakaoNavi(order)}>
               <Ionicons name="navigate" size={18} color="#fff" />
               <Text style={s.actionText}>카카오내비</Text>
             </TouchableOpacity>
@@ -234,11 +240,11 @@ export function DriverMapScreen() {
   // html은 주문(sorted)에만 의존 — GPS 갱신 시 리로드되지 않도록 myLoc 제외(초기값만 ref로 전달)
   const html = useMemo(() => buildMapHtml(myLocRef.current, sorted), [sorted])
 
-  const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null) => {
+  const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null, memo?: string, security?: boolean) => {
     setCompleteTarget(null)
     try {
-      // 온라인 정상 경로: 사진 → (서명) → 상태 완료
-      await uploadPhoto(order.id, uri, lat, lng, force)
+      // 온라인 정상 경로: 사진(+메모·경비실) → (서명) → 상태 완료
+      await uploadPhoto(order.id, uri, lat, lng, force, memo, security)
       if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
       const data = (await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)) as { sms_to?: string; sms_message?: string }
       qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
@@ -255,6 +261,8 @@ export function DriverMapScreen() {
           photoPath,
           signatureBase64: sig ?? null,
           podLat: lat, podLng: lng, force,
+          memo: memo ?? null,
+          receivedBySecurity: security ?? false,
           queuedAt: Date.now(),
         })
         qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
@@ -372,7 +380,7 @@ export function DriverMapScreen() {
               <TouchableOpacity style={s.rowBtn} onPress={() => setMoveTarget(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="swap-vertical" size={18} color={T.primary} />
               </TouchableOpacity>
-              <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o.delivery_address)}>
+              <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o)}>
                 <Ionicons name="navigate" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </TouchableOpacity>
@@ -389,7 +397,7 @@ export function DriverMapScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng, force, sig) => handleComplete(completeTarget, uri, lat, lng, force, sig)}
+          onConfirm={(uri, lat, lng, force, sig, memo, sec) => handleComplete(completeTarget, uri, lat, lng, force, sig, memo, sec)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}

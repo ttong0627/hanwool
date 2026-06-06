@@ -146,6 +146,8 @@ def decrypt_order(order: Order) -> dict:
         "weight_estimate": order.weight_estimate,
         "delivery_photo_url": f"/photos/{order.delivery_photo_path}" if order.delivery_photo_path else None,
         "delivery_signature_url": f"/photos/{order.delivery_signature_path}" if order.delivery_signature_path else None,
+        "delivery_memo": order.delivery_memo,
+        "received_by_security": bool(order.received_by_security),
         "pod_lat": order.pod_lat,
         "pod_lng": order.pod_lng,
         "coord_mismatch": order.coord_mismatch,

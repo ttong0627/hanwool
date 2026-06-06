@@ -17,6 +17,8 @@ interface ReceiptOrder {
   delivered_at?: string | null
   delivery_photo_url?: string | null
   delivery_signature_url?: string | null
+  delivery_memo?: string | null
+  received_by_security?: boolean
   driver_name?: string | null
   driver_phone?: string | null
 }
@@ -206,10 +208,16 @@ export function DeliveryReceipts() {
             <div className="truncate text-gray-700" title={row.delivery_address}>{row.delivery_address}</div>
             <div className="truncate" title={row.items_desc}>{row.items_desc || '-'}</div>
             <div>{row.quantity}</div>
-            <div className="truncate" title={row.request}>{row.request || '-'}</div>
+            <div className="truncate" title={[row.request, row.delivery_memo && `메모: ${row.delivery_memo}`].filter(Boolean).join(' · ') || '-'}>
+              {row.request || '-'}
+              {row.delivery_memo ? <span className="text-gray-400"> · 📝{row.delivery_memo}</span> : null}
+            </div>
             <div>{row.delivered_at ? formatDate(row.delivered_at, 'MM/dd HH:mm') : '-'}</div>
             <div><Thumb src={row.delivery_photo_url} label="배송 사진" /></div>
-            <div><Thumb src={row.delivery_signature_url} label="서명" /></div>
+            <div className="flex flex-col items-start gap-1">
+              <Thumb src={row.delivery_signature_url} label="서명" />
+              {row.received_by_security && <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">경비실</span>}
+            </div>
           </div>
         ))}
       </div>

@@ -16,6 +16,8 @@ export interface CompletionJob {
   podLat?: number
   podLng?: number
   force?: boolean
+  memo?: string | null         // 배송 메모
+  receivedBySecurity?: boolean // 경비실 수령
   queuedAt: number
 }
 

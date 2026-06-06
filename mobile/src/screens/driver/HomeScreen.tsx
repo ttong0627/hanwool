@@ -56,6 +56,7 @@ interface Order {
   id: number; order_no: string; customer_name: string; customer_phone: string
   status: string; dong: string; delivery_address: string; items_desc?: string
   quantity: number; sequence?: number; delivery_photo_url?: string
+  delivery_signature_url?: string; delivery_memo?: string; received_by_security?: boolean
   lat?: number; lng?: number; coord_mismatch?: boolean
   request?: string; detail_address?: string; item_code?: string
 }
@@ -91,6 +92,8 @@ export async function uploadPhoto(
   podLat?: number,
   podLng?: number,
   force?: boolean,
+  memo?: string,
+  receivedBySecurity?: boolean,
 ): Promise<void> {
   const compressed = await compressPhoto(photoUri)
   const formData = new FormData()
@@ -98,6 +101,8 @@ export async function uploadPhoto(
   if (podLat != null) formData.append('pod_lat', String(podLat))
   if (podLng != null) formData.append('pod_lng', String(podLng))
   if (force) formData.append('force', 'true')
+  if (memo) formData.append('memo', memo)
+  if (receivedBySecurity) formData.append('received_by_security', 'true')
   await api.post(`/orders/${orderId}/photo`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -179,10 +184,17 @@ export function describeApiError(e: unknown): string {
   return err?.message ?? '네트워크 오류'
 }
 
-function openKakaoNavi(address: string) {
-  Linking.openURL(`kakaomap://route?ep=${encodeURIComponent(address)}&by=CAR`).catch(() =>
-    Linking.openURL(`https://map.kakao.com/link/to/${encodeURIComponent(address)}`)
-  )
+function openKakaoNavi(dest: { lat?: number | null; lng?: number | null; delivery_address: string }) {
+  const name = encodeURIComponent(dest.delivery_address || '배송지')
+  // 카카오맵 길찾기는 도착지를 '좌표'로 받아야 목적지가 정확히 찍힌다.
+  if (dest.lat != null && dest.lng != null) {
+    Linking.openURL(`kakaomap://route?ep=${dest.lat},${dest.lng}&by=CAR`).catch(() =>
+      Linking.openURL(`https://map.kakao.com/link/to/${name},${dest.lat},${dest.lng}`),
+    )
+  } else {
+    // 좌표가 없으면 주소명으로 검색 길찾기 폴백
+    Linking.openURL(`https://map.kakao.com/link/search/${name}`).catch(() => {})
+  }
 }
 
 /* ── WebSocket 라우트 리스너 ─────────────────────────────────────── */
@@ -223,12 +235,14 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
 export function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: { id: number; customer_name: string; dong: string; delivery_address: string; detail_address?: string | null; items_desc?: string | null; quantity?: number | null; request?: string | null; lat?: number | null; lng?: number | null }; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null) => void; onCancel: () => void }) {
+}: { order: { id: number; customer_name: string; dong: string; delivery_address: string; detail_address?: string | null; items_desc?: string | null; quantity?: number | null; request?: string | null; lat?: number | null; lng?: number | null }; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [signature, setSignature] = useState<string | null>(null)
   const [signOpen, setSignOpen] = useState(false)
+  const [security, setSecurity] = useState(false)   // 경비실 수령
+  const [memo, setMemo] = useState('')              // 배송 메모
   const insets = useSafeAreaInsets()
 
   // 배송지 좌표와 기사 GPS 거리(m). 좌표 미매칭 주문은 경안시장 폴백(37.4292,127.2551)이라 경고 스킵.
@@ -279,7 +293,7 @@ export function DeliveryCompleteModal({
 
   const submit = () => {
     if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
-    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force, signature) }
+    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force, signature, memo.trim() || undefined, security) }
     if (coordWarn) {
       Alert.alert(
         '⚠️ 위치 경고',
@@ -354,22 +368,53 @@ export function DeliveryCompleteModal({
             </TouchableOpacity>
           )}
 
-          {/* 수령인 서명 (선택) */}
-          <TouchableOpacity
-            onPress={() => setSignOpen(true)}
-            activeOpacity={0.85}
+          {/* 수령 방법: 사인 받기 / 경비실 수령 (선택) */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSignOpen(true)}
+              activeOpacity={0.85}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 12, borderRadius: 12, borderWidth: 1.5,
+                borderColor: signature ? T.success : T.primary,
+                backgroundColor: signature ? 'rgba(34,197,94,0.08)' : 'rgba(249,115,22,0.06)',
+              }}
+            >
+              <Ionicons name={signature ? 'checkmark-circle' : 'create-outline'} size={18} color={signature ? T.success : T.primary} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: signature ? T.success : T.primary }}>
+                {signature ? '서명 완료' : '사인 받기'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSecurity((v) => !v)}
+              activeOpacity={0.85}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 12, borderRadius: 12, borderWidth: 1.5,
+                borderColor: security ? T.success : T.textMuted,
+                backgroundColor: security ? 'rgba(34,197,94,0.08)' : 'rgba(148,163,184,0.06)',
+              }}
+            >
+              <Ionicons name={security ? 'checkmark-circle' : 'shield-outline'} size={18} color={security ? T.success : T.textSub} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: security ? T.success : T.textSub }}>
+                경비실 수령
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 배송 메모 (선택) — 기록 남기기 */}
+          <TextInput
+            value={memo}
+            onChangeText={setMemo}
+            placeholder="배송 메모 (예: 문 앞 / 경비실 보관 / 부재 안내 등)"
+            placeholderTextColor="#94A3B8"
+            multiline
             style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              marginBottom: 4, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5,
-              borderColor: signature ? T.success : T.primary,
-              backgroundColor: signature ? 'rgba(34,197,94,0.08)' : 'rgba(249,115,22,0.06)',
+              minHeight: 46, maxHeight: 96, borderWidth: 1, borderColor: '#E2E8F0',
+              borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+              color: '#0F172A', textAlignVertical: 'top', marginBottom: 8,
             }}
-          >
-            <Ionicons name={signature ? 'checkmark-circle' : 'create-outline'} size={18} color={signature ? T.success : T.primary} />
-            <Text style={{ fontSize: 15, fontWeight: '700', color: signature ? T.success : T.primary }}>
-              {signature ? '서명 완료 — 다시 받기' : '사인 받기 (선택)'}
-            </Text>
-          </TouchableOpacity>
+          />
 
           {/* GPS POD 상태 표시 */}
           <View style={$modal.gpsRow}>
@@ -513,7 +558,7 @@ function TransferModal({ order, drivers, onConfirm, onCancel }: {
 
 /* ── 배송 카드 ───────────────────────────────────────────────────── */
 function DeliveryCard({
-  order, seqInfo, editMode, onMoveStop, onNavi, onCall, onStatus, onDelay, onTransfer, retrying, onRetry, apiBase,
+  order, seqInfo, editMode, onMoveStop, onNavi, onCall, onStatus, onDelay, onTransfer, onOpenDetail, retrying, onRetry, apiBase,
 }: {
   order: Order
   seqInfo?: { index: number; total: number }
@@ -524,6 +569,7 @@ function DeliveryCard({
   onStatus: () => void
   onDelay: () => void
   onTransfer: () => void
+  onOpenDetail: () => void
   retrying: boolean
   onRetry: () => void
   apiBase: string
@@ -564,11 +610,10 @@ function DeliveryCard({
         )}
       </View>
 
-      {/* 고객 정보 — 탭하면 다음 단계(픽업→출발→완료) 처리 */}
+      {/* 고객 정보 — 탭하면 상세보기 (상태 처리는 아래 버튼으로) */}
       <TouchableOpacity
-        activeOpacity={isDone ? 1 : 0.6}
-        onPress={isDone ? undefined : onStatus}
-        disabled={isDone}
+        activeOpacity={0.6}
+        onPress={onOpenDetail}
       >
         <Text style={$card.name}>{order.customer_name} 고객님</Text>
         <View style={$card.addressRow}>
@@ -591,11 +636,7 @@ function DeliveryCard({
             <Text style={[$card.items, { color: T.primary }]}>요청: {order.request}</Text>
           </View>
         ) : null}
-        {!isDone && (
-          <Text style={$card.tapHint}>
-            👆 탭하면 {order.status === 'assigned' ? '픽업 완료' : order.status === 'picked_up' ? '배송 출발' : '배송 완료'} 처리
-          </Text>
-        )}
+        <Text style={$card.tapHint}>👆 탭하면 상세보기{!isDone ? ' · 처리는 아래 버튼' : ''}</Text>
       </TouchableOpacity>
 
       {/* 완료 사진 썸네일 */}
@@ -605,6 +646,29 @@ function DeliveryCard({
           style={$card.thumb}
           resizeMode="cover"
         />
+      )}
+
+      {/* 완료 부가정보 (경비실·서명·메모) — 리스트에서 한눈에 */}
+      {isDone && (order.received_by_security || order.delivery_signature_url || order.delivery_memo) && (
+        <View style={{ marginTop: 8, gap: 6 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {order.received_by_security && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(5,150,105,0.10)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Ionicons name="shield-checkmark" size={12} color={T.success} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.success }}>경비실 수령</Text>
+              </View>
+            )}
+            {order.delivery_signature_url && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(37,99,235,0.10)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Ionicons name="create-outline" size={12} color={T.info} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.info }}>서명</Text>
+              </View>
+            )}
+          </View>
+          {order.delivery_memo ? (
+            <Text style={{ fontSize: 12, color: T.textSub }} numberOfLines={2}>📝 {order.delivery_memo}</Text>
+          ) : null}
+        </View>
       )}
 
       {/* 사진 업로드 재시도 */}
@@ -816,11 +880,11 @@ export function DriverHomeScreen() {
   const markRetry = (id: number, uri: string) => { retryQueue.current.set(id, uri); setRetryKeys([...retryQueue.current.keys()]) }
   const clearRetry = (id: number) => { retryQueue.current.delete(id); setRetryKeys([...retryQueue.current.keys()]) }
 
-  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null) => {
+  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean) => {
     setCompleteTarget(null)
     try {
-      // 1) 온라인 정상 경로: 사진 → (서명) → 상태 완료
-      await uploadPhoto(order.id, photoUri, podLat, podLng, force)
+      // 1) 온라인 정상 경로: 사진(+메모·경비실) → (서명) → 상태 완료
+      await uploadPhoto(order.id, photoUri, podLat, podLng, force, memo, receivedBySecurity)
       if (signatureBase64) {
         try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
       }
@@ -842,6 +906,8 @@ export function DriverHomeScreen() {
           photoPath,
           signatureBase64: signatureBase64 ?? null,
           podLat, podLng, force,
+          memo: memo ?? null,
+          receivedBySecurity: receivedBySecurity ?? false,
           queuedAt: Date.now(),
         })
         clearRetry(order.id)
@@ -1078,11 +1144,12 @@ export function DriverHomeScreen() {
             seqInfo={activeSeqMap.get(order.id)}
             editMode={editSeqMode}
             onMoveStop={() => setMoveTarget(order)}
-            onNavi={() => openKakaoNavi(order.delivery_address)}
+            onNavi={() => openKakaoNavi(order)}
             onCall={() => Linking.openURL(`tel:${order.customer_phone}`)}
             onStatus={() => handleStatusUpdate(order)}
             onDelay={() => handleDelayed(order)}
             onTransfer={() => setTransferTarget(order)}
+            onOpenDetail={() => router.push(`/(driver)/order/${order.id}`)}
             retrying={retryKeys.includes(order.id)}
             onRetry={() => handleRetryUpload(order.id)}
             apiBase={API_BASE}
@@ -1094,7 +1161,7 @@ export function DriverHomeScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng, force, sig) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig)}
+          onConfirm={(uri, lat, lng, force, sig, memo, sec) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig, memo, sec)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}

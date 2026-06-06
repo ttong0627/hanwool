@@ -43,6 +43,8 @@ class Order(Base):
     sequence_source: Mapped[str] = mapped_column(String(20), default='manual', nullable=True)
     delivery_photo_path: Mapped[str] = mapped_column(String(500), nullable=True)
     delivery_signature_path: Mapped[str] = mapped_column(String(500), nullable=True)
+    delivery_memo: Mapped[str] = mapped_column(Text, nullable=True)                  # 배송 완료 메모 (기사 기록)
+    received_by_security: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')  # 경비실 수령 여부
     pod_lat: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 위도
     pod_lng: Mapped[float] = mapped_column(Float, nullable=True)   # POD 촬영 경도
     coord_mismatch: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')  # 완료 GPS-배송지 30m 초과

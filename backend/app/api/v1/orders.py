@@ -1051,6 +1051,8 @@ async def upload_delivery_photo(
     pod_lat: Optional[float] = Form(None),
     pod_lng: Optional[float] = Form(None),
     force: bool = Form(False),
+    memo: Optional[str] = Form(None),
+    received_by_security: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_driver_or_above),
 ):
@@ -1061,6 +1063,11 @@ async def upload_delivery_photo(
 
     if current_user.role == "driver" and order.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
+
+    # 배송완료 부가정보(메모·경비실 수령) 저장
+    if memo is not None:
+        order.delivery_memo = (memo.strip() or None)
+    order.received_by_security = bool(received_by_security)
 
     raw_ext = os.path.splitext(file.filename or "")[1].lower()
     if raw_ext not in _ALLOWED_EXTENSIONS:

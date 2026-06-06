@@ -162,9 +162,12 @@ def generate_receipt_pdf(order: dict) -> bytes:
         ["배송 주소", order.get("delivery_address", "")],
         ["물품 내역", order.get("items_desc", "")],
         ["수량", str(order.get("quantity", 1))],
+        ["수령 방법", "경비실 수령" if order.get("received_by_security") else "본인/직접 수령"],
         ["배송 완료 시각", order.get("delivered_at", "")],
         ["담당 기사", order.get("driver_name", "")],
     ]
+    if order.get("delivery_memo"):
+        data.append(["배송 메모", order.get("delivery_memo")])
     table = Table(data, colWidths=[4*cm, 13*cm])
     table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, -1), _F()),
@@ -195,6 +198,11 @@ def generate_receipt_pdf(order: dict) -> bytes:
         ))
         elements.append(Spacer(1, 0.2*cm))
         elements.append(_sig)
+    elif order.get("received_by_security"):
+        elements.append(Paragraph(
+            "경비실 수령 — 배송 완료 사진으로 수령을 확인합니다.",
+            ParagraphStyle("sign", fontName=_F(), fontSize=11, alignment=TA_CENTER)
+        ))
     else:
         elements.append(Paragraph(
             "수령인 서명: ___________________",
@@ -419,15 +427,24 @@ def generate_delivery_receipts_pdf(orders: List[dict], date_str: str) -> bytes:
             Paragraph(_pdf_text(order.get("dong", "")), small_center_style),
             Paragraph(_pdf_text(order.get("delivery_address", "")), small_style),
             Paragraph(_pdf_text(f"{order.get('items_desc') or '-'} / {order.get('quantity', 1)}개"), small_style),
-            Paragraph(_pdf_text(order.get("request") or "-"), small_style),
+            Paragraph(
+                _pdf_text(
+                    (order.get("request") or "-")
+                    + (f" / 메모: {order.get('delivery_memo')}" if order.get("delivery_memo") else "")
+                ),
+                small_style,
+            ),
             Paragraph(_pdf_text(_fmt_delivery_time(order.get("delivered_at"))), small_center_style),
             Paragraph(_pdf_text(order.get("driver_name") or "-"), small_center_style),
             Paragraph(
                 _pdf_text(
-                    "사진+서명" if order.get("delivery_photo_url") and order.get("delivery_signature_url")
-                    else "사진" if order.get("delivery_photo_url")
-                    else "서명" if order.get("delivery_signature_url")
-                    else "-"
+                    (
+                        "사진+서명" if order.get("delivery_photo_url") and order.get("delivery_signature_url")
+                        else "사진" if order.get("delivery_photo_url")
+                        else "서명" if order.get("delivery_signature_url")
+                        else "-"
+                    )
+                    + ("·경비실" if order.get("received_by_security") else "")
                 ),
                 small_center_style,
             ),

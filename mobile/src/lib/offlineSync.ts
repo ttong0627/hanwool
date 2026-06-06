@@ -14,6 +14,8 @@ async function flushOne(job: CompletionJob): Promise<boolean> {
     if (job.podLat != null) fd.append('pod_lat', String(job.podLat))
     if (job.podLng != null) fd.append('pod_lng', String(job.podLng))
     if (job.force) fd.append('force', 'true')
+    if (job.memo) fd.append('memo', job.memo)
+    if (job.receivedBySecurity) fd.append('received_by_security', 'true')
     await api.post(`/orders/${job.orderId}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
 
     if (job.signatureBase64) {
