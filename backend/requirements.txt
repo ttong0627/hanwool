@@ -7,10 +7,10 @@ psycopg2-binary==2.9.10
 redis==5.2.0
 pydantic==2.10.3
 pydantic-settings==2.6.1
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
-python-multipart==0.0.17
+python-multipart==0.0.18
 cryptography==44.0.0
 httpx==0.28.0
 reportlab==4.2.5

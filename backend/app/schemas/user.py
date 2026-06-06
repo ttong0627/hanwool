@@ -125,6 +125,11 @@ class UserLogin(BaseModel):
     password: str
 
 
+class TokenRefreshRequest(BaseModel):
+    """리프레시/로그아웃 — 토큰을 URL 쿼리 대신 요청 본문으로 받아 로그 노출 방지"""
+    token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

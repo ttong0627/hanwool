@@ -1,7 +1,7 @@
 import json
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,12 @@ from app.services.route_service import optimize_route
 from app.websocket.handler import manager
 
 router = APIRouter(prefix="/deliveries", tags=["배송"])
+
+
+def _ensure_driver(user: User) -> None:
+    """위치 보고는 기사(또는 기사 업무가 부여된 관리자)만 가능 — 위치 위조·노출 방지"""
+    if not (user.role in ("driver", "admin", "super_admin") or bool(getattr(user, "is_driver", False))):
+        raise HTTPException(status_code=403, detail="기사만 위치를 보고할 수 있습니다.")
 
 # 기사 실시간 위치 — 휘발성 데이터라 Redis에 저장(TTL). 폰 시계 문제를 피하려고 서버 시각으로 기록.
 DRIVER_LOC_PREFIX = "driver:loc:"
@@ -72,6 +78,7 @@ async def report_driver_location(
 ):
     """기사 앱(포그라운드/백그라운드)이 주기적으로 호출.
     서버 시각으로 기록해 폰 시계 오차 문제를 제거하고, Redis 저장 + 관리자 실시간 브로드캐스트."""
+    _ensure_driver(current_user)
     ts = int(time.time() * 1000)
     r = _redis()
     await r.setex(
@@ -97,6 +104,7 @@ async def update_driver_location(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ensure_driver(current_user)
     result = await db.execute(select(Delivery).where(Delivery.order_id == order_id, Delivery.driver_id == current_user.id))
     delivery = result.scalar_one_or_none()
     if not delivery:

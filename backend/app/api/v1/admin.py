@@ -14,6 +14,7 @@ from app.models.order import Order, OrderStatus
 from app.models.order_history import OrderHistory
 from app.models.address_resolution_log import AddressResolutionLog
 from app.models.user import User
+from app.schemas.order import DispatchByDriversRequest
 from app.api.v1.orders import _dispatch_today_orders
 from app.services.customer_service import customer_stats, get_customer_detail, list_customers
 from app.services.privacy_service import destroy_personal_data
@@ -120,12 +121,12 @@ async def list_dispatch_requests(
 @router.post("/dispatch-requests/{request_id}/resolve")
 async def resolve_dispatch_request(
     request_id: int,
-    body: dict,
+    body: DispatchByDriversRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_super_admin),
 ):
-    driver_ids = body.get("driver_ids", [])
-    if not isinstance(driver_ids, list) or not driver_ids:
+    driver_ids = body.driver_ids
+    if not driver_ids:
         raise HTTPException(status_code=400, detail="driver_ids가 필요합니다.")
 
     result = await db.execute(select(DispatchRequest).where(DispatchRequest.id == request_id))

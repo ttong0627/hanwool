@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from app.api.v1.deps import (
 )
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.core.security import decrypt_field, encrypt_field, hash_password, hash_phone, verify_password
 from app.models.user import User, UserRole
 from app.schemas.user import PasswordChangeRequest, PasswordResetRequest, RoleChangeRequest, UserCreate, UserOut, UserUpdate
@@ -143,7 +144,9 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/me/password")
+@limiter.limit("10/minute")
 async def change_my_password(
+    request: Request,
     data: PasswordChangeRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

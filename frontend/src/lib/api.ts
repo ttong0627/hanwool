@@ -21,7 +21,7 @@ api.interceptors.response.use(
         try {
           if (!refreshPromise) {
             refreshPromise = axios
-              .post('/api/v1/auth/refresh', null, { params: { token: refresh } })
+              .post('/api/v1/auth/refresh', { token: refresh })
               .then(({ data }) => {
                 localStorage.setItem('access_token', data.access_token)
                 if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)

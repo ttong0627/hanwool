@@ -70,6 +70,12 @@ function hasCoord(o: Order) {
 const TRANSPARENT_1PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
+// 고객명 등 사용자 입력이 innerHTML에 주입될 때 XSS를 막는 이스케이프
+function escapeHtml(s: string | number): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+  return String(s).replace(/[&<>"']/g, (c) => map[c])
+}
+
 function makePinEl(
   bg: string,
   seq: number | string,
@@ -104,9 +110,9 @@ function makePinEl(
   el.setAttribute('tabindex', '0')
   el.setAttribute('aria-label', `${seq}번 ${label}`)
   el.innerHTML = `
-    <div style="margin-bottom:5px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 6px rgba(0,0,0,.28);">${prefix}${label}</div>
+    <div style="margin-bottom:5px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 6px rgba(0,0,0,.28);">${prefix}${escapeHtml(label)}</div>
     <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${pinBg};border:${border}px solid #fff;box-shadow:${glow}${outline};">
-      <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${seq}</span>
+      <span style="color:#fff;font-size:${fs}px;font-weight:900;line-height:1;">${escapeHtml(seq)}</span>
     </div>
     <div style="width:0;height:0;border-left:${tri}px solid transparent;border-right:${tri}px solid transparent;border-top:${tri + 1}px solid ${bg};"></div>
   `

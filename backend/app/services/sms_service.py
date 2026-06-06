@@ -105,11 +105,7 @@ def build_departure_messages(orders) -> list[dict]:
 async def notify_order_status(order, status: str, eta: str = "30분 이내") -> bool:
     """
     실제 발송은 기사 앱에서 수행.
-    백엔드는 로그 기록 역할만 함.
+    백엔드는 상태 전환만 인지한다(개인정보는 로그에 남기지 않음).
     """
-    phone = decrypt_field(order.customer_phone_enc)
-    name = decrypt_field(order.customer_name_enc)
-    message = get_sms_message(status, name, eta)
-    if message:
-        print(f"[SMS 대기 - 기기에서 발송] → {phone}: {message}")
+    # 전화번호·이름 등 개인정보는 로그로 출력하지 않는다(개인정보보호법 준수).
     return True

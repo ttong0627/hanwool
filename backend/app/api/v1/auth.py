@@ -14,7 +14,7 @@ from app.core.security import (create_access_token, create_refresh_token,
                                 decrypt_field, hash_phone, hash_phone_legacy,
                                 verify_password, decode_token)
 from app.models.user import User
-from app.schemas.user import TokenResponse, UserLogin
+from app.schemas.user import TokenRefreshRequest, TokenResponse, UserLogin
 
 router = APIRouter(prefix="/auth", tags=["인증"])
 logger = logging.getLogger("hanwool.auth")
@@ -59,7 +59,9 @@ async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(ge
 
 
 @router.post("/refresh")
-async def refresh_token(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("20/minute")
+async def refresh_token(request: Request, data: TokenRefreshRequest, db: AsyncSession = Depends(get_db)):
+    token = data.token
     payload = decode_token(token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 리프레시 토큰입니다.")
@@ -89,8 +91,9 @@ async def refresh_token(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/logout")
-async def logout(token: str):
+async def logout(data: TokenRefreshRequest):
     """리프레시 토큰을 블랙리스트에 등록해 즉시 무효화"""
+    token = data.token
     payload = decode_token(token)
     if payload and payload.get("type") == "refresh":
         exp = payload.get("exp", 0)

@@ -145,6 +145,22 @@ def _websocket_auth_token(websocket: WebSocket, query_token: str) -> tuple[str, 
     return "", None
 
 
+def _is_room_authorized(room: str, role: str, user_id) -> bool:
+    """room별 구독 권한 검증.
+    - 관리자(super_admin/admin): 모든 room 허용(대시보드·기사 채널 모니터링 포함)
+    - 접수자(receiver): 운영 채널(orders/driver-location)만
+    - 기사(driver): 본인 채널(driver-{본인 id})만
+    - 그 외(customer 등): 거부
+    """
+    if role in ("super_admin", "admin"):
+        return True
+    if room in ("orders", "driver-location"):
+        return role == "receiver"
+    if room.startswith("driver-"):
+        return str(user_id) == room.split("driver-", 1)[1]
+    return False
+
+
 @app.websocket("/ws/{room}")
 async def websocket_endpoint(websocket: WebSocket, room: str, token: str = Query(default="")):
     from app.core.security import decode_token
@@ -154,11 +170,15 @@ async def websocket_endpoint(websocket: WebSocket, room: str, token: str = Query
     if not payload or payload.get("type") != "access":
         await websocket.close(code=4001)
         return
+    if not _is_room_authorized(room, payload.get("role", ""), payload.get("sub")):
+        await websocket.close(code=4003)  # 권한 없는 room 구독 차단
+        return
     await manager.connect(websocket, room, subprotocol=accept_subprotocol)
     try:
+        # 수신 전용 채널: 클라이언트 메시지는 연결 유지(heartbeat)용으로만 받고 재방송하지 않는다.
+        # (서버→클라 브로드캐스트는 서비스 로직에서만 manager.broadcast로 발생)
         while True:
-            data = await websocket.receive_json()
-            await manager.broadcast(room, data)
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, room)
 

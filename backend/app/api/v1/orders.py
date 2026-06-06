@@ -6,8 +6,10 @@ from zoneinfo import ZoneInfo
 import os
 import uuid
 import base64
+import logging
 
 _KST = ZoneInfo("Asia/Seoul")
+logger = logging.getLogger("hanwool.orders")
 
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
@@ -32,10 +34,14 @@ from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.order_history import OrderHistory
 from app.models.user import User
 from app.schemas.order import (
+    BatchCreateRequest,
+    DispatchByDriversRequest,
     OrderCreate,
     OrderEditRequest,
     OrderTransferOut,
     OrderTransferRequest,
+    ResequenceRequest,
+    SignatureUploadRequest,
     SingleOrderCreate,
 )
 from app.services import order_service, sms_service
@@ -60,6 +66,16 @@ DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
 def is_driver_capable(user) -> bool:
     """role이 driver이거나 is_driver 플래그가 부여된 사용자"""
     return user.role == "driver" or bool(getattr(user, "is_driver", False))
+
+
+def _enforce_reception_window(role: str) -> None:
+    """장날·접수시간 서버 강제 검증. admin/super_admin은 예외(상시 등록 가능)."""
+    if role in {"admin", "super_admin"}:
+        return
+    if not is_market_day():
+        raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
+    if not is_reception_open():
+        raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
 
 
 def _today_start() -> datetime:
@@ -302,6 +318,7 @@ async def create_single_order(
     current_user: User = Depends(require_receiver_or_above),
 ):
     """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
+    _enforce_reception_window(current_user.role)
     address_resolution = await resolve_address(data.delivery_address, db)
     effective_dong = address_resolution.service_dong or data.dong
 
@@ -349,11 +366,7 @@ async def create_order(
     from app.core.security import decrypt_field
 
     # 장날·접수시간 서버 강제 검증 (admin/super_admin은 bypass)
-    if current_user.role not in {"admin", "super_admin"}:
-        if not is_market_day():
-            raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
-        if not is_reception_open():
-            raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
+    _enforce_reception_window(current_user.role)
 
     if current_user.role == "customer":
         data.customer_id = current_user.id
@@ -601,14 +614,13 @@ async def get_today_dispatch_status(
 
 @router.post("/dispatch")
 async def dispatch_orders_priority(
-    body: dict,
+    body: DispatchByDriversRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_super_admin),
 ):
-    driver_ids: list[int] = body.get("driver_ids", [])
     return await _dispatch_today_orders(
         db,
-        driver_ids,
+        body.driver_ids,
         executed_by_id=current_user.id,
         is_auto=False,
         include_in_transit=True,
@@ -1105,7 +1117,7 @@ async def upload_delivery_photo(
 @router.post("/{order_id}/signature")
 async def upload_delivery_signature(
     order_id: int,
-    body: dict,
+    body: SignatureUploadRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_driver_or_above),
 ):
@@ -1117,7 +1129,7 @@ async def upload_delivery_signature(
     if current_user.role == "driver" and order.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 서명 등록할 수 있습니다.")
 
-    raw = ((body or {}).get("image_base64") or "").strip()
+    raw = (body.image_base64 or "").strip()
     if raw.startswith("data:") and "," in raw:
         raw = raw.split(",", 1)[1]
     try:
@@ -1208,28 +1220,24 @@ async def auto_sequence(
 
 @router.put("/resequence")
 async def resequence_orders(
-    body: dict,
+    body: ResequenceRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """기사가 본인 배송 순번 수동 재정렬 (드래그 앤 드롭 결과 저장)"""
-    sequences: list[dict] = body.get("sequences", [])
-    if not sequences:
-        raise HTTPException(status_code=400, detail="sequences 필드가 필요합니다.")
+    sequences = body.sequences
 
-    order_ids = [s["order_id"] for s in sequences]
+    order_ids = [s.order_id for s in sequences]
     result = await db.execute(select(Order).where(Order.id.in_(order_ids)))
     orders_map = {o.id: o for o in result.scalars().all()}
 
     for seq_item in sequences:
-        oid = seq_item.get("order_id")
-        seq = seq_item.get("sequence")
-        order = orders_map.get(oid)
+        order = orders_map.get(seq_item.order_id)
         if not order:
             continue
         if current_user.role == "driver" and order.driver_id != current_user.id:
             raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 순번 변경 가능합니다.")
-        order.sequence = seq
+        order.sequence = seq_item.sequence
         order.sequence_source = "manual"
 
     await db.flush()
@@ -1332,17 +1340,19 @@ async def regeocode_unresolved_orders(
 
 @router.post("/batch", status_code=201)
 async def batch_create_orders(
-    body: dict,
+    body: BatchCreateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_receiver_or_above),
 ):
     """복수 주문 일괄 등록 (QR / 엑셀 / 직접입력 공통 제출)"""
-    rows = body.get("rows", [])
-    if not rows:
-        raise HTTPException(status_code=400, detail="등록할 주문이 없습니다.")
+    rows = body.rows
 
     # 테스트 모드: True면 생성되는 주문·신규 고객을 is_test=True로 표시
-    is_test = bool(body.get("is_test", False))
+    is_test = body.is_test
+
+    # 실데이터 등록은 장날·접수시간 강제(테스트 등록은 예외)
+    if not is_test:
+        _enforce_reception_window(current_user.role)
 
     results = []
     for row in rows:
@@ -1379,8 +1389,11 @@ async def batch_create_orders(
                 order.lng = float(row["lng"])
                 await db.flush()
             results.append({"ok": True, "order_no": order.order_no})
-        except Exception as e:
-            results.append({"ok": False, "error": str(e)})
+        except HTTPException as e:
+            results.append({"ok": False, "error": e.detail})
+        except Exception:
+            logger.exception("batch order row failed")
+            results.append({"ok": False, "error": "주문 등록 중 오류가 발생했습니다."})
 
     success = sum(1 for r in results if r.get("ok"))
     return {"total": len(rows), "success": success, "results": results}

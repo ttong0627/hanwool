@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from typing import List, Optional
 
 _INSECURE_DEFAULTS = {
@@ -48,6 +48,16 @@ class Settings(BaseSettings):
         if v in _INSECURE_DEFAULTS:
             raise ValueError("AES_KEY가 기본 예제 값입니다 — .env에서 안전한 값으로 변경하세요")
         return v
+
+    @model_validator(mode="after")
+    def _no_test_sms_redirect_in_production(self) -> "Settings":
+        # 운영 환경에서 테스트 SMS 리다이렉트가 켜져 있으면 모든 고객 문자가 테스트폰으로 가므로 기동 차단
+        if self.ENVIRONMENT == "production" and (self.TEST_SMS_REDIRECT_PHONE or "").strip():
+            raise ValueError(
+                "운영 환경(ENVIRONMENT=production)에서는 TEST_SMS_REDIRECT_PHONE를 비워야 합니다 "
+                "— 설정 시 모든 고객 SMS가 테스트 번호로 발송됩니다."
+            )
+        return self
 
     @property
     def cors_origins_list(self) -> List[str]:

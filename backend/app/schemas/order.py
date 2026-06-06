@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OrderCreate(BaseModel):
@@ -12,7 +12,7 @@ class OrderCreate(BaseModel):
     dong: str
     items_desc: Optional[str] = None
     item_code: Optional[str] = None
-    quantity: int = 1
+    quantity: int = Field(1, ge=1, le=999)
     notes: Optional[str] = None
     request: Optional[str] = None
     weight_estimate: Optional[str] = None
@@ -30,7 +30,7 @@ class SingleOrderCreate(BaseModel):
     dong: str
     items_desc: Optional[str] = None
     item_code: Optional[str] = None
-    quantity: int = 1
+    quantity: int = Field(1, ge=1, le=999)
     request: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
@@ -103,6 +103,32 @@ class OrderEditRequest(BaseModel):
     dong: Optional[str] = None
     items_desc: Optional[str] = None
     item_code: Optional[str] = None
-    quantity: Optional[int] = None
+    quantity: Optional[int] = Field(None, ge=1, le=999)
     notes: Optional[str] = None
     request: Optional[str] = None
+
+
+# ── 요청 본문 검증용 스키마 (raw dict 입력 대체) ──────────────────────────────
+
+class DispatchByDriversRequest(BaseModel):
+    """우선순위 배차 / 배정요청 해소 — 기사 ID 목록"""
+    driver_ids: list[int] = Field(default_factory=list)
+
+
+class ResequenceItem(BaseModel):
+    order_id: int
+    sequence: int
+
+
+class ResequenceRequest(BaseModel):
+    sequences: list[ResequenceItem] = Field(min_length=1)
+
+
+class SignatureUploadRequest(BaseModel):
+    image_base64: str
+
+
+class BatchCreateRequest(BaseModel):
+    """복수 주문 일괄 등록 — 행 내부는 소스(QR/엑셀/직접)별로 가변이라 dict 유지"""
+    rows: list[dict] = Field(min_length=1)
+    is_test: bool = False
