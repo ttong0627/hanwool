@@ -50,12 +50,16 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _no_test_sms_redirect_in_production(self) -> "Settings":
-        # 운영 환경에서 테스트 SMS 리다이렉트가 켜져 있으면 모든 고객 문자가 테스트폰으로 가므로 기동 차단
+    def _warn_test_sms_redirect_in_production(self) -> "Settings":
+        # 운영 환경에서 테스트 SMS 리다이렉트가 켜져 있으면 모든 고객 문자가 테스트폰으로 가므로 경고.
+        # (서비스 중단을 피하기 위해 기동은 허용하고 기동 로그로 강하게 경고한다 —
+        #  테스트 중 운영 환경 플래그를 쓰는 경우가 있어 hard-fail은 위험.)
         if self.ENVIRONMENT == "production" and (self.TEST_SMS_REDIRECT_PHONE or "").strip():
-            raise ValueError(
-                "운영 환경(ENVIRONMENT=production)에서는 TEST_SMS_REDIRECT_PHONE를 비워야 합니다 "
-                "— 설정 시 모든 고객 SMS가 테스트 번호로 발송됩니다."
+            import logging
+            logging.getLogger("hanwool.config").warning(
+                "⚠️ 운영 환경(production)인데 TEST_SMS_REDIRECT_PHONE=%s 가 설정되어 "
+                "모든 고객 SMS가 이 테스트 번호로 발송됩니다. 실제 고객 발송 전환 시 .env에서 비우세요.",
+                self.TEST_SMS_REDIRECT_PHONE,
             )
         return self
 
