@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { DeliveryCompleteModal, uploadPhoto, uploadSignature, sendMmsWithPhoto, describeApiError } from './HomeScreen'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
+import { persistPhoto, enqueueCompletion } from '@/lib/offlineQueue'
 
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
 const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (JS 키 허용 도메인)
@@ -235,20 +236,32 @@ export function DriverMapScreen() {
 
   const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null) => {
     setCompleteTarget(null)
-    try { await uploadPhoto(order.id, uri, lat, lng, force) } catch { /* 업로드 실패해도 완료 진행 */ }
-    if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
-    let data: { sms_to?: string; sms_message?: string } | undefined
     try {
-      data = await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+      // 온라인 정상 경로: 사진 → (서명) → 상태 완료
+      await uploadPhoto(order.id, uri, lat, lng, force)
+      if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
+      const data = (await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)) as { sms_to?: string; sms_message?: string }
+      qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
+      if (data?.sms_to && data?.sms_message) {
+        try { await sendMmsWithPhoto(data.sms_to, data.sms_message, uri) } catch { /* 문자 실패 무시 */ }
+      }
     } catch (e) {
-      Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
-      return
-    }
-    // 서버에 '배달 완료' 저장 완료 → 화면 갱신.
-    qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
-    // 문자 발송은 완료와 분리 — 실패해도 배달 완료에는 영향 없음.
-    if (data?.sms_to && data?.sms_message) {
-      try { await sendMmsWithPhoto(data.sms_to, data.sms_message, uri) } catch { /* 문자 실패 무시 */ }
+      // 네트워크 실패 → 오프라인 큐에 저장(사진 영구 보존). 연결되면 자동 전송.
+      try {
+        const photoPath = await persistPhoto(order.id, uri)
+        await enqueueCompletion({
+          orderId: order.id,
+          orderNo: String(order.id),
+          photoPath,
+          signatureBase64: sig ?? null,
+          podLat: lat, podLng: lng, force,
+          queuedAt: Date.now(),
+        })
+        qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
+        Alert.alert('오프라인 저장됨', '인터넷 연결이 불안정해 배달 완료를 기기에 저장했습니다.\n연결되면 자동으로 전송됩니다.', [{ text: '확인' }])
+      } catch {
+        Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
+      }
     }
   }
 

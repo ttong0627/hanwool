@@ -21,6 +21,8 @@ import { ScanModal } from './ScanModal'
 import { CameraCaptureModal } from './CameraCaptureModal'
 import { SignaturePad } from './SignaturePad'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
+import { persistPhoto, enqueueCompletion } from '@/lib/offlineQueue'
+import { useOfflineSync } from '@/hooks/useOfflineSync'
 
 const API_BASE = BASE_URL
 
@@ -670,6 +672,9 @@ export function DriverHomeScreen() {
   const retryQueue = useRef<Map<number, string>>(new Map())
   const [retryKeys, setRetryKeys] = useState<number[]>([])
 
+  // 오프라인 배송완료 큐 자동 동기화 (전송 성공 시 목록 갱신)
+  const { pending: pendingSync, syncNow } = useOfflineSync(() => qc.invalidateQueries({ queryKey: ['driver-route'] }))
+
   const [isOffline, setIsOffline] = useState(false)
 
   const { data: orders, isLoading, refetch } = useQuery({
@@ -813,26 +818,39 @@ export function DriverHomeScreen() {
 
   const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null) => {
     setCompleteTarget(null)
-    try { await uploadPhoto(order.id, photoUri, podLat, podLng, force); clearRetry(order.id) }
-    catch {
-      markRetry(order.id, photoUri)
-      Alert.alert('사진 업로드 실패', '배달 완료는 처리됩니다.\n나중에 재시도 버튼으로 재업로드할 수 있습니다.', [{ text: '확인' }])
-    }
-    if (signatureBase64) {
-      try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
-    }
-    let data: StatusResponse | undefined
     try {
-      data = await api.put<StatusResponse>(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+      // 1) 온라인 정상 경로: 사진 → (서명) → 상태 완료
+      await uploadPhoto(order.id, photoUri, podLat, podLng, force)
+      if (signatureBase64) {
+        try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
+      }
+      const data = await api.put<StatusResponse>(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)
+      clearRetry(order.id)
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      // 문자 발송은 완료와 분리 — 문자앱 미지원·취소 등으로 실패해도 배달 완료에는 영향 없음.
+      if (data?.sms_to && data?.sms_message) {
+        try { await sendMmsWithPhoto(data.sms_to, data.sms_message, photoUri) } catch { /* 문자 실패는 완료에 영향 없음 */ }
+      }
     } catch (e) {
-      Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
-      return
-    }
-    // 여기까지 왔으면 서버에 '배달 완료'가 저장됨 → 화면 갱신.
-    qc.invalidateQueries({ queryKey: ['driver-route'] })
-    // 문자 발송은 완료와 분리 — 문자앱 미지원·취소 등으로 실패해도 배달 완료에는 영향 없음.
-    if (data?.sms_to && data?.sms_message) {
-      try { await sendMmsWithPhoto(data.sms_to, data.sms_message, photoUri) } catch { /* 문자 실패는 완료에 영향 없음 */ }
+      // 2) 네트워크 실패 → 오프라인 큐에 저장(사진 영구 보존) + 화면 즉시 완료 표시.
+      //    인터넷이 연결되면 useOfflineSync가 자동으로 사진·서명·상태를 전송한다.
+      try {
+        const photoPath = await persistPhoto(order.id, photoUri)
+        await enqueueCompletion({
+          orderId: order.id,
+          orderNo: order.order_no,
+          photoPath,
+          signatureBase64: signatureBase64 ?? null,
+          podLat, podLng, force,
+          queuedAt: Date.now(),
+        })
+        clearRetry(order.id)
+        setLocalOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: 'delivered' } : o)))
+        syncNow()
+        Alert.alert('오프라인 저장됨', '인터넷 연결이 불안정해 배달 완료를 기기에 저장했습니다.\n연결되면 자동으로 전송됩니다.', [{ text: '확인' }])
+      } catch {
+        Alert.alert('오류', `배달 완료 처리 중 문제가 발생했습니다.\n${describeApiError(e)}`)
+      }
     }
   }
 
@@ -908,6 +926,16 @@ export function DriverHomeScreen() {
                   <Ionicons name="cloud-offline-outline" size={12} color="#FCA5A5" />
                   <Text style={{ fontSize: 11, color: '#FCA5A5', fontWeight: '700' }}>오프라인</Text>
                 </View>
+              )}
+              {pendingSync > 0 && (
+                <TouchableOpacity
+                  onPress={syncNow}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(245,158,11,0.22)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}
+                >
+                  <Ionicons name="cloud-upload-outline" size={12} color="#FCD34D" />
+                  <Text style={{ fontSize: 11, color: '#FCD34D', fontWeight: '700' }}>미전송 {pendingSync} · 전송</Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>

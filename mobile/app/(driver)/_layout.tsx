@@ -2,6 +2,8 @@ import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Platform } from 'react-native'
 
+import { useOfflineSync } from '@/hooks/useOfflineSync'
+
 const T = {
   primary:  '#F97316',
   dark:     '#0F172A',
@@ -11,6 +13,9 @@ const T = {
 }
 
 export default function DriverLayout() {
+  // 기사 화면 어디에 있든 오프라인 배송완료 큐를 백그라운드로 자동 전송
+  useOfflineSync()
+
   return (
     <Tabs
       screenOptions={{
