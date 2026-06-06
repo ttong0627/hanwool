@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user, require_receiver_or_above
 from app.core.config import settings
 from app.core.database import get_db
-from app.services.address_resolver import resolve_address
+from app.services.address_resolver import SERVICE_DONGS, resolve_address
 
 router = APIRouter(prefix="/addresses", tags=["주소"])
 
@@ -484,13 +484,13 @@ async def resolve_address_batch_endpoint(
 
 @router.get("/test-samples")
 async def address_test_samples(
-    dong: Optional[str] = Query(None, description="경안동/송정동/쌍령동/탄벌동 중 하나"),
+    dong: Optional[str] = Query(None, description="배송 허용 18개 동 중 하나 (미지정 시 전체)"),
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_receiver_or_above),
 ):
     """로컬 행안부 DB에서 테스트에 쓸 실제 주소 샘플을 추출한다."""
-    allowed = {"경안동", "송정동", "쌍령동", "탄벌동"}
+    allowed = SERVICE_DONGS
     dongs = [dong] if dong in allowed else sorted(allowed)
     rows = await db.execute(
         text(

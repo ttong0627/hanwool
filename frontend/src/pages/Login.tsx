@@ -68,8 +68,8 @@ export function LoginPage() {
           </h1>
           <p className="text-slate-400 mt-4 text-sm leading-relaxed">
             경기도 광주시 지자체 협약<br />
-            경안동·송정동·쌍령동·탄벌동<br />
-            무료 복지 배송 관리 시스템
+            광주시 18개 동 무료 복지 배송<br />
+            관리 시스템
           </p>
           <div className="mt-10 space-y-2 text-left">
             {[
