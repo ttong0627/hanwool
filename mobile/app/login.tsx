@@ -34,8 +34,8 @@ export default function LoginScreen() {
   const loginMutation = useMutation({
     mutationFn: () => api.post('/auth/login', { phone, password }),
     onSuccess: (res) => {
-      const { access_token, user } = res.data
-      setAuth(user, access_token)
+      const { access_token, refresh_token, user } = res.data
+      setAuth(user, access_token, refresh_token)
       if (user.role === 'driver')      router.replace('/(driver)')
       else if (user.role === 'super_admin') router.replace('/(admin)')
       else router.replace('/(customer)')
