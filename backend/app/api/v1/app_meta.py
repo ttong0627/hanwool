@@ -7,7 +7,7 @@ router = APIRouter(prefix="/app", tags=["앱"])
 # - APP_LATEST_VERSION : 최신 권장 버전(이보다 낮으면 권장 업데이트)
 # - MIN_SUPPORTED_VERSION : 최소 지원 버전(이보다 낮으면 강제 업데이트, 닫기 불가)
 # - APK_URL : 항상 최신 APK를 가리키는 고정 파일명(배포 시 이 파일을 최신본으로 교체)
-APP_LATEST_VERSION = "1.0.43"
+APP_LATEST_VERSION = "1.0.44"
 APK_URL = "https://ga.wssc.kr/downloads/hanwool-driver.apk"
 MIN_SUPPORTED_VERSION = "1.0.31"  # ≤1.0.30(버그 있던 버전)은 강제 업데이트
 
