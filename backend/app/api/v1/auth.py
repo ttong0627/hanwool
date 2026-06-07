@@ -66,8 +66,9 @@ async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(ge
 
 
 @router.post("/refresh")
-@limiter.limit("20/minute")
-async def refresh_token(request: Request, data: TokenRefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_token(data: TokenRefreshRequest, db: AsyncSession = Depends(get_db)):
+    # 세션 유지용 정상 호출이라 rate limit을 걸지 않는다.
+    # (걸면 페이지 로드 시 동시 갱신 폭주로 429 → 강제 로그아웃이 발생)
     token = data.token
     payload = decode_token(token)
     if not payload or payload.get("type") != "refresh":
