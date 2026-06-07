@@ -1,5 +1,5 @@
 import api from './api'
-import { listCompletions, removeCompletion, CompletionJob } from './offlineQueue'
+import { listCompletions, removeCompletion, markPhotoUploaded, CompletionJob } from './offlineQueue'
 
 // 오프라인 큐에 쌓인 배송완료를 서버에 전송한다.
 // 사진 업로드 → (서명) → 상태 delivered 순서로 재생하고, 성공하면 큐에서 제거한다.
@@ -9,14 +9,19 @@ let syncing = false
 
 async function flushOne(job: CompletionJob): Promise<boolean> {
   try {
-    const fd = new FormData()
-    fd.append('file', { uri: job.photoPath, name: 'delivery.jpg', type: 'image/jpeg' } as unknown as Blob)
-    if (job.podLat != null) fd.append('pod_lat', String(job.podLat))
-    if (job.podLng != null) fd.append('pod_lng', String(job.podLng))
-    if (job.force) fd.append('force', 'true')
-    if (job.memo) fd.append('memo', job.memo)
-    if (job.receivedBySecurity) fd.append('received_by_security', 'true')
-    await api.post(`/orders/${job.orderId}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    // 사진은 한 번만 업로드 — 이전 시도에서 성공했으면 건너뛴다(중복 방지).
+    if (!job.photoUploaded) {
+      const fd = new FormData()
+      fd.append('file', { uri: job.photoPath, name: 'delivery.jpg', type: 'image/jpeg' } as unknown as Blob)
+      if (job.podLat != null) fd.append('pod_lat', String(job.podLat))
+      if (job.podLng != null) fd.append('pod_lng', String(job.podLng))
+      if (job.force) fd.append('force', 'true')
+      if (job.memo) fd.append('memo', job.memo)
+      if (job.receivedBySecurity) fd.append('received_by_security', 'true')
+      await api.post(`/orders/${job.orderId}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      await markPhotoUploaded(job.orderId)
+      job.photoUploaded = true
+    }
 
     if (job.signatureBase64) {
       try { await api.post(`/orders/${job.orderId}/signature`, { image_base64: job.signatureBase64 }) } catch { /* 서명 실패는 완료에 영향 없음 */ }

@@ -26,6 +26,7 @@ interface Order {
   status: string
   dong: string
   delivery_address: string
+  detail_address?: string | null
   items_desc?: string
   quantity: number
   sequence?: number
@@ -33,6 +34,7 @@ interface Order {
   driver_name?: string | null
   driver_phone?: string | null
   request?: string | null
+  notes?: string | null
   lat?: number | null
   lng?: number | null
   pod_lat?: number | null
@@ -889,7 +891,16 @@ export function DeliveryTracking() {
                         <StatusBadge status={order.status} />
                         {isDelayed && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />}
                       </div>
-                      <div className="truncate text-[11px] text-gray-500 mt-0.5">{order.delivery_address}</div>
+                      <div className="truncate text-[11px] text-gray-500 mt-0.5">
+                        {order.delivery_address}{order.detail_address ? ` ${order.detail_address}` : ''}
+                      </div>
+                      {(order.request || order.notes) && (
+                        <div className="truncate text-[11px] mt-0.5">
+                          {order.request && <span className="text-amber-600">📌 {order.request}</span>}
+                          {order.request && order.notes && <span className="text-gray-300"> · </span>}
+                          {order.notes && <span className="text-blue-600">📢 {order.notes}</span>}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-gray-400">
                         <span className="truncate">{order.items_desc || '물품'} · {order.quantity}개</span>
                         <span className="flex shrink-0 items-center gap-1">
@@ -920,7 +931,7 @@ export function DeliveryTracking() {
               <StatusBadge status={selectedOrder.status} />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span className="text-gray-700">{selectedOrder.delivery_address}</span>
+              <span className="text-gray-700">{selectedOrder.delivery_address}{selectedOrder.detail_address ? ` ${selectedOrder.detail_address}` : ''}</span>
               <span className="text-gray-700">{selectedOrder.dong}</span>
               <span className="text-gray-700">{selectedOrder.items_desc || '물품'} · {selectedOrder.quantity}개</span>
               {selectedOrder.driver_name && (
@@ -978,6 +989,11 @@ export function DeliveryTracking() {
             {selectedOrder.request && (
               <div className="w-full rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
                 요청사항: {selectedOrder.request}
+              </div>
+            )}
+            {selectedOrder.notes && (
+              <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                전달사항: {selectedOrder.notes}
               </div>
             )}
           </div>

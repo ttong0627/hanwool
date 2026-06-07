@@ -811,6 +811,11 @@ export function DriverHomeScreen() {
   // 정상 조회 시 캐시 저장
   useAutoSaveCache(orders)
 
+  // 이미 배송 중(in_transit)이면 출근 게이트 자동 통과 — 배송 중 앱 재진입 시 게이트 안 뜸
+  useEffect(() => {
+    if ((orders ?? []).some((o: { status?: string }) => o.status === 'in_transit')) setEntered(true)
+  }, [orders])
+
   useRouteListener(myId, API_BASE, useCallback(() => {
     qc.invalidateQueries({ queryKey: ['driver-route'] })
   }, [qc]))
@@ -944,8 +949,14 @@ export function DriverHomeScreen() {
       if (data?.sms_to && data?.sms_message) {
         try { await sendMmsWithPhoto(data.sms_to, data.sms_message, photoUri) } catch { /* 문자 실패는 완료에 영향 없음 */ }
       }
-    } catch (e) {
-      // 2) 네트워크 실패 → 오프라인 큐에 저장(사진 영구 보존) + 화면 즉시 완료 표시.
+    } catch (e: any) {
+      // 서버가 거부한 경우(4xx/5xx)는 오프라인이 아님 → 큐에 넣지 않고 에러를 표시.
+      // (큐에 넣으면 화면은 '완료'로 보이지만 서버엔 반영되지 않고 30초마다 영구 재시도됨)
+      if (e?.response) {
+        Alert.alert('완료 실패', describeApiError(e))
+        return
+      }
+      // 2) 네트워크 실패(응답 없음) → 오프라인 큐에 저장(사진 영구 보존) + 화면 즉시 완료 표시.
       //    인터넷이 연결되면 useOfflineSync가 자동으로 사진·서명·상태를 전송한다.
       try {
         const photoPath = await persistPhoto(order.id, photoUri)

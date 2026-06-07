@@ -18,6 +18,7 @@ export interface CompletionJob {
   force?: boolean
   memo?: string | null         // 배송 메모
   receivedBySecurity?: boolean // 경비실 수령
+  photoUploaded?: boolean      // 사진 업로드 성공 표시(상태 전송 실패 후 재시도 시 중복 업로드 방지)
   queuedAt: number
 }
 
@@ -66,6 +67,12 @@ export async function enqueueCompletion(job: CompletionJob): Promise<void> {
 
 export async function listCompletions(): Promise<CompletionJob[]> {
   return readQueue()
+}
+
+/** 사진 업로드 성공을 큐에 영구 표시 — 상태 전송 실패 후 재시도 때 사진 중복 업로드 방지. */
+export async function markPhotoUploaded(orderId: number): Promise<void> {
+  const jobs = await readQueue()
+  await writeQueue(jobs.map((j) => (j.orderId === orderId ? { ...j, photoUploaded: true } : j)))
 }
 
 export async function removeCompletion(orderId: number): Promise<void> {

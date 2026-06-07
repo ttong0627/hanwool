@@ -32,6 +32,7 @@ interface OrderDetail {
   quantity?: number
   item_code?: string | null
   request?: string | null
+  notes?: string | null
   sequence?: number | null
   lat?: number | null
   lng?: number | null
@@ -137,6 +138,7 @@ export default function OrderDetailScreen() {
             <Row label="물품" value={`${order.items_desc || '-'} (${order.quantity ?? 1}개)`} />
             {order.item_code ? <Row label="코드" value={order.item_code} /> : null}
             {order.request ? <Row label="요청사항" value={order.request} color={T.primary} /> : null}
+            {order.notes ? <Row label="전달사항" value={order.notes} color={T.info} /> : null}
           </View>
 
           {/* 액션 */}
