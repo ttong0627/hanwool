@@ -811,6 +811,10 @@ async def update_status(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
+    # 최고관리자가 기사를 배정한 경우 → 해당 기사의 오늘 주문 순번을 기사별로 자동 재계산(1번부터)
+    if current_user.role == "super_admin" and driver_id is not None:
+        await _auto_sequence_for_driver(db, driver_id)
+
     from app.core.security import decrypt_field
     customer_phone = decrypt_field(order.customer_phone_enc)
     customer_name = decrypt_field(order.customer_name_enc)

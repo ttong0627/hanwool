@@ -528,7 +528,7 @@ export function DeliveryTracking() {
   ).length
   const noCoordCount = visibleOrders.filter((o) => !hasCoord(o)).length
 
-  // 동별 현황 — 경안동/탄벌동/송정동/쌍령동 고정 순서
+  // 동별 현황 — 18개 동 전체를 고정 순서로 한눈에 (주문 없는 동은 0으로 표시)
   const dongStats = useMemo(() => {
     const map = new Map<string, { total: number; delivered: number; active: number; delayed: number }>()
     visibleOrders.forEach((o) => {
@@ -540,8 +540,7 @@ export function DeliveryTracking() {
       map.set(o.dong, curr)
     })
     return DONG_ORDER
-      .filter((dong) => map.has(dong))
-      .map((dong) => [dong, map.get(dong)!] as const)
+      .map((dong) => [dong, map.get(dong) ?? { total: 0, delivered: 0, active: 0, delayed: 0 }] as const)
   }, [visibleOrders])
 
   const selectedOrders = useMemo(() => {
@@ -648,35 +647,39 @@ export function DeliveryTracking() {
         </div>
       )}
 
-      {/* 동별 현황 카드 — 경안동/탄벌동/송정동/쌍령동 고정 순서 */}
-      {dongStats.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {dongStats.map(([dong, stat]) => {
-            const rate = stat.total ? Math.round((stat.delivered / stat.total) * 100) : 0
-            return (
-              <div key={dong} className="rounded-lg border border-gray-200 bg-white p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-900">{dong}</span>
-                  {stat.delayed > 0 && (
-                    <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">지연 {stat.delayed}</span>
-                  )}
-                </div>
-                <div className="mt-1 flex items-end gap-1">
-                  <span className="text-xl font-black text-gray-900">{stat.delivered}</span>
-                  <span className="mb-0.5 text-xs text-gray-500">/ {stat.total}건</span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                  <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${rate}%` }} />
-                </div>
-                <div className="mt-1 flex justify-between text-[10px] text-gray-500">
-                  <span>완료율 {rate}%</span>
-                  {stat.active > 0 && <span className="text-orange-600">진행 {stat.active}</span>}
-                </div>
+      {/* 동별 현황 — 18개 동 한눈에 (컴팩트 미니 카드) */}
+      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6 lg:grid-cols-9">
+        {dongStats.map(([dong, stat]) => {
+          const rate = stat.total ? Math.round((stat.delivered / stat.total) * 100) : 0
+          const empty = stat.total === 0
+          return (
+            <div
+              key={dong}
+              title={`${dong} · 완료 ${stat.delivered}/${stat.total} (${rate}%)${stat.active ? ` · 진행 ${stat.active}` : ''}${stat.delayed ? ` · 지연 ${stat.delayed}` : ''}`}
+              className={`rounded-md border px-1.5 py-1 leading-tight ${
+                empty ? 'border-gray-100 bg-gray-50/60'
+                : stat.delayed > 0 ? 'border-red-200 bg-red-50'
+                : rate === 100 ? 'border-green-200 bg-green-50'
+                : 'border-gray-200 bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className={`truncate text-[11px] font-bold ${empty ? 'text-gray-300' : 'text-gray-800'}`}>{dong}</span>
+                {stat.delayed > 0 && (
+                  <span className="shrink-0 rounded bg-red-500 px-1 text-[9px] font-black text-white">{stat.delayed}</span>
+                )}
               </div>
-            )
-          })}
-        </div>
-      )}
+              <div className={`text-[13px] font-black tabular-nums ${empty ? 'text-gray-300' : 'text-gray-900'}`}>
+                {stat.delivered}<span className="text-[10px] font-medium text-gray-400">/{stat.total}</span>
+              </div>
+              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full rounded-full bg-green-500" style={{ width: `${rate}%` }} />
+              </div>
+              {stat.active > 0 && <div className="text-[9px] font-semibold text-orange-600">진행 {stat.active}</div>}
+            </div>
+          )
+        })}
+      </div>
 
       {/* 필터 바 — 프리미엄 글래스 카드 */}
       <div className="card-elevated rounded-xl p-4 space-y-3">
