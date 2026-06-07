@@ -23,8 +23,11 @@ interface OverviewOrder {
   request?: string | null
   notes?: string | null
   driver_name?: string | null
+  driver_phone?: string | null
   delivery_photo_url?: string | null
   delivery_signature_url?: string | null
+  delivery_memo?: string | null
+  received_by_security?: boolean
   delivered_at?: string | null
   lat?: number | null
   lng?: number | null
@@ -42,6 +45,13 @@ const PENDING_LABELS: Record<string, string> = {
   picked_up: '픽업완료',
   in_transit: '배송중',
   delayed: '지연',
+}
+
+// 수령 방법 자동 판정: 서명 있으면 직접 수령, 경비실 수령이면 경비실, 그 외(사진만) 문앞
+function receiptMethod(o: { delivery_signature_url?: string | null; received_by_security?: boolean }): '직접 수령' | '경비실' | '문앞' {
+  if (o.delivery_signature_url) return '직접 수령'
+  if (o.received_by_security) return '경비실'
+  return '문앞'
 }
 
 function todayStr(): string {
@@ -116,6 +126,7 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
   if (!order) return null
   const isDelivered = order.status === 'delivered'
   const addr = `${order.delivery_address ?? ''}${order.detail_address ? ` ${order.detail_address}` : ''}`.trim()
+  const method = receiptMethod(order)
   const hasAddr = order.lat != null && order.lng != null
   const hasPod = order.pod_lat != null && order.pod_lng != null
 
@@ -162,8 +173,23 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
             <InfoRow label="주소"><span className="inline-flex items-start gap-1"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />{addr || order.dong}</span></InfoRow>
             <InfoRow label="물품">{order.items_desc ? `${order.items_desc} · ${order.quantity ?? 1}개` : '-'}</InfoRow>
             <InfoRow label="요청사항"><span className={order.request ? 'font-medium text-brand-700' : 'text-gray-400'}>{order.request || '없음'}</span></InfoRow>
-            {order.notes ? <InfoRow label="메모">{order.notes}</InfoRow> : null}
-            <InfoRow label="기사"><span className="inline-flex items-center gap-1"><Truck className="h-4 w-4 text-gray-400" />{order.driver_name || '-'}</span></InfoRow>
+            {isDelivered && (
+              <InfoRow label="수령방법">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                  method === '직접 수령' ? 'bg-blue-50 text-blue-700'
+                  : method === '경비실' ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-gray-100 text-gray-600'
+                }`}>{method}</span>
+              </InfoRow>
+            )}
+            {order.delivery_memo ? <InfoRow label="배송메모"><span className="text-gray-800">{order.delivery_memo}</span></InfoRow> : null}
+            {order.notes ? <InfoRow label="관리메모">{order.notes}</InfoRow> : null}
+            <InfoRow label="기사">
+              <span className="inline-flex items-center gap-1">
+                <Truck className="h-4 w-4 text-gray-400" />
+                {order.driver_name || '-'}{order.driver_phone ? <span className="ml-1 tabular-nums text-gray-500">· {order.driver_phone}</span> : null}
+              </span>
+            </InfoRow>
             {order.delivery_signature_url && (
               <InfoRow label="서명">
                 <button
@@ -346,8 +372,9 @@ export function DeliveryCompleted() {
               <div className="font-medium text-gray-900">{row.customer_name}</div>
               <div className="tabular-nums text-gray-600">{row.customer_phone}</div>
               <div>{row.dong}</div>
-              <div className="truncate text-gray-700" title={row.delivery_address}>
+              <div className="truncate text-gray-700" title={`${row.delivery_address}${row.detail_address ? ` ${row.detail_address}` : ''}`}>
                 {row.delivery_address}
+                {row.detail_address ? <span className="text-gray-400"> {row.detail_address}</span> : null}
                 {row.coord_mismatch && (
                   <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">
                     <AlertTriangle className="h-3 w-3" />{formatDistance(row.coord_distance_m)}
