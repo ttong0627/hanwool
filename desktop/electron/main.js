@@ -88,6 +88,40 @@ function getIconPath() {
   return undefined
 }
 
+// 바탕화면에 앱 실행 바로가기(.lnk) 생성 (Windows 전용)
+function createDesktopShortcut() {
+  if (process.platform !== 'win32') {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '바로가기',
+      message: '바탕화면 바로가기는 Windows에서만 지원됩니다.',
+    })
+    return
+  }
+  try {
+    const shortcutPath = path.join(app.getPath('desktop'), '경안시장 집배송.lnk')
+    const ok = shell.writeShortcutLink(shortcutPath, 'create', {
+      target: process.execPath,
+      icon: process.execPath,
+      iconIndex: 0,
+      description: '경안시장 집배송 관리시스템',
+    })
+    dialog.showMessageBox(mainWindow, {
+      type: ok ? 'info' : 'error',
+      title: '바로가기',
+      message: ok
+        ? '바탕화면에 바로가기를 만들었습니다.'
+        : '바로가기 생성에 실패했습니다.',
+    })
+  } catch (e) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: '바로가기',
+      message: '바로가기 생성 실패: ' + (e && e.message ? e.message : String(e)),
+    })
+  }
+}
+
 function buildMenu() {
   const template = [
     {
@@ -101,6 +135,11 @@ function buildMenu() {
         {
           label: '서버 재연결',
           click: () => mainWindow?.loadURL(SERVER_URL),
+        },
+        { type: 'separator' },
+        {
+          label: '바탕화면 바로가기 만들기',
+          click: () => createDesktopShortcut(),
         },
         { type: 'separator' },
         { label: '종료', accelerator: 'Alt+F4', role: 'quit' },
