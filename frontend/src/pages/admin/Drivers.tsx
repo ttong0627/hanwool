@@ -12,6 +12,9 @@ import {
   ToggleLeft,
   ToggleRight,
   Phone,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -31,6 +34,9 @@ interface DriverStat {
   total: number
   delivered: number
 }
+
+interface DayStat { date: string; total: number; delivered: number }
+interface DriverDaily { total: number; delivered: number; by_date: DayStat[] }
 
 interface DriverForm {
   name: string
@@ -131,6 +137,16 @@ export function Drivers() {
     refetchInterval: 30_000,
   })
 
+  // 기사별 일자별 집계 + 누적 (최근 90일)
+  const { data: dailyMap = {} } = useQuery<Record<string, DriverDaily>>({
+    queryKey: ['driver-stats-daily'],
+    queryFn: () => api.get('/admin/stats/drivers/daily', { params: { days: 90 } }).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [dayDetail, setDayDetail] = useState<{ driverId: number; driverName: string; date: string } | null>(null)
+
   const toggleMutation = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => api.put(`/users/${id}`, { is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
@@ -159,6 +175,7 @@ export function Drivers() {
     <div className="p-6 space-y-5 page-fade-in">
       {showCreate && <DriverModal onClose={() => setShowCreate(false)} />}
       {editing && <DriverModal driver={editing} onClose={() => setEditing(null)} />}
+      {dayDetail && <DayDetailModal {...dayDetail} onClose={() => setDayDetail(null)} />}
 
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3">
@@ -324,6 +341,55 @@ export function Drivers() {
                   <div className="mb-3 h-2.5 bg-gray-100 rounded-full" />
                 )}
 
+                {/* 일자별 집계 (누적) — 카드 형식 유지, 토글로 펼침 */}
+                {(() => {
+                  const daily = dailyMap[String(driver.id)]
+                  const cumTotal = daily?.total ?? 0
+                  const cumDelivered = daily?.delivered ?? 0
+                  const open = expanded === driver.id
+                  return (
+                    <div className="mb-3">
+                      <button
+                        onClick={() => setExpanded(open ? null : driver.id)}
+                        className="w-full flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2 text-[12px] hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="flex items-center gap-1.5 text-gray-600 font-medium">
+                          <CalendarDays className="w-3.5 h-3.5" style={{ color: tone.text }} />
+                          일자별 집계
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-bold tabular-nums" style={{ color: tone.text }}>누적 {cumTotal}건</span>
+                          <span className="text-gray-400 tabular-nums">완료 {cumDelivered}</span>
+                          {open ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
+                          {(daily?.by_date ?? []).length === 0 ? (
+                            <div className="px-3 py-3 text-center text-[11px] text-gray-400">집계 데이터가 없습니다</div>
+                          ) : (
+                            daily!.by_date.map((d) => (
+                              <button
+                                key={d.date}
+                                onClick={() => setDayDetail({ driverId: driver.id, driverName: driver.name, date: d.date })}
+                                className="w-full flex items-center justify-between px-3 py-2 text-[12px] hover:bg-brand-50/50 transition-colors"
+                                title="현황 보기"
+                              >
+                                <span className="tabular-nums text-gray-700">{d.date.slice(5).replace('-', '/')}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className="font-semibold tabular-nums text-gray-800">{d.total}건</span>
+                                  <span className="text-[11px] tabular-nums text-emerald-600">완료 {d.delivered}</span>
+                                  <span className="text-[10px] font-bold text-brand-500">현황 ›</span>
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 {/* 푸터 */}
                 <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-50">
                   <span>등록 {formatDate(driver.created_at)}</span>
@@ -352,6 +418,71 @@ export function Drivers() {
             <p className="text-sm mt-1">기사 등록 버튼으로 추가해 주세요.</p>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+const DAY_STATUS: Record<string, string> = {
+  pending: '대기', assigned: '배정', picked_up: '픽업', in_transit: '배송중',
+  delivered: '완료', cancelled: '취소', delayed: '지연',
+}
+
+interface DayOrder {
+  id: number
+  order_no: string
+  customer_name: string
+  dong: string
+  delivery_address: string
+  detail_address?: string | null
+  status: string
+  sequence?: number | null
+}
+
+// 기사 카드의 일자 클릭 → 해당 기사·일자 배송 현황 모달
+function DayDetailModal({ driverId, driverName, date, onClose }: { driverId: number; driverName: string; date: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery<{ items: DayOrder[]; total: number }>({
+    queryKey: ['driver-day-orders', driverId, date],
+    queryFn: () => api.get('/orders', { params: { driver_id: driverId, date_from: date, date_to: date, page_size: 100 } }).then((r) => r.data),
+  })
+  const items = data?.items ?? []
+  const delivered = items.filter((o) => o.status === 'delivered').length
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <div>
+            <div className="font-bold text-gray-900">{driverName} 기사 · 배송 현황</div>
+            <div className="text-xs text-gray-400">{date} · 총 {items.length}건 · 완료 {delivered}건</div>
+          </div>
+          <button type="button" onClick={onClose} title="닫기" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="space-y-1.5 overflow-y-auto p-3">
+          {isLoading ? (
+            <div className="py-10 text-center text-sm text-gray-400">불러오는 중...</div>
+          ) : items.length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">해당 일자 배송이 없습니다.</div>
+          ) : (
+            items.map((o) => (
+              <div key={o.id} className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 px-3 py-2 text-xs">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-gray-900">
+                    {o.sequence ? <span className="mr-1 text-brand-600">#{o.sequence}</span> : null}
+                    {o.customer_name} · {o.dong}
+                  </div>
+                  <div className="truncate text-gray-500">{o.order_no}</div>
+                  <div className="truncate text-gray-400">{o.delivery_address}{o.detail_address ? ` ${o.detail_address}` : ''}</div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 font-bold ${o.status === 'delivered' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {DAY_STATUS[o.status] ?? o.status}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

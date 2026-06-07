@@ -214,6 +214,34 @@ async def driver_stats_period(days: int = 30, db: AsyncSession = Depends(get_db)
     return [{"driver_id": row.driver_id, "total": row.total, "delivered": row.delivered or 0} for row in result]
 
 
+@router.get("/stats/drivers/daily")
+async def driver_stats_daily(days: int = 90, db: AsyncSession = Depends(get_db), _=Depends(require_super_admin)):
+    """기사별 일자별 배송 집계 + 누적 — 기사 카드의 '일자별 집계'용.
+    반환: { "<driver_id>": { total, delivered, by_date: [{date,total,delivered}, ...최신순] } }"""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    # 일자 기준: market_date 우선, 없으면 created_at(KST) 날짜 — 주문 목록 날짜필터와 동일 기준
+    kst_date = func.coalesce(Order.market_date, func.date(func.timezone("Asia/Seoul", Order.created_at)))
+    result = await db.execute(
+        select(
+            Order.driver_id,
+            kst_date.label("d"),
+            func.count().label("total"),
+            func.sum(cast(Order.status == OrderStatus.delivered, Integer)).label("delivered"),
+        )
+        .where(Order.created_at >= since, Order.driver_id != None)
+        .group_by(Order.driver_id, kst_date)
+        .order_by(kst_date.desc())
+    )
+    out: dict[str, dict] = {}
+    for row in result.all():
+        key = str(row.driver_id)
+        entry = out.setdefault(key, {"total": 0, "delivered": 0, "by_date": []})
+        entry["by_date"].append({"date": str(row.d), "total": row.total, "delivered": row.delivered or 0})
+        entry["total"] += row.total
+        entry["delivered"] += (row.delivered or 0)
+    return out
+
+
 @router.get("/stats/by-dong/period")
 async def stats_by_dong_period(days: int = 30, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
     """기간별 동 통계"""
