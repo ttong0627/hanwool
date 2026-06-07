@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -84,6 +85,28 @@ export function SuperAdminDispatchScreen() {
     setSelectedDongs((prev) => (prev.includes(dong) ? prev.filter((v) => v !== dong) : [...prev, dong]))
   }
 
+  // 배송 순번 재계산 (순번 오류 복구용)
+  const resequenceMutation = useMutation({
+    mutationFn: () => api.post('/orders/dispatch/resequence-all').then((r) => r.data),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['dong-status'] })
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      Alert.alert('순번 재계산 완료', data?.message ?? '배송 순번을 다시 계산했습니다.')
+    },
+    onError: (err: any) => Alert.alert('오류', err?.response?.data?.detail ?? '순번 재계산 중 문제가 발생했습니다.'),
+  })
+
+  const runResequence = () => {
+    Alert.alert(
+      '배송 순번 다시 계산',
+      '오늘 배정된 모든 기사의 배송 순번을 거리 기반으로 다시 계산합니다.\n(순번이 꼬였을 때 복구용)',
+      [
+        { text: '취소', style: 'cancel' },
+        { text: '다시 계산', onPress: () => resequenceMutation.mutate() },
+      ],
+    )
+  }
+
   const runDispatch = () => {
     if (!driverId) { Alert.alert('기사 선택', '배정할 기사를 먼저 선택해 주세요.'); return }
     if (selectedDongs.length === 0) { Alert.alert('동 선택', '배정할 동을 1개 이상 선택해 주세요.'); return }
@@ -123,6 +146,17 @@ export function SuperAdminDispatchScreen() {
         </Text>
         {(status?.total_unassigned ?? 0) === 0 && <Text style={styles.allDone}>모두 배정됨 ✓</Text>}
       </View>
+
+      {/* 배송 순번 다시 계산 (순번 오류 복구용) */}
+      <TouchableOpacity
+        style={[styles.reseqBtn, resequenceMutation.isPending && { opacity: 0.6 }]}
+        onPress={runResequence}
+        disabled={resequenceMutation.isPending}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="git-compare-outline" size={16} color="#0F172A" />
+        <Text style={styles.reseqText}>{resequenceMutation.isPending ? '순번 계산 중...' : '배송 순번 다시 계산'}</Text>
+      </TouchableOpacity>
 
       {/* 기사 선택 (가로 스크롤) */}
       <Text style={styles.sectionTitle}>1) 배정할 기사</Text>
@@ -198,6 +232,8 @@ const styles = StyleSheet.create({
   unassignedBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff7ed', borderColor: '#fdba74', borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12 },
   unassignedText: { fontSize: 15, fontWeight: '900', color: '#c2410c' },
   allDone: { fontSize: 13, fontWeight: '800', color: '#059669' },
+  reseqBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E2E8F0', borderRadius: 10, paddingVertical: 12, marginBottom: 12, minHeight: 48 },
+  reseqText: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
   sectionTitle: { fontSize: 14, fontWeight: '800', color: '#111827', marginBottom: 6 },
   driverScroll: { maxHeight: 64, marginBottom: 10 },
   driverChip: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center', minWidth: 84 },

@@ -180,6 +180,16 @@ export function DriverProfileScreen() {
           </View>
         </View>
 
+        {/* 관리자 화면으로 (super_admin/admin 전용) */}
+        {(user?.role === 'super_admin' || user?.role === 'admin') && (
+          <View style={styles.adminWrap}>
+            <TouchableOpacity style={styles.adminBtn} onPress={() => router.replace('/(admin)')} activeOpacity={0.85}>
+              <Ionicons name="grid-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.adminBtnText}>관리자 화면으로 이동</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 로그아웃 */}
         <View style={styles.logoutWrap}>
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
@@ -277,8 +287,18 @@ const styles = StyleSheet.create({
   infoValue:   { fontSize: 16.5, fontWeight: '600', color: T.text },
   divider:     { height: 1, backgroundColor: T.border, marginLeft: 64 },
 
+  /* 관리자 화면 진입 */
+  adminWrap: { marginHorizontal: 16, marginTop: 20 },
+  adminBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 16, minHeight: 52,
+    backgroundColor: '#0F172A', borderRadius: 14,
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
+  },
+  adminBtnText: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+
   /* 로그아웃 */
-  logoutWrap: { margin: 16, marginTop: 24 },
+  logoutWrap: { margin: 16, marginTop: 12 },
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, padding: 16,

@@ -700,6 +700,34 @@ async def dispatch_by_dong(
     }
 
 
+@router.post("/dispatch/resequence-all")
+async def resequence_all_drivers(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    """오늘 배정된 모든 기사의 배송 순번을 거리 기반으로 다시 계산 (순번 오류 복구용)."""
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    today_filter = or_(
+        Order.market_date == today,
+        and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+    )
+    rows = (await db.execute(
+        select(Order.driver_id)
+        .where(
+            today_filter,
+            Order.driver_id.isnot(None),
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+        .distinct()
+    )).all()
+    driver_ids = [r[0] for r in rows if r[0]]
+    for did in driver_ids:
+        await _auto_sequence_for_driver(db, did)
+    return {"drivers": len(driver_ids), "message": f"{len(driver_ids)}명 기사의 배송 순번을 다시 계산했습니다."}
+
+
 @router.post("/dispatch")
 async def dispatch_orders_priority(
     body: DispatchByDriversRequest,
