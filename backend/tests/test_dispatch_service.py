@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.services.dispatch_service import DispatchOrder, run_dispatch  # noqa: E402
+from app.services.dispatch_service import DispatchOrder, recommended_dong_groups, run_dispatch  # noqa: E402
 
 DONGS = [
     "경안동", "탄벌동", "송정동", "쌍령동",
@@ -70,6 +70,31 @@ def test_balanced_distribution():
     assert _all_ids(groups) == {o.id for o in orders}
     # 균등 분배이므로 최대-최소 편차가 한 동 크기(5) 이내
     assert counts[-1] - counts[0] <= 5, f"부하 편차 과다: {counts}"
+
+
+def test_recommended_driver_groups_cover_service_dongs():
+    for driver_count in [2, 3, 4]:
+        groups = recommended_dong_groups(driver_count)
+        flattened = [dong for group in groups for dong in group]
+        assert len(groups) == driver_count
+        assert len(flattened) == 18
+        assert len(set(flattened)) == 18
+
+
+def test_custom_dong_groups_are_respected():
+    dong_groups = [["경안동", "송정동"], ["고산동", "목현동"]]
+    orders = _make_orders({"경안동": 2, "송정동": 1, "고산동": 3, "목현동": 1})
+    groups = run_dispatch(orders, [10, 20], dong_groups=dong_groups)
+
+    driver_by_order_dong = {
+        order.dong: group.driver_id
+        for group in groups
+        for order in group.orders
+    }
+    assert driver_by_order_dong["경안동"] == 10
+    assert driver_by_order_dong["송정동"] == 10
+    assert driver_by_order_dong["고산동"] == 20
+    assert driver_by_order_dong["목현동"] == 20
 
 
 def test_more_drivers_than_dongs():

@@ -29,6 +29,9 @@ KAKAO_MATRIX_MAX_POINTS = 200
 
 JUMP_THRESHOLD_M = 300
 WALK_THRESHOLD_M = 120
+NEARBY_SKIP_THRESHOLD_M = 180
+NEARBY_SKIP_RATIO = 2.2
+BACKTRACK_THRESHOLD_M = 350
 
 
 # ──────────────────────────────────────────────
@@ -137,7 +140,7 @@ def _two_opt_by_matrix(
 
     for _ in range(TWO_OPT_MAX_PASSES):
         improved = False
-        for i in range(0, len(best) - 2):
+        for i in range(1, len(best) - 2):
             for j in range(i + 2, len(best)):
                 candidate = best[:i] + list(reversed(best[i:j + 1])) + best[j + 1:]
                 score = _road_route_score(candidate, start, end_anchor, matrix)
@@ -276,7 +279,7 @@ def _two_opt_open_path(ordered: list[dict], start: dict) -> list[dict]:
 
     for _ in range(TWO_OPT_MAX_PASSES):
         improved = False
-        for i in range(0, len(best) - 2):
+        for i in range(1, len(best) - 2):
             for j in range(i + 2, len(best)):
                 candidate = best[:i] + list(reversed(best[i:j + 1])) + best[j + 1:]
                 score = _route_score(candidate, start)
@@ -487,6 +490,8 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
     """
     기사별 순번 품질 분석
     - jump: 인접 순번 간 300m 이상
+    - nearby_skip: 다음 순번보다 훨씬 가까운 미방문 배송지가 남은 경우
+    - backtrack: 성남 방향 진행축 기준으로 되돌아가는 이동
     - walkable: 인접 순번 간 120m 이하
     - no_coord: 좌표 없음
     """
@@ -502,8 +507,12 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
 
         dists: list[float] = []
         jumps: list[dict] = []
+        nearby_skips: list[dict] = []
+        backtracks: list[dict] = []
         walkable: list[dict] = []
         no_coord: list[dict] = []
+        total_dist = 0.0
+        service_dong_changes = 0
 
         for i in range(len(seq_orders) - 1):
             a, b = seq_orders[i], seq_orders[i + 1]
@@ -512,10 +521,36 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
                 continue
             d = haversine(a["lat"], a["lng"], b["lat"], b["lng"])
             dists.append(d)
+            total_dist += d
             if d >= JUMP_THRESHOLD_M:
                 jumps.append({"from": a.get("order_no"), "to": b.get("order_no"), "dist_m": round(d)})
             elif d <= WALK_THRESHOLD_M:
                 walkable.append({"from": a.get("order_no"), "to": b.get("order_no"), "dist_m": round(d)})
+
+            remaining = [o for o in seq_orders[i + 2:] if _has_coord(o)]
+            if remaining:
+                nearest = min(remaining, key=lambda o: haversine(a["lat"], a["lng"], o["lat"], o["lng"]))
+                nearest_dist = haversine(a["lat"], a["lng"], nearest["lat"], nearest["lng"])
+                if nearest_dist <= NEARBY_SKIP_THRESHOLD_M and d >= nearest_dist * NEARBY_SKIP_RATIO:
+                    nearby_skips.append({
+                        "at": a.get("order_no"),
+                        "actual_next": b.get("order_no"),
+                        "actual_next_dist_m": round(d),
+                        "nearby_later": nearest.get("order_no"),
+                        "nearby_later_dist_m": round(nearest_dist),
+                    })
+
+            a_progress = _progress_value(a, MARKET_LOCATION["lat"], MARKET_LOCATION["lng"])
+            b_progress = _progress_value(b, MARKET_LOCATION["lat"], MARKET_LOCATION["lng"])
+            if a_progress - b_progress >= BACKTRACK_THRESHOLD_M:
+                backtracks.append({
+                    "from": a.get("order_no"),
+                    "to": b.get("order_no"),
+                    "backtrack_m": round(a_progress - b_progress),
+                })
+
+            if (a.get("service_dong") or a.get("dong")) != (b.get("service_dong") or b.get("dong")):
+                service_dong_changes += 1
 
         avg_dist = round(sum(dists) / len(dists)) if dists else 0
         max_dist = round(max(dists)) if dists else 0
@@ -523,6 +558,8 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
         # 예상 정확도 (100점 기준)
         accuracy = 100
         accuracy -= len(jumps) * 10
+        accuracy -= len(nearby_skips) * 15
+        accuracy -= len(backtracks) * 8
         accuracy -= len(no_coord) * 5
         accuracy += len(walkable) * 2
         accuracy = max(0, min(100, accuracy))
@@ -531,8 +568,12 @@ def analyze_sequence_quality(orders: list[dict]) -> dict:
             "driver_id": driver_id,
             "total": len(seq_orders),
             "jumps": jumps,
+            "nearby_skips": nearby_skips,
+            "backtracks": backtracks,
             "walkable_count": len(walkable),
             "no_coord_count": len(no_coord),
+            "service_dong_changes": service_dong_changes,
+            "total_dist_m": round(total_dist),
             "avg_dist_m": avg_dist,
             "max_dist_m": max_dist,
             "estimated_accuracy": accuracy,

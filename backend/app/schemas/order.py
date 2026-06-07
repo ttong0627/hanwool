@@ -113,6 +113,7 @@ class OrderEditRequest(BaseModel):
 class DispatchByDriversRequest(BaseModel):
     """우선순위 배차 / 배정요청 해소 — 기사 ID 목록"""
     driver_ids: list[int] = Field(default_factory=list)
+    dong_groups: Optional[list[list[str]]] = None
 
 
 class DispatchByDongRequest(BaseModel):

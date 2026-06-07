@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { getDriverTone } from '@/lib/driverColors'
+import { DONG_LIST } from '@/lib/utils'
 
 interface Driver {
   id: number
@@ -43,6 +44,22 @@ interface DriverGroup {
 interface DispatchResult {
   groups: DriverGroup[]
   total: number
+}
+
+interface DispatchRecommendation {
+  driver_count: number
+  dong_groups: string[][]
+  groups: {
+    index: number
+    dongs: string[]
+    order_count: number
+  }[]
+  uncovered_dongs: string[]
+}
+
+interface DispatchPayload {
+  driver_ids: number[]
+  dong_groups?: string[][]
 }
 
 interface DispatchRequest {
@@ -253,6 +270,110 @@ function DriverSelectGrid({
 }
 
 /* ── 확인 모달 ────────────────────────────────────────────────────── */
+function DriverDongRecommendation({
+  driverCount,
+  selectedDriverIds,
+  driverMap,
+  dongGroups,
+  recommendation,
+  todayStatus,
+  onMoveDong,
+  onReset,
+}: {
+  driverCount: number
+  selectedDriverIds: number[]
+  driverMap: Record<number, Driver>
+  dongGroups: string[][]
+  recommendation?: DispatchRecommendation
+  todayStatus?: TodayStatus
+  onMoveDong: (dong: string, toGroupIndex: number) => void
+  onReset: () => void
+}) {
+  const assignedDongCount = new Set(dongGroups.flat()).size
+  const missingDongs = DONG_LIST.filter((dong) => !dongGroups.some((group) => group.includes(dong)))
+  const gridClass = driverCount >= 4 ? 'xl:grid-cols-4' : driverCount === 3 ? 'xl:grid-cols-3' : 'lg:grid-cols-2'
+
+  return (
+    <section className="rounded-xl border border-gray-100 bg-gray-50/70 p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="section-title mb-0">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center">
+            <Route className="w-3.5 h-3.5 text-white" />
+          </div>
+          {driverCount}명 추천 동 구성
+        </div>
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-xs font-bold text-brand-600 bg-brand-50 border border-brand-100 rounded-lg px-2.5 py-1.5 hover:bg-brand-100 transition-colors"
+        >
+          추천 복원
+        </button>
+      </div>
+
+      <div className={`grid grid-cols-1 lg:grid-cols-2 ${gridClass} gap-3`}>
+        {Array.from({ length: driverCount }, (_, groupIndex) => {
+          const driverId = selectedDriverIds[groupIndex]
+          const tone = driverId ? getDriverTone(driverId) : getDriverTone(groupIndex + 1)
+          const dongs = dongGroups[groupIndex] ?? []
+          const orderCount = dongs.reduce((sum, dong) => sum + (todayStatus?.by_dong?.[dong] ?? 0), 0)
+
+          return (
+            <div
+              key={groupIndex}
+              className="rounded-xl border-2 p-3.5"
+              style={{ borderColor: tone.border, background: tone.wash }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-gray-400">기사 {groupIndex + 1}</div>
+                  <div className="font-black text-gray-900 truncate">
+                    {driverId ? driverMap[driverId]?.name ?? `기사 #${driverId}` : '기사 선택 전'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-black tabular-nums" style={{ color: tone.text }}>{orderCount}</div>
+                  <div className="text-[10px] text-gray-400 font-bold">건</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {dongs.map((dong) => {
+                  const count = todayStatus?.by_dong?.[dong] ?? 0
+                  return (
+                    <button
+                      key={dong}
+                      type="button"
+                      onClick={() => onMoveDong(dong, (groupIndex + 1) % driverCount)}
+                      className="text-xs font-bold rounded-full border px-2.5 py-1.5 bg-white/80 hover:bg-white hover:-translate-y-0.5 transition-all"
+                      style={{ borderColor: tone.border, color: tone.text }}
+                      title="클릭하면 반대 기사 그룹으로 이동합니다"
+                    >
+                      {dong}
+                      {count > 0 && <span className="ml-1 text-[10px] opacity-70">{count}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="rounded-xl bg-gray-50 px-3.5 py-2.5 text-xs text-gray-500 leading-relaxed">
+        추천 구성은 18개 동 중 <span className="font-bold text-gray-800">{assignedDongCount}</span>개 동을 미리 선택합니다.
+        동 버튼을 누르면 다음 기사 그룹으로 이동하고, 주문 수는 오늘 미완료 주문 기준입니다.
+        {recommendation?.uncovered_dongs?.length ? (
+          <span className="ml-1 text-red-600 font-bold">미포함 동: {recommendation.uncovered_dongs.join(', ')}</span>
+        ) : null}
+        {missingDongs.length > 0 && (
+          <span className="ml-1 text-red-600 font-bold">화면 미배정 동: {missingDongs.join(', ')}</span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function ConfirmModal({
   driverCount,
   selectedDriverIds,
@@ -340,6 +461,7 @@ export function DeliveryDispatch() {
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null)
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [dongGroups, setDongGroups] = useState<string[][]>([])
 
   const { data: drivers = [], isLoading: driversLoading } = useQuery<Driver[]>({
     queryKey: ['drivers'],
@@ -358,12 +480,25 @@ export function DeliveryDispatch() {
     refetchInterval: 30_000,
   })
 
+  const { data: dispatchRecommendation } = useQuery<DispatchRecommendation>({
+    queryKey: ['dispatch-recommendation', driverCount],
+    queryFn: () => api.get('/orders/dispatch/recommendation', { params: { driver_count: driverCount } }).then((r) => r.data),
+    enabled: driverCount >= 2 && driverCount <= 4,
+    staleTime: 60_000,
+  })
+
   const activeDrivers = drivers.filter((d) => d.is_active)
   const driverMap = useMemo(
     () => Object.fromEntries(drivers.map((d) => [d.id, d])),
     [drivers],
   )
   const selectedRequest = requests.find((r) => r.id === activeRequestId) ?? requests[0]
+
+  useEffect(() => {
+    if (driverCount < 2 || driverCount > 4) return
+    if (!dispatchRecommendation?.dong_groups?.length) return
+    setDongGroups(dispatchRecommendation.dong_groups.map((group) => [...group]))
+  }, [driverCount, dispatchRecommendation])
 
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['orders'] })
@@ -375,13 +510,13 @@ export function DeliveryDispatch() {
   }
 
   const dispatchMutation = useMutation({
-    mutationFn: (driver_ids: number[]) => api.post('/orders/dispatch', { driver_ids }).then((r) => r.data),
+    mutationFn: (payload: DispatchPayload) => api.post('/orders/dispatch', payload).then((r) => r.data),
     onSuccess: (data: DispatchResult) => { setDispatchResult(data); refreshAll() },
   })
 
   const resolveMutation = useMutation({
-    mutationFn: ({ requestId, driver_ids }: { requestId: number; driver_ids: number[] }) =>
-      api.post(`/admin/dispatch-requests/${requestId}/resolve`, { driver_ids }).then((r) => r.data),
+    mutationFn: ({ requestId, payload }: { requestId: number; payload: DispatchPayload }) =>
+      api.post(`/admin/dispatch-requests/${requestId}/resolve`, payload).then((r) => r.data),
     onSuccess: (data) => { setDispatchResult(data.dispatch); setActiveRequestId(null); refreshAll() },
   })
 
@@ -396,9 +531,33 @@ export function DeliveryDispatch() {
   const selectCount = (count: number) => {
     setDriverCount(count)
     setSelectedDriverIds((prev) => prev.slice(0, count))
+    if (count < 2 || count > 4) setDongGroups([])
   }
 
-  const canRun = selectedDriverIds.length === driverCount
+  const resetRecommendedDongGroups = () => {
+    if (dispatchRecommendation?.dong_groups?.length) {
+      setDongGroups(dispatchRecommendation.dong_groups.map((group) => [...group]))
+    }
+  }
+
+  const moveDongToGroup = (dong: string, toGroupIndex: number) => {
+    setDongGroups((prev) => {
+      const next = Array.from({ length: driverCount }, (_, index) => prev[index] ? [...prev[index]] : [])
+      for (let index = 0; index < next.length; index += 1) {
+        next[index] = next[index].filter((value) => value !== dong)
+      }
+      next[toGroupIndex] = [...next[toGroupIndex], dong].sort((a, b) => DONG_LIST.indexOf(a) - DONG_LIST.indexOf(b))
+      return next
+    })
+  }
+
+  const dispatchPayload: DispatchPayload = {
+    driver_ids: selectedDriverIds,
+    ...(driverCount >= 2 && driverCount <= 4 ? { dong_groups: dongGroups } : {}),
+  }
+
+  const isRecommendedDongReady = driverCount < 2 || driverCount > 4 || new Set(dongGroups.flat()).size === DONG_LIST.length
+  const canRun = selectedDriverIds.length === driverCount && isRecommendedDongReady
   const isSubmitting = dispatchMutation.isPending || resolveMutation.isPending
 
   const handleDispatchClick = () => {
@@ -409,9 +568,9 @@ export function DeliveryDispatch() {
   const handleConfirm = () => {
     setShowConfirm(false)
     if (selectedRequest) {
-      resolveMutation.mutate({ requestId: selectedRequest.id, driver_ids: selectedDriverIds })
+      resolveMutation.mutate({ requestId: selectedRequest.id, payload: dispatchPayload })
     } else {
-      dispatchMutation.mutate(selectedDriverIds)
+      dispatchMutation.mutate(dispatchPayload)
     }
   }
 
@@ -522,6 +681,19 @@ export function DeliveryDispatch() {
               selectedDriverIds={selectedDriverIds}
               maxCount={driverCount}
               onToggle={toggleDriver}
+            />
+          )}
+
+          {driverCount >= 2 && driverCount <= 4 && (
+            <DriverDongRecommendation
+              driverCount={driverCount}
+              selectedDriverIds={selectedDriverIds}
+              driverMap={driverMap}
+              dongGroups={dongGroups}
+              recommendation={dispatchRecommendation}
+              todayStatus={todayStatus}
+              onMoveDong={moveDongToGroup}
+              onReset={resetRecommendedDongGroups}
             />
           )}
 

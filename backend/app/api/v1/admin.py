@@ -142,6 +142,7 @@ async def resolve_dispatch_request(
         [int(driver_id) for driver_id in driver_ids],
         executed_by_id=current_user.id,
         is_auto=False,
+        dong_groups=body.dong_groups,
     )
     request.status = DispatchRequestStatus.approved
     request.resolved_by_admin_id = current_user.id
