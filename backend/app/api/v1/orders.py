@@ -833,6 +833,59 @@ async def update_status(
     return result
 
 
+async def _auto_sequence_for_driver(db: AsyncSession, driver_id: int) -> None:
+    """특정 기사에게 배정된 '오늘 활성 주문'의 배송 순번을 거리 기반으로 자동 재계산.
+    개별 기사 배정 시 호출 — 새로 배정된 주문이 최적 경로 순서에 맞게 끼워진다."""
+    from app.core.security import decrypt_field
+
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    result = await db.execute(
+        select(Order).where(
+            or_(
+                Order.market_date == today,
+                and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+            ),
+            Order.driver_id == driver_id,
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+    )
+    orders = list(result.scalars().all())
+    if not orders:
+        return
+
+    for o in orders:
+        if not o.lat or not o.lng:
+            addr = decrypt_field(o.delivery_address_enc)
+            resolution = await resolve_address(addr, db)
+            apply_resolution_to_order(o, resolution, fallback_dong=o.dong)
+            await log_address_resolution(db, resolution, order_id=o.id)
+
+    order_dicts = [
+        {
+            "id": o.id,
+            "driver_id": o.driver_id,
+            "dong": o.dong,
+            "service_dong": o.service_dong or o.dong,
+            "lat": o.lat,
+            "lng": o.lng,
+            "delivery_address": decrypt_field(o.delivery_address_enc),
+            "order_no": o.order_no,
+        }
+        for o in orders
+    ]
+    optimized = optimize_route(order_dicts)
+    seq_map = {item["id"]: item.get("sequence") for item in optimized}
+    for o in orders:
+        new_seq = seq_map.get(o.id)
+        if new_seq is not None:
+            o.sequence = new_seq
+            o.sequence_source = "auto"
+    await db.flush()
+    await _push_route_to_drivers(orders)
+
+
 @router.put("/{order_id}/assign")
 async def assign_driver(
     order_id: int,
@@ -851,6 +904,8 @@ async def assign_driver(
     )
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    # 배정 즉시 해당 기사의 오늘 주문 순번을 거리 기반으로 자동 지정
+    await _auto_sequence_for_driver(db, driver_id)
     await sms_service.notify_order_status(order, OrderStatus.assigned)
     return order_service.decrypt_order(order)
 
