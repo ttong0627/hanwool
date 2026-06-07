@@ -48,6 +48,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; bo
   picked_up:  { label: '픽업 완료', color: T.warning,  bg: '#FFFBEB', border: T.warning },
   in_transit: { label: '배송 중',   color: T.primary,  bg: '#FFF7ED', border: T.primary },
   delivered:  { label: '배달 완료', color: T.success,  bg: '#ECFDF5', border: T.success },
+  delayed:    { label: '지연',      color: T.error,    bg: '#FEF2F2', border: T.error },
 }
 
 const SMS_STATUSES = new Set(['in_transit', 'delivered', 'delayed'])
@@ -1044,7 +1045,7 @@ export function DriverHomeScreen() {
   }
 
   const handleStatusUpdate = (order: Order) => {
-    if (order.status === 'in_transit') { setCompleteTarget(order); return }
+    if (order.status === 'in_transit' || order.status === 'delayed') { setCompleteTarget(order); return }
     const nextMap: Record<string, string> = { assigned: 'picked_up', picked_up: 'in_transit' }
     const next = nextMap[order.status]
     if (!next) return
@@ -1088,6 +1089,7 @@ export function DriverHomeScreen() {
   const assignedOrders = localOrders.filter((o) => o.status === 'assigned')
   const otherDrivers = allDrivers.filter((d) => String(d.id) !== String(myId))
   const progress = localOrders.length > 0 ? Math.round((doneOrders.length / localOrders.length) * 100) : 0
+  const delayedCount = activeOrders.filter((o) => o.status === 'delayed').length  // 배송중 내 지연 건수(별도 표시)
   // 상단 통계 탭에 따라 리스트 필터링
   const visibleOrders = filter === 'active' ? activeOrders : filter === 'done' ? doneOrders : localOrders
 
@@ -1206,6 +1208,11 @@ export function DriverHomeScreen() {
                 >
                   <Text style={[$s.statNum, { color }]}>{value}</Text>
                   <Text style={[$s.statLabel, on && $s.statLabelOn]}>{label}</Text>
+                  {key === 'active' && delayedCount > 0 && (
+                    <View style={$s.delayBadge}>
+                      <Text style={$s.delayBadgeText}>지연 {delayedCount}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               )
             })}
@@ -1380,6 +1387,8 @@ const $s = StyleSheet.create({
   statNum:        { fontSize: 23, fontWeight: '900', lineHeight: 26 },
   statLabel:      { fontSize: 13, color: 'rgba(255,255,255,0.72)', marginTop: 2, fontWeight: '600' },
   statDivider:    { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
+  delayBadge:     { position: 'absolute', top: -1, right: 6, backgroundColor: T.error, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8 },
+  delayBadgeText: { fontSize: 10, color: '#fff', fontWeight: '800' },
   progressBar:    { height: 5, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' },
   progressFill:   { height: '100%', backgroundColor: T.success, borderRadius: 3 },
 

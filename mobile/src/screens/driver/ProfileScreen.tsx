@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import Constants from 'expo-constants'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -70,7 +71,7 @@ export function DriverProfileScreen() {
       const items = Array.isArray(res.data) ? res.data : (res.data?.items ?? [])
       const total     = items.length
       const done      = items.filter((o: any) => o.status === 'delivered').length
-      const inProg    = items.filter((o: any) => ['assigned', 'picked_up', 'in_transit'].includes(o.status)).length
+      const inProg    = items.filter((o: any) => ['assigned', 'picked_up', 'in_transit', 'delayed'].includes(o.status)).length
       const withPhoto = items.filter((o: any) => o.delivery_photo_url).length
       const pct       = total > 0 ? Math.round((done / total) * 100) : 0
       return { total, done, inProg, withPhoto, pct }
@@ -99,6 +100,7 @@ export function DriverProfileScreen() {
   }
 
   const initials = user?.name ? user.name.slice(-2) : '기사'
+  const appVersion = Constants.expoConfig?.version ?? '-'
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -177,6 +179,8 @@ export function DriverProfileScreen() {
             <InfoRow icon="storefront"  label="서비스"   value="경안시장 집배송" />
             <View style={styles.divider} />
             <InfoRow icon="shield-checkmark" label="운영기관" value="경기도 광주시 × 경안시장상인회" />
+            <View style={styles.divider} />
+            <InfoRow icon="information-circle" label="앱 버전" value={`v${appVersion}`} />
           </View>
         </View>
 
