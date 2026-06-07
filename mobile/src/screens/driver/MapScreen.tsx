@@ -178,6 +178,7 @@ export function DriverMapScreen() {
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
   const [completeTarget, setCompleteTarget] = useState<Order | null>(null)
   const [moveTarget, setMoveTarget] = useState<Order | null>(null)
+  const [seqEdit, setSeqEdit] = useState(false)   // 순번조정 모드 (상단 버튼으로 토글)
   const qc = useQueryClient()
   const webRef = useRef<WebView>(null)
   const myLocRef = useRef<{ lat: number; lng: number } | null>(null)
@@ -363,9 +364,19 @@ export function DriverMapScreen() {
       <Animated.View style={[s.sheet, { height: heightAnim }]}>
         <View {...sheetPan.panHandlers} style={s.handleArea}>
           <View style={s.handleBar} />
-          <Text style={s.sheetTitle}>
-            다음 배송지 {sheetStops.length}곳  <Text style={s.sheetHint}>· 위로 끌어 전체 보기</Text>
-          </Text>
+          <View style={s.sheetHeaderRow}>
+            <Text style={s.sheetTitle}>
+              다음 배송지 {sheetStops.length}곳  <Text style={s.sheetHint}>· 위로 끌어 전체 보기</Text>
+            </Text>
+            <TouchableOpacity
+              style={[s.seqToggle, seqEdit && s.seqToggleOn]}
+              onPress={() => setSeqEdit((v) => !v)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="swap-vertical" size={14} color={seqEdit ? '#fff' : T.primary} />
+              <Text style={[s.seqToggleText, seqEdit && { color: '#fff' }]}>{seqEdit ? '완료' : '순번조정'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <FlatList
           data={sheetStops}
@@ -373,19 +384,24 @@ export function DriverMapScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 20, gap: 4 }}
           ListEmptyComponent={<Text style={s.sheetEmpty}>남은 배송지가 없습니다</Text>}
           renderItem={({ item: o }) => (
-            <TouchableOpacity style={s.stopRow} activeOpacity={0.7} onPress={() => setDetailOrder(o)}>
+            <TouchableOpacity style={s.stopRow} activeOpacity={0.7} onPress={() => (seqEdit ? setMoveTarget(o) : setDetailOrder(o))}>
+              {seqEdit && (
+                <TouchableOpacity style={s.seqMoveIcon} onPress={() => setMoveTarget(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="swap-vertical" size={20} color={T.primary} />
+                </TouchableOpacity>
+              )}
               <View style={s.stopSeq}><Text style={s.stopSeqText}>{o.sequence ?? '-'}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.stopName} numberOfLines={1}>{o.customer_name}</Text>
+                <Text style={s.stopItem} numberOfLines={1}>{o.items_desc || '물품'} · {o.quantity ?? 1}개</Text>
                 <Text style={s.stopAddr} numberOfLines={2}>{o.dong} · {o.delivery_address}{o.detail_address ? ` ${o.detail_address}` : ''}</Text>
                 {o.request ? <Text style={s.stopReq} numberOfLines={1}>📌 {o.request}</Text> : null}
               </View>
-              <TouchableOpacity style={s.rowBtn} onPress={() => setMoveTarget(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="swap-vertical" size={18} color={T.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o)}>
-                <Ionicons name="navigate" size={16} color="#FFFFFF" />
-              </TouchableOpacity>
+              {!seqEdit && (
+                <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o)}>
+                  <Ionicons name="navigate" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           )}
         />
@@ -449,8 +465,14 @@ const s = StyleSheet.create({
   stopSeq: { width: 28, height: 28, borderRadius: 14, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
   stopSeqText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   stopName: { fontSize: 19, fontWeight: '800', color: T.text },
+  stopItem: { fontSize: 12.5, color: T.text, marginTop: 1, fontWeight: '600' },
   stopAddr: { fontSize: 12, color: T.textSub, marginTop: 1 },
   stopReq: { fontSize: 11.5, color: T.primary, marginTop: 2, fontWeight: '600' },
+  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  seqToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderColor: T.primary, backgroundColor: '#fff' },
+  seqToggleOn: { backgroundColor: T.primary },
+  seqToggleText: { fontSize: 12, fontWeight: '800', color: T.primary },
+  seqMoveIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginRight: 4 },
   naviBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
 
   detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

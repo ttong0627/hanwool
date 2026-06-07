@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -34,6 +35,22 @@ async def _next_sequence(db: AsyncSession) -> int:
     return (result.scalar() or 0) + 1
 
 
+_GA1_RE = re.compile(r"^GA1-(\d+)$")
+
+
+async def _next_item_code(db: AsyncSession) -> str:
+    """직접입력 물품코드 GA1-#### 전역 일련번호 — 기존 최대 번호 + 1 (매번 0001로 리셋되지 않음)."""
+    rows = (await db.execute(
+        select(Order.item_code).where(Order.item_code.like("GA1-%"))
+    )).all()
+    mx = 0
+    for (code,) in rows:
+        m = _GA1_RE.match(code or "")
+        if m:
+            mx = max(mx, int(m.group(1)))
+    return f"GA1-{mx + 1:04d}"
+
+
 async def create_order(
     db: AsyncSession,
     data: OrderCreate,
@@ -68,6 +85,10 @@ async def create_order(
             customer_id = customer.id
 
     seq = await _next_sequence(db)
+    # 물품코드: 비어있거나 자동(GA1-####)이면 전역 일련번호로 (재)부여 — 마지막 번호에서 이어서 증가
+    item_code = data.item_code
+    if not item_code or _GA1_RE.match(item_code):
+        item_code = await _next_item_code(db)
     today = today_kst()
     order = Order(
         order_no=_generate_order_no(seq),

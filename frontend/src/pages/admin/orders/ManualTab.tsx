@@ -124,7 +124,7 @@ export function ManualTab() {
         detail_address: row.detail_address || undefined,
         dong: row.dong,
         items_desc: row.items_desc || undefined,
-        item_code: `GA1-${String(rowIdx + 1).padStart(4, '0')}`,  // 자동 일련번호 (입력값 무시)
+        // 물품코드는 서버가 전역 일련번호(GA1-####)로 자동 부여 (마지막 번호+1)
         quantity: row.quantity,
         request: row.request || undefined,
         lat: row.lat,
@@ -133,7 +133,7 @@ export function ManualTab() {
       })
       const savedId: number = res.data.id
       setRows(prev => prev.map((r, i) =>
-        i === rowIdx ? { ...r, savedOrderId: savedId, submitStatus: 'success', submitError: undefined } : r
+        i === rowIdx ? { ...r, savedOrderId: savedId, item_code: res.data.item_code ?? r.item_code, submitStatus: 'success', submitError: undefined } : r
       ))
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['customers'] })
@@ -308,7 +308,6 @@ export function ManualTab() {
     return Math.max(0, Math.min(COL_KEYS.length - 1, n))
   }
   const LAST_COL = COL_KEYS.length - 1
-  const itemCodeFor = (rowIdx: number) => `GA1-${String(rowIdx + 1).padStart(4, '0')}`
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
@@ -763,8 +762,8 @@ export function ManualTab() {
                             tabIndex={-1}
                             autoComplete="off"
                             className={cellCls + ' text-center font-mono text-gray-500 bg-gray-50 cursor-default'}
-                            value={itemCodeFor(rowIdx)}
-                            title="물품 코드는 자동 일련번호입니다 (입력 불가)"
+                            value={row.savedOrderId && row.item_code ? row.item_code : '자동'}
+                            title="물품 코드는 저장 시 서버가 전역 일련번호(GA1-####)로 자동 부여합니다"
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; focusCell(rowIdx, nextCol(colIdx, 1)) }}
                           />
                         ) : (

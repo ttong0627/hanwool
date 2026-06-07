@@ -58,7 +58,7 @@ interface Order {
   quantity: number; sequence?: number; delivery_photo_url?: string
   delivery_signature_url?: string; delivery_memo?: string; received_by_security?: boolean
   lat?: number; lng?: number; coord_mismatch?: boolean
-  request?: string; detail_address?: string; item_code?: string
+  request?: string; detail_address?: string; item_code?: string; notes?: string
 }
 
 const COORD_WARN_THRESHOLD_M = 30
@@ -623,6 +623,18 @@ function DeliveryCard({
     <View style={[$card.wrap, isDone && $card.wrapDone, { borderLeftColor: meta.border }]}>
       {/* 카드 헤더 */}
       <View style={$card.header}>
+        {/* 순번조정 모드 — 순번 왼쪽에 이동 아이콘 */}
+        {editMode && !isDone && (
+          <TouchableOpacity
+            onPress={onMoveStop}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ width: 36, height: 36, borderRadius: 9, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: T.primary, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}
+          >
+            <Ionicons name="swap-vertical" size={20} color={T.primary} />
+          </TouchableOpacity>
+        )}
+
         {/* 순번 배지 */}
         <View style={[$card.seqBadge, { backgroundColor: meta.border }]}>
           <Text style={$card.seqText}>{order.sequence ?? '-'}</Text>
@@ -637,19 +649,6 @@ function DeliveryCard({
           </View>
           <Text style={$card.dong}>{order.dong}</Text>
         </View>
-
-        {/* 순서 이동 버튼 */}
-        {editMode && !isDone && (
-          <TouchableOpacity
-            onPress={onMoveStop}
-            activeOpacity={0.8}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: T.primary, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}
-          >
-            <Ionicons name="swap-vertical" size={15} color={T.primary} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: T.primary }}>순서 이동</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* 고객 정보 — 탭하면 상세보기 (상태 처리는 아래 버튼으로) */}
@@ -676,6 +675,12 @@ function DeliveryCard({
           <View style={$card.itemsRow}>
             <Ionicons name="chatbox-ellipses-outline" size={13} color={T.primary} style={{ marginTop: 1 }} />
             <Text style={[$card.items, { color: T.primary }]}>요청: {order.request}</Text>
+          </View>
+        ) : null}
+        {order.notes ? (
+          <View style={$card.itemsRow}>
+            <Ionicons name="megaphone-outline" size={13} color="#2563EB" style={{ marginTop: 1 }} />
+            <Text style={[$card.items, { color: '#2563EB' }]}>전달: {order.notes}</Text>
           </View>
         ) : null}
         <Text style={$card.tapHint}>👆 탭하면 상세보기{!isDone ? ' · 처리는 아래 버튼' : ''}</Text>
