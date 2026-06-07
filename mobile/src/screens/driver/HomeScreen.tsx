@@ -1192,12 +1192,20 @@ export function DriverHomeScreen() {
               { label: '전체', value: localOrders.length, color: 'white' },
               { label: '배송중', value: activeOrders.length, color: T.primary },
               { label: '완료', value: doneOrders.length, color: T.success },
-            ].map(({ label, value, color }) => (
-              <View key={label} style={$s.statItem}>
-                <Text style={[$s.statNum, { color }]}>{value}</Text>
-                <Text style={$s.statLabel}>{label}</Text>
-              </View>
-            ))}
+            ].map(({ label, value, color }) => {
+              const tappable = label === '완료'
+              const Wrap: any = tappable ? TouchableOpacity : View
+              return (
+                <Wrap
+                  key={label}
+                  style={$s.statItem}
+                  {...(tappable ? { onPress: () => router.push('/(driver)/history'), activeOpacity: 0.7 } : {})}
+                >
+                  <Text style={[$s.statNum, { color }]}>{value}</Text>
+                  <Text style={$s.statLabel}>{label}{tappable ? ' ›' : ''}</Text>
+                </Wrap>
+              )
+            })}
             <View style={$s.statDivider} />
             <View style={$s.statItem}>
               <Text style={[$s.statNum, { color: T.success }]}>{progress}%</Text>
@@ -1346,8 +1354,8 @@ const $s = StyleSheet.create({
   root:           { flex: 1, backgroundColor: T.bg },
 
   // 헤더
-  header:         { backgroundColor: T.dark, paddingHorizontal: 20, paddingBottom: 16 },
-  headerTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, paddingBottom: 16 },
+  header:         { backgroundColor: T.dark, paddingHorizontal: 16, paddingBottom: 8 },
+  headerTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, paddingBottom: 8 },
   headerDate:     { fontSize: 13, color: 'rgba(255,255,255,0.72)', fontWeight: '600', marginBottom: 2 },
   headerName:     { fontSize: 24, fontWeight: '800', color: 'white' },
   headerRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -1359,32 +1367,32 @@ const $s = StyleSheet.create({
   logoutBtn:      { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
 
   // 진행률
-  progressSection:{ paddingTop: 4 },
-  statsRow:       { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  progressSection:{ paddingTop: 0 },
+  statsRow:       { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   statItem:       { flex: 1, alignItems: 'center' },
-  statNum:        { fontSize: 28, fontWeight: '900', lineHeight: 32 },
+  statNum:        { fontSize: 23, fontWeight: '900', lineHeight: 26 },
   statLabel:      { fontSize: 13, color: 'rgba(255,255,255,0.72)', marginTop: 2, fontWeight: '600' },
   statDivider:    { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
-  progressBar:    { height: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' },
+  progressBar:    { height: 5, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' },
   progressFill:   { height: '100%', backgroundColor: T.success, borderRadius: 3 },
 
   // 컨트롤 바
-  controlBar:     { flexDirection: 'row', gap: 10, padding: 12, backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
-  startBtn:       { flex: 1, flexDirection: 'row', backgroundColor: T.dark, paddingVertical: 17, borderRadius: 14, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
+  controlBar:     { flexDirection: 'row', gap: 8, padding: 9, backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
+  startBtn:       { flex: 1, flexDirection: 'row', backgroundColor: T.dark, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
   startBtnLoading:{ backgroundColor: T.textSub },
   startBtnText:   { color: 'white', fontSize: 17, fontWeight: '800' },
-  bulkPickupBtn:  { flexDirection: 'row', backgroundColor: T.warning, marginHorizontal: 16, marginTop: 10, paddingVertical: 17, borderRadius: 14, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
+  bulkPickupBtn:  { flexDirection: 'row', backgroundColor: T.warning, marginHorizontal: 16, marginTop: 10, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
   bulkPickupLoading: { backgroundColor: T.textSub },
   bulkPickupText: { color: 'white', fontSize: 17, fontWeight: '800' },
-  editBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 16, borderRadius: 14, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white', minHeight: 52 },
+  editBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white', minHeight: 46 },
   editBtnActive:  { backgroundColor: T.primary, borderColor: T.primary },
   editBtnText:    { fontSize: 14.5, fontWeight: '800', color: T.primary },
   editBtnTextActive: { color: 'white' },
-  scanBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 16, borderRadius: 14, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white', minHeight: 52 },
+  scanBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: T.primary, backgroundColor: 'white', minHeight: 46 },
   scanBtnText:    { fontSize: 14.5, fontWeight: '800', color: T.primary },
 
   // 목록
-  list:           { paddingHorizontal: 12, paddingTop: 12, gap: 10 },
+  list:           { paddingHorizontal: 12, paddingTop: 8, gap: 8 },
   empty:          { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyTitle:     { fontSize: 17, fontWeight: '600', color: T.textSub },
   emptySub:       { fontSize: 13, color: T.textMuted, textAlign: 'center' },
@@ -1395,9 +1403,9 @@ const $s = StyleSheet.create({
 })
 
 const $card = StyleSheet.create({
-  wrap:         { backgroundColor: T.card, borderRadius: 16, padding: 16, shadowColor: T.dark, shadowOpacity: 0.07, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3, borderLeftWidth: 4, borderLeftColor: T.primary },
+  wrap:         { backgroundColor: T.card, borderRadius: 14, padding: 12, shadowColor: T.dark, shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2, borderLeftWidth: 4, borderLeftColor: T.primary },
   wrapDone:     { opacity: 0.65 },
-  header:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  header:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
   seqBadge:     { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   seqText:      { color: 'white', fontSize: 14, fontWeight: '800' },
   orderNo:      { fontSize: 12, fontWeight: '700', color: T.textSub },
@@ -1407,22 +1415,22 @@ const $card = StyleSheet.create({
   seqCtrl:      { gap: 4 },
   seqBtn:       { width: 30, height: 30, borderRadius: 8, backgroundColor: T.primaryDim, alignItems: 'center', justifyContent: 'center' },
   seqBtnOff:    { backgroundColor: T.bg },
-  name:         { fontSize: 21, fontWeight: '800', color: T.text, marginBottom: 4 },
-  addressRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: 3 },
-  address:      { fontSize: 15.5, color: T.textSub, flex: 1, lineHeight: 22 },
-  itemsRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: 6 },
-  items:        { fontSize: 14, color: T.textSub, flex: 1 },
-  tapHint:      { fontSize: 12.5, color: T.primary, fontWeight: '700', marginTop: 2, marginBottom: 2 },
+  name:         { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 2 },
+  addressRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: 2 },
+  address:      { fontSize: 14, color: T.textSub, flex: 1, lineHeight: 19 },
+  itemsRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: 4 },
+  items:        { fontSize: 13, color: T.textSub, flex: 1 },
+  tapHint:      { fontSize: 11, color: T.primary, fontWeight: '600', marginTop: 1, marginBottom: 1 },
   thumb:        { width: '100%', height: 160, borderRadius: 12, marginTop: 10 },
   retryBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', paddingVertical: 10, borderRadius: 10, paddingHorizontal: 14, marginTop: 8, borderWidth: 1, borderColor: '#FECACA' },
   retryText:    { fontSize: 13, fontWeight: '700', color: T.error },
-  actions:      { flexDirection: 'row', gap: 8, marginTop: 12 },
-  naviBtn:      { flex: 2, flexDirection: 'row', gap: 5, backgroundColor: '#FEF2F2', paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
-  callBtn:      { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#EFF6FF', paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
-  statusBtn:    { flex: 2, backgroundColor: T.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
-  btnText:      { fontSize: 15, fontWeight: '800' },
-  statusBtnText:{ color: 'white', fontSize: 16, fontWeight: '800' },
-  subActions:   { flexDirection: 'row', gap: 8, marginTop: 8 },
+  actions:      { flexDirection: 'row', gap: 8, marginTop: 8 },
+  naviBtn:      { flex: 2, flexDirection: 'row', gap: 5, backgroundColor: '#FEF2F2', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  callBtn:      { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#EFF6FF', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  statusBtn:    { flex: 2, backgroundColor: T.primary, paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  btnText:      { fontSize: 14, fontWeight: '800' },
+  statusBtnText:{ color: 'white', fontSize: 15, fontWeight: '800' },
+  subActions:   { flexDirection: 'row', gap: 8, marginTop: 6 },
   transferBtn:  { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#F0F9FF', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BAE6FD' },
   transferText: { fontSize: 13, fontWeight: '600', color: T.info },
   delayBtn:     { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#FFFBEB', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FDE68A' },
