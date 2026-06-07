@@ -1267,7 +1267,7 @@ _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 # 흐림(초점) 검사 — 1024px 다운스케일 후 라플라시안 분산. 미만이면 흐린 사진으로 간주.
 # 실측 기준: 흔들린 사진 ~80~190, 선명한 사진 ~230~770 → 임계값 200으로 분리.
 _LAP_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
-BLUR_VAR_THRESHOLD = 200.0
+BLUR_VAR_THRESHOLD = 90.0  # 손으로 든 배송 사진 기준 완화 (실제로 흐린 것만 경고)
 
 
 def _photo_sharpness(content: bytes):

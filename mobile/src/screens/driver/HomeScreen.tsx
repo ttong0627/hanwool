@@ -375,10 +375,12 @@ export function DeliveryCompleteModal({
         <CameraCaptureModal visible onCaptured={handleExtraCaptured} onCancel={() => setExtraCameraOpen(false)} />
       ) : (
       <View style={$modal.overlay}>
-        <View style={[$modal.sheet, { paddingBottom: insets.bottom + 24 }]}>
+        <View style={[$modal.sheet, { paddingBottom: insets.bottom + 16 }]}>
           {/* 핸들 바 */}
           <View style={$modal.handle} />
 
+          {/* 본문 스크롤 — 내용이 길어도 아래 '완료' 버튼은 항상 보이도록 */}
+          <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
           <View style={$modal.headerRow}>
             <View>
               <Text style={$modal.title}>배달 완료 확인</Text>
@@ -533,6 +535,7 @@ export function DeliveryCompleteModal({
             <Ionicons name="chatbubble-outline" size={14} color={T.textSub} />
             <Text style={$modal.noticeText}>완료 처리 후 고객께 사진과 함께 문자가 발송됩니다</Text>
           </View>
+          </ScrollView>
 
           <View style={$modal.btnRow}>
             <TouchableOpacity style={$modal.cancelBtn} onPress={onCancel}>
