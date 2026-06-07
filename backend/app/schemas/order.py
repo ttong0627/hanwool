@@ -115,6 +115,12 @@ class DispatchByDriversRequest(BaseModel):
     driver_ids: list[int] = Field(default_factory=list)
 
 
+class DispatchByDongRequest(BaseModel):
+    """동(洞) 단위 배정 — 선택한 동들의 오늘 주문을 한 기사에게 배정/재배정"""
+    driver_id: int
+    dongs: list[str] = Field(min_length=1)
+
+
 class ResequenceItem(BaseModel):
     order_id: int
     sequence: int

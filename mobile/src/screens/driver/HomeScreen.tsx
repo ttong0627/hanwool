@@ -791,7 +791,7 @@ export function DriverHomeScreen() {
       const jobs: { phone: string; message: string }[] = data?.sms_jobs || []
       if (jobs.length) {
         Alert.alert(
-          '배송업무 시작',
+          '출근 수락',
           `${data.message || '배송을 시작합니다.'}\n\n고객 ${jobs.length}명에게 출발 문자를 자동 발송할까요?`,
           [
             { text: '나중에', style: 'cancel' },
@@ -1077,7 +1077,7 @@ export function DriverHomeScreen() {
         >
           {startWorkMutation.isPending
             ? <ActivityIndicator color="white" size="small" />
-            : <><Ionicons name="play-circle-outline" size={18} color="white" style={{ marginRight: 6 }} /><Text style={$s.startBtnText}>배송업무 시작</Text></>
+            : <><Ionicons name="play-circle-outline" size={18} color="white" style={{ marginRight: 6 }} /><Text style={$s.startBtnText}>출근 수락 (배송 출발)</Text></>
           }
         </TouchableOpacity>
 

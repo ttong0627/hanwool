@@ -35,6 +35,7 @@ from app.models.user import User
 from app.schemas.order import (
     BatchCreateRequest,
     DispatchByDriversRequest,
+    DispatchByDongRequest,
     OrderCreate,
     OrderEditRequest,
     OrderTransferOut,
@@ -554,6 +555,118 @@ async def get_today_dispatch_status(
             }
             for r in runs
         ],
+    }
+
+
+@router.get("/dispatch/dong-status")
+async def get_dong_dispatch_status(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    """동(洞)별 오늘 배송 현황 — 동 단위 배정 화면용.
+    각 동: 총 건수 / 미배정 / 배정된 기사별 건수. (취소·완료 제외)"""
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    today_filter = or_(
+        Order.market_date == today,
+        and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+    )
+    rows = (await db.execute(
+        select(Order.dong, Order.driver_id, func.count().label("cnt"))
+        .where(today_filter, Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]))
+        .group_by(Order.dong, Order.driver_id)
+    )).all()
+
+    dong_map: dict[str, dict] = {}
+    for dong, driver_id, cnt in rows:
+        d = dong_map.setdefault(dong or "미지정", {"dong": dong or "미지정", "total": 0, "unassigned": 0, "drivers": {}})
+        d["total"] += cnt
+        if driver_id is None:
+            d["unassigned"] += cnt
+        else:
+            d["drivers"][driver_id] = d["drivers"].get(driver_id, 0) + cnt
+
+    result = []
+    for d in dong_map.values():
+        result.append({
+            "dong": d["dong"],
+            "total": d["total"],
+            "unassigned": d["unassigned"],
+            "drivers": [{"driver_id": k, "count": v} for k, v in d["drivers"].items()],
+        })
+    # 미배정 많은 동 우선 정렬
+    result.sort(key=lambda x: (-x["unassigned"], -x["total"]))
+    total_unassigned = sum(x["unassigned"] for x in result)
+    return {"dongs": result, "total_unassigned": total_unassigned, "unassigned_dong_count": sum(1 for x in result if x["unassigned"] > 0)}
+
+
+@router.post("/dispatch/by-dong")
+async def dispatch_by_dong(
+    body: DispatchByDongRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin),
+):
+    """선택한 동들의 오늘 주문(준비 단계: pending/assigned)을 한 기사에게 배정/재배정.
+    배송중·완료 주문은 건드리지 않는다. 배정 후 해당 기사 순번 자동 재계산."""
+    driver = (await db.execute(
+        select(User).where(
+            User.id == body.driver_id,
+            or_(User.role == "driver", User.is_driver == True),
+            User.is_active == True,
+            User.deleted_at == None,
+        )
+    )).scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=400, detail="유효한 기사가 아닙니다.")
+
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    today_filter = or_(
+        Order.market_date == today,
+        and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+    )
+    result = await db.execute(
+        select(Order).where(
+            today_filter,
+            Order.dong.in_(body.dongs),
+            Order.status.in_([OrderStatus.pending, OrderStatus.assigned]),
+        )
+    )
+    orders = list(result.scalars().all())
+    now = datetime.now(timezone.utc)
+    affected_drivers: set[int] = {body.driver_id}
+    for o in orders:
+        if o.driver_id and o.driver_id != body.driver_id:
+            affected_drivers.add(o.driver_id)
+        prev_status = o.status
+        prev_driver = o.driver_id
+        o.driver_id = body.driver_id
+        if o.status == OrderStatus.pending:
+            o.status = OrderStatus.assigned
+            o.assigned_at = now
+        await order_service.log_order_history(
+            db, o,
+            event_type="dispatched",
+            from_status=prev_status,
+            to_status=o.status,
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            driver_id=body.driver_id,
+            note=f"동 배정: {o.dong}" + (f" (기사 {prev_driver}→{body.driver_id})" if prev_driver and prev_driver != body.driver_id else ""),
+        )
+    await db.flush()
+
+    # 배정받은 기사 + 주문을 잃은 기사 모두 순번 재계산
+    for did in affected_drivers:
+        await _auto_sequence_for_driver(db, did)
+
+    return {
+        "assigned": len(orders),
+        "dongs": sorted({o.dong for o in orders}),
+        "dong_count": len({o.dong for o in orders}),
+        "driver_id": body.driver_id,
     }
 
 
