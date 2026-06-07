@@ -42,6 +42,7 @@ class Order(Base):
     dong_override: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
     sequence_source: Mapped[str] = mapped_column(String(20), default='manual', nullable=True)
     delivery_photo_path: Mapped[str] = mapped_column(String(500), nullable=True)
+    extra_photos: Mapped[str] = mapped_column(Text, nullable=True)  # 추가 사진 파일명 JSON 배열 (최대 2장)
     delivery_signature_path: Mapped[str] = mapped_column(String(500), nullable=True)
     delivery_memo: Mapped[str] = mapped_column(Text, nullable=True)                  # 배송 완료 메모 (기사 기록)
     received_by_security: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')  # 경비실 수령 여부

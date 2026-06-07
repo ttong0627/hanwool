@@ -12,6 +12,8 @@ export interface CompletionJob {
   orderId: number
   orderNo: string
   photoPath: string            // 기기에 영구 저장된 완료 사진 경로 (앱 재시작에도 유지)
+  extraPhotoPaths?: string[]   // 추가 사진(최대 2장) 영구 경로
+  extraUploaded?: boolean      // 추가 사진 업로드 성공 표시(재시도 시 중복 방지)
   signatureBase64?: string | null
   podLat?: number
   podLng?: number
@@ -75,11 +77,20 @@ export async function markPhotoUploaded(orderId: number): Promise<void> {
   await writeQueue(jobs.map((j) => (j.orderId === orderId ? { ...j, photoUploaded: true } : j)))
 }
 
+/** 추가 사진 업로드 성공 표시 — 재시도 시 중복 업로드 방지. */
+export async function markExtraUploaded(orderId: number): Promise<void> {
+  const jobs = await readQueue()
+  await writeQueue(jobs.map((j) => (j.orderId === orderId ? { ...j, extraUploaded: true } : j)))
+}
+
 export async function removeCompletion(orderId: number): Promise<void> {
   const jobs = await readQueue()
   const target = jobs.find((j) => j.orderId === orderId)
   if (target?.photoPath) {
     try { await FileSystem.deleteAsync(target.photoPath, { idempotent: true }) } catch { /* ignore */ }
+  }
+  for (const ex of target?.extraPhotoPaths ?? []) {
+    try { await FileSystem.deleteAsync(ex, { idempotent: true }) } catch { /* ignore */ }
   }
   await writeQueue(jobs.filter((j) => j.orderId !== orderId))
 }

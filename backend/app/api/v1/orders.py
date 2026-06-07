@@ -1244,6 +1244,56 @@ async def upload_delivery_photo(
     }
 
 
+@router.post("/{order_id}/photo/extra")
+async def upload_extra_photo(
+    order_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_driver_or_above),
+):
+    """배송완료 추가 사진(최대 2장) 업로드. 메인 사진과 동일 검증·권한."""
+    import json
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+    if current_user.role == "driver" and order.driver_id != current_user.id:
+        raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
+
+    existing = []
+    if order.extra_photos:
+        try:
+            existing = json.loads(order.extra_photos)
+        except Exception:
+            existing = []
+    if not isinstance(existing, list):
+        existing = []
+    if len(existing) >= 2:
+        raise HTTPException(status_code=400, detail="추가 사진은 최대 2장까지 가능합니다.")
+
+    raw_ext = os.path.splitext(file.filename or "")[1].lower()
+    if raw_ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="jpg, jpeg, png, webp 파일만 업로드 가능합니다.")
+    if file.content_type not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="허용되지 않는 파일 형식입니다.")
+    content = await file.read()
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
+    try:
+        Image.open(BytesIO(content)).verify()
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+
+    os.makedirs(PHOTO_DIR, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{raw_ext}"
+    async with aiofiles.open(os.path.join(PHOTO_DIR, filename), "wb") as f:
+        await f.write(content)
+    existing.append(filename)
+    order.extra_photos = json.dumps(existing)
+    await db.flush()
+    return {"extra_photo_urls": [f"/photos/{p}" for p in existing], "count": len(existing)}
+
+
 @router.post("/{order_id}/signature")
 async def upload_delivery_signature(
     order_id: int,

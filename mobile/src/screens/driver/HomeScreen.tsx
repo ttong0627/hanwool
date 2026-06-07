@@ -108,6 +108,16 @@ export async function uploadPhoto(
   })
 }
 
+/* ── 추가 사진 업로드 (최대 2장) ─────────────────────────────────── */
+export async function uploadExtraPhoto(orderId: number, photoUri: string): Promise<void> {
+  const compressed = await compressPhoto(photoUri)
+  const formData = new FormData()
+  formData.append('file', { uri: compressed, name: 'extra.jpg', type: 'image/jpeg' } as unknown as Blob)
+  await api.post(`/orders/${orderId}/photo/extra`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 /* ── 수령인 서명 업로드 (base64 PNG) ─────────────────────────────── */
 export async function uploadSignature(orderId: number, base64: string): Promise<void> {
   await api.post(`/orders/${orderId}/signature`, { image_base64: base64 })
@@ -235,7 +245,7 @@ function useRouteListener(driverId: number | null, apiBaseUrl: string, onRouteUp
 /* ── 배달 완료 모달 ──────────────────────────────────────────────── */
 export function DeliveryCompleteModal({
   order, onConfirm, onCancel,
-}: { order: { id: number; customer_name: string; dong: string; delivery_address: string; detail_address?: string | null; items_desc?: string | null; quantity?: number | null; request?: string | null; lat?: number | null; lng?: number | null }; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean) => void; onCancel: () => void }) {
+}: { order: { id: number; customer_name: string; dong: string; delivery_address: string; detail_address?: string | null; items_desc?: string | null; quantity?: number | null; request?: string | null; lat?: number | null; lng?: number | null }; onConfirm: (uri: string, lat?: number, lng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean, extraPhotos?: string[]) => void; onCancel: () => void }) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [podCoords, setPodCoords] = useState<{ lat: number; lng: number } | null>(null)
@@ -243,6 +253,8 @@ export function DeliveryCompleteModal({
   const [signOpen, setSignOpen] = useState(false)
   const [security, setSecurity] = useState(false)   // 경비실 수령
   const [memo, setMemo] = useState('')              // 배송 메모
+  const [extraPhotos, setExtraPhotos] = useState<string[]>([])  // 추가 사진(최대 2장)
+  const [extraCameraOpen, setExtraCameraOpen] = useState(false)
   const insets = useSafeAreaInsets()
 
   // 배송지 좌표와 기사 GPS 거리(m). 좌표 미매칭 주문은 경안시장 폴백(37.4292,127.2551)이라 경고 스킵.
@@ -288,6 +300,7 @@ export function DeliveryCompleteModal({
   const [cameraOpen, setCameraOpen] = useState(!needItemConfirm)
 
   const handleCaptured = (uri: string) => { setPhotoUri(uri); setCameraOpen(false) }
+  const handleExtraCaptured = (uri: string) => { setExtraPhotos((p) => [...p, uri].slice(0, 2)); setExtraCameraOpen(false) }
   const handleCameraCancel = () => {
     setCameraOpen(false)
     if (!photoUri) onCancel() // 사진 없이 카메라를 닫으면 완료 모달 자체를 닫음
@@ -296,7 +309,7 @@ export function DeliveryCompleteModal({
 
   const submit = () => {
     if (!photoUri) { Alert.alert('사진 필요', '배달 완료 사진을 먼저 촬영해 주세요.'); return }
-    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force, signature, memo.trim() || undefined, security) }
+    const doConfirm = (force: boolean) => { setLoading(true); onConfirm(photoUri, podCoords?.lat, podCoords?.lng, force, signature, memo.trim() || undefined, security, extraPhotos) }
     if (coordWarn) {
       Alert.alert(
         '⚠️ 위치 경고',
@@ -358,6 +371,8 @@ export function DeliveryCompleteModal({
            렌더해, Android에서 카메라 네이티브 뷰가 시트 뒤에 깔려 전체 터치를 삼키는
            '멈춤' 현상을 원천 차단한다. */
         <CameraCaptureModal visible onCaptured={handleCaptured} onCancel={handleCameraCancel} />
+      ) : extraCameraOpen ? (
+        <CameraCaptureModal visible onCaptured={handleExtraCaptured} onCancel={() => setExtraCameraOpen(false)} />
       ) : (
       <View style={$modal.overlay}>
         <View style={[$modal.sheet, { paddingBottom: insets.bottom + 24 }]}>
@@ -408,6 +423,35 @@ export function DeliveryCompleteModal({
               <Ionicons name="refresh-outline" size={14} color={T.primary} />
               <Text style={$modal.retakeText}>다시 촬영</Text>
             </TouchableOpacity>
+          )}
+
+          {/* 추가 사진 (최대 2장, 선택) */}
+          {photoUri && (
+            <View style={{ marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
+                {extraPhotos.map((uri, i) => (
+                  <View key={i} style={{ position: 'relative' }}>
+                    <Image source={{ uri }} style={{ width: 64, height: 64, borderRadius: 8 }} />
+                    <TouchableOpacity
+                      onPress={() => setExtraPhotos((p) => p.filter((_, idx) => idx !== i))}
+                      style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#EF4444', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Ionicons name="close" size={13} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {extraPhotos.length < 2 && (
+                  <TouchableOpacity
+                    onPress={() => setExtraCameraOpen(true)}
+                    style={{ width: 64, height: 64, borderRadius: 8, borderWidth: 1, borderColor: T.primary, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Ionicons name="add" size={22} color={T.primary} />
+                    <Text style={{ fontSize: 9, color: T.primary, fontWeight: '700' }}>사진 추가</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={{ fontSize: 11, color: T.textMuted }}>추가 사진 {extraPhotos.length}/2 (선택)</Text>
+            </View>
           )}
 
           {/* 수령 방법: 사인 받기 / 경비실 수령 (선택) */}
@@ -934,11 +978,14 @@ export function DriverHomeScreen() {
   const markRetry = (id: number, uri: string) => { retryQueue.current.set(id, uri); setRetryKeys([...retryQueue.current.keys()]) }
   const clearRetry = (id: number) => { retryQueue.current.delete(id); setRetryKeys([...retryQueue.current.keys()]) }
 
-  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean) => {
+  const handleDeliveryComplete = async (order: Order, photoUri: string, podLat?: number, podLng?: number, force?: boolean, signatureBase64?: string | null, memo?: string, receivedBySecurity?: boolean, extraPhotos: string[] = []) => {
     setCompleteTarget(null)
     try {
-      // 1) 온라인 정상 경로: 사진(+메모·경비실) → (서명) → 상태 완료
+      // 1) 온라인 정상 경로: 사진(+메모·경비실) → 추가사진 → (서명) → 상태 완료
       await uploadPhoto(order.id, photoUri, podLat, podLng, force, memo, receivedBySecurity)
+      for (const ex of extraPhotos) {
+        try { await uploadExtraPhoto(order.id, ex) } catch { /* 추가사진 실패는 완료에 영향 없음 */ }
+      }
       if (signatureBase64) {
         try { await uploadSignature(order.id, signatureBase64) } catch { /* 서명 실패해도 완료는 진행 */ }
       }
@@ -960,10 +1007,15 @@ export function DriverHomeScreen() {
       //    인터넷이 연결되면 useOfflineSync가 자동으로 사진·서명·상태를 전송한다.
       try {
         const photoPath = await persistPhoto(order.id, photoUri)
+        const extraPhotoPaths: string[] = []
+        for (const ex of extraPhotos) {
+          try { extraPhotoPaths.push(await persistPhoto(order.id, ex)) } catch { /* 개별 추가사진 보존 실패는 건너뜀 */ }
+        }
         await enqueueCompletion({
           orderId: order.id,
           orderNo: order.order_no,
           photoPath,
+          extraPhotoPaths,
           signatureBase64: signatureBase64 ?? null,
           podLat, podLng, force,
           memo: memo ?? null,
@@ -1249,7 +1301,7 @@ export function DriverHomeScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng, force, sig, memo, sec) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig, memo, sec)}
+          onConfirm={(uri, lat, lng, force, sig, memo, sec, extra) => handleDeliveryComplete(completeTarget, uri, lat, lng, force, sig, memo, sec, extra)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}

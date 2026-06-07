@@ -35,6 +35,18 @@ async def _next_sequence(db: AsyncSession) -> int:
     return (result.scalar() or 0) + 1
 
 
+def _parse_extra_photos(raw: str | None) -> list[str]:
+    """extra_photos(JSON 배열 문자열)를 파일명 리스트로 안전 파싱."""
+    if not raw:
+        return []
+    try:
+        import json
+        data = json.loads(raw)
+        return [str(p) for p in data if p] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
 _GA1_RE = re.compile(r"^GA1-(\d+)$")
 
 
@@ -166,6 +178,7 @@ def decrypt_order(order: Order) -> dict:
         "request": order.request,
         "weight_estimate": order.weight_estimate,
         "delivery_photo_url": f"/photos/{order.delivery_photo_path}" if order.delivery_photo_path else None,
+        "extra_photo_urls": [f"/photos/{p}" for p in _parse_extra_photos(order.extra_photos)],
         "delivery_signature_url": f"/photos/{order.delivery_signature_path}" if order.delivery_signature_path else None,
         "delivery_memo": order.delivery_memo,
         "received_by_security": bool(order.received_by_security),

@@ -146,6 +146,27 @@ def _signature_flowable(order: dict):
         return None
 
 
+def _photo_flowables(order: dict):
+    """배송 완료 사진(메인 + 추가)을 PDF 이미지 flowable 리스트로 변환."""
+    out = []
+    urls = []
+    if order.get("delivery_photo_url"):
+        urls.append(order["delivery_photo_url"])
+    urls += (order.get("extra_photo_urls") or [])
+    for u in urls:
+        path = str(u).lstrip("/")  # '/photos/x.jpg' -> 'photos/x.jpg'
+        if not os.path.exists(path):
+            continue
+        try:
+            img = Image(path, width=8 * cm, height=6 * cm, kind="proportional")
+            img.hAlign = "CENTER"
+            out.append(img)
+            out.append(Spacer(1, 0.3 * cm))
+        except Exception:
+            continue
+    return out
+
+
 def generate_receipt_pdf(order: dict) -> bytes:
     buffer = io.BytesIO()
     doc = _get_doc(buffer, "수령증")
@@ -190,6 +211,16 @@ def generate_receipt_pdf(order: dict) -> bytes:
         ParagraphStyle("date", fontName=_F(), fontSize=10, alignment=TA_CENTER)
     ))
     elements.append(Spacer(1, 0.5*cm))
+    # 배송 완료 사진 (메인 + 추가 사진)
+    _photos = _photo_flowables(order)
+    if _photos:
+        elements.append(Paragraph(
+            "배송 완료 사진",
+            ParagraphStyle("photolbl", fontName=_F(), fontSize=11, alignment=TA_CENTER)
+        ))
+        elements.append(Spacer(1, 0.2*cm))
+        elements.extend(_photos)
+        elements.append(Spacer(1, 0.4*cm))
     _sig = _signature_flowable(order)
     if _sig is not None:
         elements.append(Paragraph(

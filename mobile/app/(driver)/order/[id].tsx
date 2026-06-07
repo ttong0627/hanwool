@@ -33,6 +33,7 @@ interface OrderDetail {
   item_code?: string | null
   request?: string | null
   notes?: string | null
+  extra_photo_urls?: string[] | null
   sequence?: number | null
   lat?: number | null
   lng?: number | null
@@ -192,6 +193,14 @@ export default function OrderDetailScreen() {
                 <View style={{ marginTop: 12 }}>
                   <Text style={st.imgLabel}>완료 사진</Text>
                   <Image source={{ uri: photoUrl }} style={st.photo} resizeMode="cover" />
+                </View>
+              )}
+              {(order.extra_photo_urls ?? []).length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={st.imgLabel}>추가 사진 ({order.extra_photo_urls!.length})</Text>
+                  {order.extra_photo_urls!.map((u, i) => (
+                    <Image key={i} source={{ uri: `${BASE_URL}${u}` }} style={[st.photo, { marginTop: i === 0 ? 0 : 8 }]} resizeMode="cover" />
+                  ))}
                 </View>
               )}
               {signUrl && (

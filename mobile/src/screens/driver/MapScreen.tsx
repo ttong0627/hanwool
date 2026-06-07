@@ -10,7 +10,7 @@ import { WebView } from 'react-native-webview'
 import * as Location from 'expo-location'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
-import { DeliveryCompleteModal, uploadPhoto, uploadSignature, sendMmsWithPhoto, describeApiError } from './HomeScreen'
+import { DeliveryCompleteModal, uploadPhoto, uploadExtraPhoto, uploadSignature, sendMmsWithPhoto, describeApiError } from './HomeScreen'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 import { persistPhoto, enqueueCompletion } from '@/lib/offlineQueue'
 
@@ -243,25 +243,38 @@ export function DriverMapScreen() {
   // html은 주문(sorted)에만 의존 — GPS 갱신 시 리로드되지 않도록 myLoc 제외(초기값만 ref로 전달)
   const html = useMemo(() => buildMapHtml(myLocRef.current, sorted), [sorted])
 
-  const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null, memo?: string, security?: boolean) => {
+  const handleComplete = async (order: Order, uri: string, lat?: number, lng?: number, force?: boolean, sig?: string | null, memo?: string, security?: boolean, extraPhotos: string[] = []) => {
     setCompleteTarget(null)
     try {
-      // 온라인 정상 경로: 사진(+메모·경비실) → (서명) → 상태 완료
+      // 온라인 정상 경로: 사진(+메모·경비실) → 추가사진 → (서명) → 상태 완료
       await uploadPhoto(order.id, uri, lat, lng, force, memo, security)
+      for (const ex of extraPhotos) {
+        try { await uploadExtraPhoto(order.id, ex) } catch { /* 추가사진 실패는 완료에 영향 없음 */ }
+      }
       if (sig) { try { await uploadSignature(order.id, sig) } catch { /* 서명 실패 무시 */ } }
       const data = (await api.put(`/orders/${order.id}/status`, null, { params: { status: 'delivered' } }).then((r) => r.data)) as { sms_to?: string; sms_message?: string }
       qc.invalidateQueries({ queryKey: ['driver-route', 'A'] })
       if (data?.sms_to && data?.sms_message) {
         try { await sendMmsWithPhoto(data.sms_to, data.sms_message, uri) } catch { /* 문자 실패 무시 */ }
       }
-    } catch (e) {
-      // 네트워크 실패 → 오프라인 큐에 저장(사진 영구 보존). 연결되면 자동 전송.
+    } catch (e: any) {
+      // 서버가 거부(4xx/5xx)한 경우는 오프라인이 아님 → 에러 표시(영구 stuck 방지)
+      if (e?.response) {
+        Alert.alert('완료 실패', describeApiError(e))
+        return
+      }
+      // 네트워크 실패(응답 없음) → 오프라인 큐에 저장(사진 영구 보존). 연결되면 자동 전송.
       try {
         const photoPath = await persistPhoto(order.id, uri)
+        const extraPhotoPaths: string[] = []
+        for (const ex of extraPhotos) {
+          try { extraPhotoPaths.push(await persistPhoto(order.id, ex)) } catch { /* 개별 추가사진 보존 실패는 건너뜀 */ }
+        }
         await enqueueCompletion({
           orderId: order.id,
           orderNo: String(order.id),
           photoPath,
+          extraPhotoPaths,
           signatureBase64: sig ?? null,
           podLat: lat, podLng: lng, force,
           memo: memo ?? null,
@@ -416,7 +429,7 @@ export function DriverMapScreen() {
       {completeTarget && (
         <DeliveryCompleteModal
           order={completeTarget}
-          onConfirm={(uri, lat, lng, force, sig, memo, sec) => handleComplete(completeTarget, uri, lat, lng, force, sig, memo, sec)}
+          onConfirm={(uri, lat, lng, force, sig, memo, sec, extra) => handleComplete(completeTarget, uri, lat, lng, force, sig, memo, sec, extra)}
           onCancel={() => setCompleteTarget(null)}
         />
       )}

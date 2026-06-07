@@ -1,5 +1,5 @@
 import api from './api'
-import { listCompletions, removeCompletion, markPhotoUploaded, CompletionJob } from './offlineQueue'
+import { listCompletions, removeCompletion, markPhotoUploaded, markExtraUploaded, CompletionJob } from './offlineQueue'
 
 // 오프라인 큐에 쌓인 배송완료를 서버에 전송한다.
 // 사진 업로드 → (서명) → 상태 delivered 순서로 재생하고, 성공하면 큐에서 제거한다.
@@ -21,6 +21,17 @@ async function flushOne(job: CompletionJob): Promise<boolean> {
       await api.post(`/orders/${job.orderId}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       await markPhotoUploaded(job.orderId)
       job.photoUploaded = true
+    }
+
+    // 추가 사진(최대 2장)도 한 번만 업로드
+    if (!job.extraUploaded && (job.extraPhotoPaths?.length ?? 0) > 0) {
+      for (const ex of job.extraPhotoPaths!) {
+        const efd = new FormData()
+        efd.append('file', { uri: ex, name: 'extra.jpg', type: 'image/jpeg' } as unknown as Blob)
+        await api.post(`/orders/${job.orderId}/photo/extra`, efd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      }
+      await markExtraUploaded(job.orderId)
+      job.extraUploaded = true
     }
 
     if (job.signatureBase64) {

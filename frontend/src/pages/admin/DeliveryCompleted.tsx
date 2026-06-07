@@ -25,6 +25,7 @@ interface OverviewOrder {
   driver_name?: string | null
   driver_phone?: string | null
   delivery_photo_url?: string | null
+  extra_photo_urls?: string[] | null
   delivery_signature_url?: string | null
   delivery_memo?: string | null
   received_by_security?: boolean
@@ -161,6 +162,17 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
             <div className="flex h-40 items-center justify-center bg-gray-50 text-sm text-gray-400">완료 사진 없음</div>
           )}
 
+          {/* 추가 사진 (클릭 시 크게) */}
+          {(order.extra_photo_urls ?? []).length > 0 && (
+            <div className="flex gap-2 overflow-x-auto border-t border-gray-100 bg-gray-50 px-3 py-2">
+              {order.extra_photo_urls!.map((u, i) => (
+                <button key={i} type="button" onClick={() => onZoom(u)} className="shrink-0" title="크게 보기">
+                  <img src={u} alt={`추가 사진 ${i + 1}`} className="h-20 w-28 rounded border border-gray-200 object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2.5 px-5 py-4">
             <div className="flex items-center gap-2">
               {isDelivered
@@ -182,8 +194,8 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
                 }`}>{method}</span>
               </InfoRow>
             )}
-            {order.delivery_memo ? <InfoRow label="배송메모"><span className="text-gray-800">{order.delivery_memo}</span></InfoRow> : null}
-            {order.notes ? <InfoRow label="관리메모">{order.notes}</InfoRow> : null}
+            <InfoRow label="배송메세지"><span className={order.delivery_memo ? 'text-gray-800 font-medium' : 'text-gray-400'}>{order.delivery_memo || '없음'}</span></InfoRow>
+            <InfoRow label="전달사항"><span className={order.notes ? 'text-blue-700 font-medium' : 'text-gray-400'}>{order.notes || '없음'}</span></InfoRow>
             <InfoRow label="기사">
               <span className="inline-flex items-center gap-1">
                 <Truck className="h-4 w-4 text-gray-400" />
