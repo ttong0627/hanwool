@@ -51,6 +51,7 @@ from app.services.dispatch_service import DispatchOrder, group_summary, run_disp
 from app.services.route_service import (
     analyze_sequence_quality,
     optimize_route,
+    optimize_route_with_kakao_matrix,
 )
 from app.utils.market_day import is_market_day, is_reception_open, today_kst
 from app.websocket.handler import manager
@@ -216,11 +217,15 @@ async def _dispatch_today_orders(
         if order_driver_map.get(o.id)
     ]
     if geo_order_dicts:
-        geo_optimized = optimize_route(geo_order_dicts)
+        geo_optimized = await optimize_route_with_kakao_matrix(geo_order_dicts)
         geo_seq_map: dict[int, int] = {
             item["id"]: item["sequence"]
             for item in geo_optimized
             if item.get("sequence") is not None
+        }
+        geo_source_map: dict[int, str] = {
+            item["id"]: item.get("sequence_source") or ("auto" if is_auto else "manual")
+            for item in geo_optimized
         }
         id_to_dispatch_item: dict[int, DispatchOrder] = {
             item.id: item
@@ -257,7 +262,7 @@ async def _dispatch_today_orders(
                 previous_driver_id = db_order.driver_id
                 db_order.driver_id = group.driver_id
                 db_order.sequence = dispatch_item.sequence
-                db_order.sequence_source = "auto" if is_auto else "manual"
+                db_order.sequence_source = geo_source_map.get(db_order.id) or ("auto" if is_auto else "manual")
                 if db_order.status in {OrderStatus.pending, OrderStatus.assigned}:
                     db_order.assigned_at = now
                     if is_auto:
@@ -300,7 +305,7 @@ async def _dispatch_today_orders(
                         service_dong=db_order.service_dong or db_order.dong,
                         lat=db_order.lat,
                         lng=db_order.lng,
-                        sequence_source="auto" if is_auto else "manual",
+                        sequence_source=db_order.sequence_source,
                     )
                 )
 
@@ -937,13 +942,14 @@ async def _auto_sequence_for_driver(db: AsyncSession, driver_id: int) -> None:
         }
         for o in orders
     ]
-    optimized = optimize_route(order_dicts)
+    optimized = await optimize_route_with_kakao_matrix(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
+    source_map = {item["id"]: item.get("sequence_source") or "auto" for item in optimized}
     for o in orders:
         new_seq = seq_map.get(o.id)
         if new_seq is not None:
             o.sequence = new_seq
-            o.sequence_source = "auto"
+            o.sequence_source = source_map.get(o.id) or "auto"
     await db.flush()
     await _push_route_to_drivers(orders)
 
@@ -1380,7 +1386,7 @@ async def auto_sequence(
         for o in today_orders
     ]
 
-    optimized = optimize_route(order_dicts)
+    optimized = await optimize_route_with_kakao_matrix(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
     changed_count = 0
     for order in today_orders:
@@ -1389,7 +1395,8 @@ async def auto_sequence(
             if order.sequence != new_seq:
                 changed_count += 1
             order.sequence = new_seq
-            order.sequence_source = "auto"
+            optimized_item = next((item for item in optimized if item["id"] == order.id), None)
+            order.sequence_source = (optimized_item or {}).get("sequence_source") or "auto"
 
     await db.flush()
     await _push_route_to_drivers(list(today_orders))
