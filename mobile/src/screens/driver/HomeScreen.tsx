@@ -732,6 +732,7 @@ export function DriverHomeScreen() {
   const [localOrders, setLocalOrders] = useState<Order[]>([])
   const [isResequencing, setIsResequencing] = useState(false)
   const [scanVisible, setScanVisible] = useState(false)
+  const [entered, setEntered] = useState(false)   // 로그인 후 '출근 수락' 게이트 통과 여부
 
   const retryQueue = useRef<Map<number, string>>(new Map())
   const [retryKeys, setRetryKeys] = useState<number[]>([])
@@ -787,6 +788,7 @@ export function DriverHomeScreen() {
   const startWorkMutation = useMutation({
     mutationFn: () => api.post('/orders/dispatch/start-work').then((r) => r.data),
     onSuccess: (data) => {
+      setEntered(true)  // 시작을 누르면 게이트 통과(입장)
       qc.invalidateQueries({ queryKey: ['driver-route'] })
       const jobs: { phone: string; message: string }[] = data?.sms_jobs || []
       if (jobs.length) {
@@ -979,6 +981,34 @@ export function DriverHomeScreen() {
 
   return (
     <View style={[$s.root, { paddingTop: insets.top }]}>
+
+      {/* ── 출근 게이트 — 로그인 후 가운데 버튼을 눌러야 입장 + 자동 배송 시작 ── */}
+      {!entered && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => {}}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.93)', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+            <View style={{ width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 24, padding: 28, alignItems: 'center' }}>
+              <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                <Ionicons name="car-sport" size={46} color="#F97316" />
+              </View>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: '#0F172A' }}>{user?.name ?? '기사'} 님</Text>
+              <Text style={{ marginTop: 6, fontSize: 15, color: '#475569' }}>
+                오늘 배송 {(orders ?? []).filter((o: any) => o.status !== 'delivered').length}건
+              </Text>
+              <TouchableOpacity
+                onPress={() => startWorkMutation.mutate()}
+                disabled={startWorkMutation.isPending}
+                activeOpacity={0.85}
+                style={{ marginTop: 22, width: '100%', backgroundColor: '#F97316', borderRadius: 16, paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', opacity: startWorkMutation.isPending ? 0.6 : 1 }}
+              >
+                {startWorkMutation.isPending
+                  ? <ActivityIndicator color="#fff" />
+                  : <><Ionicons name="play-circle" size={24} color="#fff" style={{ marginRight: 8 }} /><Text style={{ color: '#fff', fontSize: 19, fontWeight: '900' }}>배송업무 시작</Text></>}
+              </TouchableOpacity>
+              <Text style={{ marginTop: 12, fontSize: 12.5, color: '#94A3B8' }}>버튼을 누르면 배정된 배송이 출발합니다</Text>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* ── 헤더 (다크 프리미엄) ── */}
       <View style={$s.header}>
