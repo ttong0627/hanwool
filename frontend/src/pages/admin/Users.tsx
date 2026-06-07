@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil, Truck,
+  UserCog, UserPlus, X, KeyRound, ToggleLeft, ToggleRight, Shield, Eye, EyeOff, Pencil, Truck, Activity,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { toast } from '@/store/toastStore'
@@ -346,6 +346,7 @@ export function StaffUsers() {
   const [editTarget, setEditTarget] = useState<StaffUser | null>(null)
   const [resetTarget, setResetTarget] = useState<StaffUser | null>(null)
   const [roleTarget, setRoleTarget] = useState<StaffUser | null>(null)
+  const [activityTarget, setActivityTarget] = useState<StaffUser | null>(null)
   const [roleFilter, setRoleFilter] = useState('')
 
   const { data: users = [], isLoading } = useQuery<StaffUser[]>({
@@ -354,6 +355,13 @@ export function StaffUsers() {
       (r.data as StaffUser[]).filter((u) => STAFF_ROLES.includes(u.role))
     ),
     staleTime: 30_000,
+  })
+
+  // 사용자 이용현황 요약 (마지막 로그인 / 로그인 횟수)
+  const { data: activityMap = {} } = useQuery<Record<string, { last_login: string | null; login_30d: number; login_total: number }>>({
+    queryKey: ['users-activity-summary'],
+    queryFn: () => api.get('/admin/users/activity-summary').then((r) => r.data),
+    refetchInterval: 60_000,
   })
 
   const toggleMutation = useMutation({
@@ -390,6 +398,9 @@ export function StaffUsers() {
       )}
       {roleTarget && (
         <ChangeRoleModal user={roleTarget} onClose={() => setRoleTarget(null)} />
+      )}
+      {activityTarget && (
+        <UserActivityModal user={activityTarget} onClose={() => setActivityTarget(null)} />
       )}
 
       {/* 헤더 */}
@@ -441,6 +452,7 @@ export function StaffUsers() {
                 <th className="py-3 pr-4 font-semibold">전화번호</th>
                 <th className="py-3 pr-4 font-semibold">역할</th>
                 <th className="py-3 pr-4 font-semibold">상태</th>
+                <th className="py-3 pr-4 font-semibold">이용현황</th>
                 <th className="py-3 pr-4 font-semibold">등록일</th>
                 <th className="py-3 pr-4 font-semibold">관리</th>
               </tr>
@@ -470,9 +482,30 @@ export function StaffUsers() {
                       {u.is_active ? '활성' : '비활성'}
                     </span>
                   </td>
+                  <td className="py-3.5 pr-4 text-xs">
+                    {(() => {
+                      const a = activityMap[String(u.id)]
+                      if (!a || !a.last_login) return <span className="text-gray-300">로그인 기록 없음</span>
+                      return (
+                        <div className="leading-tight">
+                          <div className="text-gray-700 tabular-nums">{formatDate(a.last_login, 'MM/dd HH:mm')}</div>
+                          <div className="text-[11px] text-gray-400">로그인 {a.login_total}회 · 30일 {a.login_30d}회</div>
+                        </div>
+                      )
+                    })()}
+                  </td>
                   <td className="py-3.5 pr-4 text-gray-400 text-xs tabular-nums">{formatDate(u.created_at)}</td>
                   <td className="py-3.5 pr-4">
                     <div className="flex items-center gap-1">
+                      {/* 이용현황(활동 로그) */}
+                      <button
+                        onClick={() => setActivityTarget(u)}
+                        className="p-1.5 hover:bg-emerald-50 rounded-lg text-gray-400 hover:text-emerald-600 transition-colors"
+                        title="이용현황 / 활동 로그"
+                      >
+                        <Activity className="w-3.5 h-3.5" />
+                      </button>
+
                       {/* 정보 수정 */}
                       <button
                         onClick={() => setEditTarget(u)}
@@ -554,6 +587,95 @@ export function StaffUsers() {
             등록 후 비밀번호를 해당 직원에게 전달해 주세요.
           </li>
         </ul>
+      </div>
+    </div>
+  )
+}
+
+// ── 사용자 이용현황 / 활동 로그 모달 ──────────────────────────────
+interface ActivityEvent {
+  type: string
+  at: string | null
+  detail?: string | null
+  ip?: string | null
+  order_no?: string | null
+  from_status?: string | null
+  to_status?: string | null
+  note?: string | null
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  login: '로그인',
+  dispatched: '배차',
+  started: '배송 시작',
+  delivered: '배송 완료',
+  force_completed: '강제 완료',
+  transferred: '인계',
+  hard_deleted: '주문 삭제',
+}
+
+function UserActivityModal({ user, onClose }: { user: StaffUser; onClose: () => void }) {
+  const [days, setDays] = useState(30)
+  const { data, isLoading } = useQuery<{ login_count: number; action_count: number; events: ActivityEvent[] }>({
+    queryKey: ['user-activity', user.id, days],
+    queryFn: () => api.get(`/admin/users/${user.id}/activity`, { params: { days } }).then((r) => r.data),
+  })
+  const events = data?.events ?? []
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <div>
+            <div className="font-bold text-gray-900">{user.name} · 이용현황</div>
+            <div className="text-xs text-gray-400">
+              {ROLE_LABELS[user.role] ?? user.role} · 로그인 {data?.login_count ?? 0}회 · 처리 {data?.action_count ?? 0}건
+            </div>
+          </div>
+          <button type="button" onClick={onClose} title="닫기" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 border-b border-gray-50 px-4 py-2">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDays(d)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${days === d ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+            >
+              {d}일
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto p-3 space-y-1.5">
+          {isLoading ? (
+            <div className="py-10 text-center text-sm text-gray-400">불러오는 중...</div>
+          ) : events.length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">최근 {days}일 활동 기록이 없습니다.</div>
+          ) : (
+            events.map((e, i) => {
+              const isLogin = e.type === 'login'
+              return (
+                <div key={i} className="flex items-start gap-2 rounded-lg border border-gray-100 px-3 py-2 text-xs">
+                  <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 font-bold ${isLogin ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {EVENT_LABELS[e.type] ?? e.type}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-gray-700">
+                      {isLogin
+                        ? <span className="text-gray-500">{e.ip ? `IP ${e.ip}` : '로그인'}</span>
+                        : <span>{e.order_no ? `주문 ${e.order_no}` : ''}{e.note ? <span className="text-gray-400"> · {e.note}</span> : null}</span>}
+                    </div>
+                    <div className="text-[11px] text-gray-400 tabular-nums">{e.at ? formatDate(e.at, 'MM/dd HH:mm') : '-'}</div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
       </div>
     </div>
   )

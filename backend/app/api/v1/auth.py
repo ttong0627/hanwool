@@ -36,6 +36,13 @@ async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="전화번호 또는 비밀번호가 올바르지 않습니다.")
 
     logger.info("login success user_id=%s role=%s", user.id, user.role)
+    # 이용현황 추적용 로그인 활동 기록 (실패해도 로그인은 진행)
+    try:
+        from app.models.user_activity_log import UserActivityLog
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else None)
+        db.add(UserActivityLog(user_id=user.id, action="login", detail=f"role={user.role}", ip=client_ip))
+    except Exception:
+        logger.exception("activity log(login) write failed")
     access_token = create_access_token({"sub": str(user.id), "role": user.role})
     refresh_token = create_refresh_token({"sub": str(user.id)})
 

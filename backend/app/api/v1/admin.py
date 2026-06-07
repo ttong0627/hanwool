@@ -14,6 +14,7 @@ from app.models.order import Order, OrderStatus
 from app.models.order_history import OrderHistory
 from app.models.address_resolution_log import AddressResolutionLog
 from app.models.user import User
+from app.models.user_activity_log import UserActivityLog
 from app.schemas.order import DispatchByDriversRequest
 from app.api.v1.orders import _dispatch_today_orders
 from app.services.customer_service import customer_stats, get_customer_detail, list_customers
@@ -240,6 +241,87 @@ async def driver_stats_daily(days: int = 90, db: AsyncSession = Depends(get_db),
         entry["total"] += row.total
         entry["delivered"] += (row.delivered or 0)
     return out
+
+
+# ── 사용자 이용현황 (활동 로그) ──────────────────────────────────────────────
+
+@router.get("/users/activity-summary")
+async def users_activity_summary(db: AsyncSession = Depends(get_db), _=Depends(require_super_admin)):
+    """사용자별 로그인 이용현황 요약 — 마지막 로그인 / 30일·전체 로그인 횟수.
+    반환: { "<user_id>": {last_login, login_30d, login_total} }"""
+    since30 = datetime.now(timezone.utc) - timedelta(days=30)
+    last_rows = (await db.execute(
+        select(UserActivityLog.user_id, func.max(UserActivityLog.created_at))
+        .where(UserActivityLog.action == "login")
+        .group_by(UserActivityLog.user_id)
+    )).all()
+    cnt30_rows = (await db.execute(
+        select(UserActivityLog.user_id, func.count())
+        .where(UserActivityLog.action == "login", UserActivityLog.created_at >= since30)
+        .group_by(UserActivityLog.user_id)
+    )).all()
+    cntall_rows = (await db.execute(
+        select(UserActivityLog.user_id, func.count())
+        .where(UserActivityLog.action == "login")
+        .group_by(UserActivityLog.user_id)
+    )).all()
+    last_map = {uid: ts for uid, ts in last_rows}
+    cnt30 = {uid: c for uid, c in cnt30_rows}
+    cntall = {uid: c for uid, c in cntall_rows}
+    keys = set(last_map) | set(cnt30) | set(cntall)
+    return {
+        str(uid): {
+            "last_login": last_map[uid].isoformat() if last_map.get(uid) else None,
+            "login_30d": cnt30.get(uid, 0),
+            "login_total": cntall.get(uid, 0),
+        }
+        for uid in keys
+    }
+
+
+@router.get("/users/{user_id}/activity")
+async def user_activity(user_id: int, days: int = 30, db: AsyncSession = Depends(get_db), _=Depends(require_super_admin)):
+    """특정 사용자의 활동 타임라인 — 로그인(계정 활동) + 주문 처리 행동(order_histories) 통합."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    events: list[dict] = []
+
+    logins = (await db.execute(
+        select(UserActivityLog)
+        .where(UserActivityLog.user_id == user_id, UserActivityLog.created_at >= since)
+        .order_by(UserActivityLog.created_at.desc())
+        .limit(100)
+    )).scalars().all()
+    for log in logins:
+        events.append({
+            "type": log.action,
+            "at": log.created_at.isoformat() if log.created_at else None,
+            "detail": log.detail,
+            "ip": log.ip,
+        })
+
+    actions = (await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.actor_user_id == user_id, OrderHistory.created_at >= since)
+        .order_by(OrderHistory.created_at.desc())
+        .limit(200)
+    )).scalars().all()
+    for a in actions:
+        events.append({
+            "type": a.event_type,
+            "at": a.created_at.isoformat() if a.created_at else None,
+            "order_no": a.order_no,
+            "from_status": a.from_status,
+            "to_status": a.to_status,
+            "note": a.note,
+        })
+
+    events.sort(key=lambda e: e.get("at") or "", reverse=True)
+    return {
+        "user_id": user_id,
+        "login_count": sum(1 for e in events if e["type"] == "login"),
+        "action_count": sum(1 for e in events if e["type"] != "login"),
+        "events": events[:200],
+    }
 
 
 @router.get("/stats/by-dong/period")

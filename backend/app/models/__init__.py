@@ -10,6 +10,7 @@ from app.models.address_resolution_log import AddressResolutionLog
 from app.models.address_override import AddressOverride
 from app.models.delivery_zone import DeliveryZone
 from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunStatus
+from app.models.user_activity_log import UserActivityLog
 
 __all__ = [
     "User",
@@ -30,4 +31,5 @@ __all__ = [
     "DispatchRun",
     "DispatchRunItem",
     "DispatchRunStatus",
+    "UserActivityLog",
 ]
