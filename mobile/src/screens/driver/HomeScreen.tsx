@@ -281,8 +281,11 @@ export function DeliveryCompleteModal({
     return () => { cancelled = true }
   }, [])
 
-  // 후면 카메라 인앱 캡처 모달 (모달 열리면 자동 실행)
-  const [cameraOpen, setCameraOpen] = useState(true)
+  // 물품 2개 이상이면 촬영 전에 물품/수량 확인 단계를 먼저 거친다
+  const needItemConfirm = (order.quantity ?? 1) >= 2
+  const [itemConfirmed, setItemConfirmed] = useState(!needItemConfirm)
+  // 후면 카메라 인앱 캡처 모달 (확인 불필요 시 모달 열리면서 자동 실행)
+  const [cameraOpen, setCameraOpen] = useState(!needItemConfirm)
 
   const handleCaptured = (uri: string) => { setPhotoUri(uri); setCameraOpen(false) }
   const handleCameraCancel = () => {
@@ -311,7 +314,46 @@ export function DeliveryCompleteModal({
   return (
     <>
     <Modal transparent animationType="slide" onRequestClose={onCancel}>
-      {cameraOpen ? (
+      {!itemConfirmed ? (
+        /* 물품 2개 이상 — 촬영 전 물품/수량 확인 단계 */
+        <View style={$modal.overlay}>
+          <View style={[$modal.sheet, { paddingBottom: insets.bottom + 24 }]}>
+            <View style={$modal.handle} />
+            <View style={$modal.headerRow}>
+              <View>
+                <Text style={$modal.title}>물품 확인</Text>
+                <Text style={$modal.sub}>{order.customer_name} · {order.dong}</Text>
+              </View>
+              <TouchableOpacity onPress={onCancel} style={$modal.closeBtn}>
+                <Ionicons name="close" size={22} color={T.textSub} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA', borderWidth: 1, borderRadius: 14, padding: 16, marginVertical: 10, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="cube" size={20} color={T.primary} />
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A', flex: 1 }}>{order.items_desc || '물품'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderRadius: 10, paddingVertical: 14 }}>
+                <Text style={{ fontSize: 15, color: T.textSub }}>수량 </Text>
+                <Text style={{ fontSize: 30, fontWeight: '900', color: T.primary }}>{order.quantity ?? 1}</Text>
+                <Text style={{ fontSize: 15, color: T.textSub }}> 개</Text>
+              </View>
+            </View>
+            <Text style={{ textAlign: 'center', fontSize: 13, color: T.textSub, marginBottom: 10 }}>
+              물품 {order.quantity ?? 1}개가 맞는지 확인 후 진행하세요
+            </Text>
+            <View style={$modal.btnRow}>
+              <TouchableOpacity style={$modal.cancelBtn} onPress={onCancel}>
+                <Text style={$modal.cancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={$modal.confirmBtn} onPress={() => { setItemConfirmed(true); setCameraOpen(true) }}>
+                <Ionicons name="camera-outline" size={18} color="white" style={{ marginRight: 6 }} />
+                <Text style={$modal.confirmText}>확인 · 사진 촬영</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : cameraOpen ? (
         /* 카메라가 열린 동안엔 완료 시트를 아예 마운트하지 않음 — 한 화면에 하나만
            렌더해, Android에서 카메라 네이티브 뷰가 시트 뒤에 깔려 전체 터치를 삼키는
            '멈춤' 현상을 원천 차단한다. */

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Modal, ScrollView, Alert,
-  Animated, PanResponder, Dimensions, FlatList,
+  Animated, PanResponder, Dimensions, FlatList, Pressable,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -35,7 +35,7 @@ interface Order {
   id: number; customer_name: string; dong: string; delivery_address: string
   status: string; sequence?: number; lat?: number; lng?: number
   customer_phone?: string; items_desc?: string; quantity?: number
-  detail_address?: string | null; item_code?: string | null; request?: string | null
+  detail_address?: string | null; item_code?: string | null; request?: string | null; notes?: string | null
 }
 
 function openKakaoNavi(dest: { lat?: number | null; lng?: number | null; delivery_address: string }) {
@@ -118,8 +118,9 @@ function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order 
   const addr = `${order.delivery_address ?? ''}${order.detail_address ? ` ${order.detail_address}` : ''}`.trim()
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={s.detailOverlay}>
-        <View style={[s.detailSheet, { paddingBottom: insets.bottom + 20 }]}>
+      {/* 바깥(상세화면 아닌 곳) 탭하면 닫힘 */}
+      <Pressable style={s.detailOverlay} onPress={onClose}>
+        <Pressable style={[s.detailSheet, { paddingBottom: insets.bottom + 20 }]} onPress={() => {}}>
           <View style={s.detailHandle} />
           <View style={s.detailHeader}>
             <View style={s.stopSeq}><Text style={s.stopSeqText}>{order.sequence ?? '-'}</Text></View>
@@ -133,7 +134,8 @@ function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order 
             <DetailRow icon="location-outline" label="배송지" value={addr || order.dong} />
             <DetailRow icon="cube-outline" label="물품"
               value={`${order.items_desc ?? '-'} · ${order.quantity ?? 1}개${order.item_code ? `  (코드: ${order.item_code})` : ''}`} />
-            {order.request ? <DetailRow icon="chatbox-ellipses-outline" label="요청사항" value={order.request} color={T.primary} /> : null}
+            {order.request ? <DetailRow icon="chatbox-ellipses-outline" label="고객 요청사항" value={order.request} color={T.primary} /> : null}
+            {order.notes ? <DetailRow icon="megaphone-outline" label="관리자·접수자 전달" value={order.notes} color="#2563EB" /> : null}
           </ScrollView>
 
           <View style={s.detailActions}>
@@ -163,8 +165,8 @@ function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order 
               </TouchableOpacity>
             </View>
           )}
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   )
 }
@@ -375,7 +377,8 @@ export function DriverMapScreen() {
               <View style={s.stopSeq}><Text style={s.stopSeqText}>{o.sequence ?? '-'}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.stopName} numberOfLines={1}>{o.customer_name}</Text>
-                <Text style={s.stopAddr} numberOfLines={1}>{o.dong} · {o.delivery_address}</Text>
+                <Text style={s.stopAddr} numberOfLines={2}>{o.dong} · {o.delivery_address}{o.detail_address ? ` ${o.detail_address}` : ''}</Text>
+                {o.request ? <Text style={s.stopReq} numberOfLines={1}>📌 {o.request}</Text> : null}
               </View>
               <TouchableOpacity style={s.rowBtn} onPress={() => setMoveTarget(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="swap-vertical" size={18} color={T.primary} />
@@ -447,6 +450,7 @@ const s = StyleSheet.create({
   stopSeqText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   stopName: { fontSize: 19, fontWeight: '800', color: T.text },
   stopAddr: { fontSize: 12, color: T.textSub, marginTop: 1 },
+  stopReq: { fontSize: 11.5, color: T.primary, marginTop: 2, fontWeight: '600' },
   naviBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
 
   detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
