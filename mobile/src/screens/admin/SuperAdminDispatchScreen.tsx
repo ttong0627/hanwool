@@ -238,6 +238,8 @@ export function SuperAdminDispatchScreen() {
             style={{ flex: 1 }}
             data={dongs}
             keyExtractor={(item) => item.dong}
+            numColumns={2}
+            columnWrapperStyle={styles.dongRow}
             refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} />}
             contentContainerStyle={styles.list}
             ListEmptyComponent={<Text style={styles.emptyText}>오늘 배송 주문이 없습니다.</Text>}
@@ -305,7 +307,8 @@ const styles = StyleSheet.create({
   recoDongs: { marginTop: 2, fontSize: 12.5, color: '#475569' },
   recoCount: { fontSize: 15, fontWeight: '900', color: '#F97316' },
   uncovered: { fontSize: 12, color: '#6b7280', paddingHorizontal: 4, paddingTop: 6 },
-  dongItem: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dongRow: { justifyContent: 'space-between' },
+  dongItem: { width: '49%', backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   dongItemActive: { borderColor: '#f97316', backgroundColor: '#fff7ed' },
   dongItemUnassigned: { borderColor: '#fdba74' },
   dongName: { fontSize: 16, fontWeight: '800', color: '#111827' },
