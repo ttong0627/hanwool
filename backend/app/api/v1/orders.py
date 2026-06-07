@@ -47,7 +47,7 @@ from app.schemas.order import (
 from app.services import order_service, sms_service
 from app.services.address_service import geocode_address as _geocode_address
 from app.services.address_resolver import apply_resolution_to_order, log_address_resolution, resolve_address, SERVICE_DONGS
-from app.services.dispatch_service import DispatchOrder, group_summary, run_dispatch
+from app.services.dispatch_service import DispatchOrder, group_summary, recommended_dong_groups, run_dispatch
 from app.services.route_service import (
     analyze_sequence_quality,
     optimize_route,
@@ -59,7 +59,6 @@ from app.websocket.handler import manager
 router = APIRouter(prefix="/orders", tags=["주문"])
 
 PHOTO_DIR = "photos"
-AUTO_ASSIGN_LIMIT = 40
 VALID_DONGS = SERVICE_DONGS  # 배송 허용동 단일 소스 (address_resolver.SERVICE_DONGS, 18개 동)
 DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
 
@@ -148,6 +147,7 @@ async def _dispatch_today_orders(
     executed_by_id: Optional[int] = None,
     is_auto: bool = True,
     include_in_transit: bool = False,
+    dong_groups: Optional[list[list[str]]] = None,
 ) -> dict:
     from app.core.security import decrypt_field
 
@@ -194,7 +194,7 @@ async def _dispatch_today_orders(
         for o in today_orders
     ]
 
-    groups = run_dispatch(dispatch_orders_list, driver_ids)
+    groups = run_dispatch(dispatch_orders_list, driver_ids, dong_groups=dong_groups)
 
     # 배차 결과(driver_id 배정)를 토대로 geo-최적화 순번 재계산
     order_driver_map: dict[int, int] = {
@@ -563,6 +563,31 @@ async def get_today_dispatch_status(
     }
 
 
+@router.get("/dispatch/recommendation")
+async def get_dispatch_recommendation(
+    driver_count: int = Query(2, ge=1, le=18),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    today_status = await get_today_dispatch_status(db=db, _=_)
+    dong_groups = recommended_dong_groups(driver_count)
+    by_dong = today_status.get("by_dong", {})
+
+    return {
+        "driver_count": driver_count,
+        "dong_groups": dong_groups,
+        "groups": [
+            {
+                "index": idx + 1,
+                "dongs": group,
+                "order_count": sum(int(by_dong.get(dong, 0)) for dong in group),
+            }
+            for idx, group in enumerate(dong_groups)
+        ],
+        "uncovered_dongs": sorted(set(by_dong) - {dong for group in dong_groups for dong in group}),
+    }
+
+
 @router.get("/dispatch/dong-status")
 async def get_dong_dispatch_status(
     db: AsyncSession = Depends(get_db),
@@ -687,6 +712,7 @@ async def dispatch_orders_priority(
         executed_by_id=current_user.id,
         is_auto=False,
         include_in_transit=True,
+        dong_groups=body.dong_groups,
     )
 
 
