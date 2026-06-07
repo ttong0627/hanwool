@@ -39,7 +39,7 @@ export function SuperAdminDispatchScreen() {
   const logout = useAuthStore((s) => s.logout)
   const user = useAuthStore((s) => s.user)
 
-  const [driverId, setDriverId] = useState<number | null>(null)
+  const [driverIds, setDriverIds] = useState<number[]>([])   // 복수 기사 선택
   const [selectedDongs, setSelectedDongs] = useState<string[]>([])
 
   const { data: status, isLoading, refetch } = useQuery<DongStatusResp>({
@@ -69,17 +69,21 @@ export function SuperAdminDispatchScreen() {
   )
 
   const dispatchMutation = useMutation({
-    mutationFn: () => api.post('/orders/dispatch/by-dong', { driver_id: driverId, dongs: selectedDongs }).then((r) => r.data),
+    mutationFn: () => api.post('/orders/dispatch/by-dong-multi', { driver_ids: driverIds, dongs: selectedDongs }).then((r) => r.data),
     onSuccess: (data) => {
-      const dn = driverId ? driverName(driverId) : ''
+      setDriverIds([])
       setSelectedDongs([])
       qc.invalidateQueries({ queryKey: ['dong-status'] })
       qc.invalidateQueries({ queryKey: ['driver-route'] })
       qc.invalidateQueries({ queryKey: ['driver-stats'] })
-      Alert.alert('배정 완료', `${dn} 기사에게\n동 ${data?.dong_count ?? 0}개 · 배송 ${data?.assigned ?? 0}건 배정 완료.\n기사가 '출근 수락'을 누르면 배송이 출발합니다.`)
+      Alert.alert('배정 완료', `기사 ${data?.driver_count ?? 0}명에게\n동 ${data?.dong_count ?? 0}개 · 배송 ${data?.assigned ?? 0}건 분배 완료.\n기사가 '출근 수락'을 누르면 배송이 출발합니다.`)
     },
     onError: (err: any) => Alert.alert('오류', err?.response?.data?.detail ?? '배정 중 문제가 발생했습니다.'),
   })
+
+  const toggleDriver = (id: number) => {
+    setDriverIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]))
+  }
 
   const toggleDong = (dong: string) => {
     setSelectedDongs((prev) => (prev.includes(dong) ? prev.filter((v) => v !== dong) : [...prev, dong]))
@@ -108,11 +112,12 @@ export function SuperAdminDispatchScreen() {
   }
 
   const runDispatch = () => {
-    if (!driverId) { Alert.alert('기사 선택', '배정할 기사를 먼저 선택해 주세요.'); return }
+    if (driverIds.length === 0) { Alert.alert('기사 선택', '배정할 기사를 1명 이상 선택해 주세요.'); return }
     if (selectedDongs.length === 0) { Alert.alert('동 선택', '배정할 동을 1개 이상 선택해 주세요.'); return }
+    const names = driverIds.map(driverName).join(', ')
     Alert.alert(
       '기사 배정 확인',
-      `${driverName(driverId)} 기사에게\n${selectedDongs.join(', ')}\n(동 ${selectedDongs.length}개 · 약 ${selectedCount}건)\n을(를) 배정합니다.`,
+      `기사 ${driverIds.length}명(${names})에게\n${selectedDongs.join(', ')}\n(동 ${selectedDongs.length}개 · 약 ${selectedCount}건)을\n균등 분배합니다.`,
       [
         { text: '취소', style: 'cancel' },
         { text: '배정', onPress: () => dispatchMutation.mutate() },
@@ -158,15 +163,15 @@ export function SuperAdminDispatchScreen() {
         <Text style={styles.reseqText}>{resequenceMutation.isPending ? '순번 계산 중...' : '배송 순번 다시 계산'}</Text>
       </TouchableOpacity>
 
-      {/* 기사 선택 (가로 스크롤) */}
-      <Text style={styles.sectionTitle}>1) 배정할 기사</Text>
+      {/* 기사 선택 (복수 선택 가능) */}
+      <Text style={styles.sectionTitle}>1) 배정할 기사 선택 ({driverIds.length}명)</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.driverScroll} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
         {activeDrivers.length === 0 && <Text style={styles.emptyText}>활성 기사가 없습니다.</Text>}
         {activeDrivers.map((d) => {
-          const sel = driverId === d.id
+          const sel = driverIds.includes(d.id)
           return (
-            <TouchableOpacity key={d.id} style={[styles.driverChip, sel && styles.driverChipActive]} onPress={() => setDriverId(d.id)} activeOpacity={0.85}>
-              <Text style={[styles.driverChipName, sel && styles.driverChipNameActive]}>{d.name}</Text>
+            <TouchableOpacity key={d.id} style={[styles.driverChip, sel && styles.driverChipActive]} onPress={() => toggleDriver(d.id)} activeOpacity={0.85}>
+              <Text style={[styles.driverChipName, sel && styles.driverChipNameActive]}>{sel ? '✓ ' : ''}{d.name}</Text>
               <Text style={[styles.driverChipLoad, sel && { color: '#fff' }]}>오늘 {driverLoad[d.id] ?? 0}건</Text>
             </TouchableOpacity>
           )
@@ -202,16 +207,15 @@ export function SuperAdminDispatchScreen() {
       {/* 선택 요약 + 배정 버튼 */}
       <View style={styles.footer}>
         <Text style={styles.selSummary}>
-          선택: 동 {selectedDongs.length}개 · {selectedCount}건
-          {driverId ? `  →  ${driverName(driverId)}` : '  (기사 미선택)'}
+          기사 {driverIds.length}명 · 동 {selectedDongs.length}개 · {selectedCount}건
         </Text>
         <TouchableOpacity
-          style={[styles.assignBtn, (!driverId || selectedDongs.length === 0 || dispatchMutation.isPending) && styles.assignDisabled]}
+          style={[styles.assignBtn, (driverIds.length === 0 || selectedDongs.length === 0 || dispatchMutation.isPending) && styles.assignDisabled]}
           onPress={runDispatch}
-          disabled={!driverId || selectedDongs.length === 0 || dispatchMutation.isPending}
+          disabled={driverIds.length === 0 || selectedDongs.length === 0 || dispatchMutation.isPending}
         >
           <Text style={styles.assignText}>
-            {dispatchMutation.isPending ? '배정 중...' : '이 기사에게 배정'}
+            {dispatchMutation.isPending ? '배정 중...' : `${driverIds.length}명에게 분배 배정`}
           </Text>
         </TouchableOpacity>
       </View>

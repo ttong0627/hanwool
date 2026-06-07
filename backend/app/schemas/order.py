@@ -122,6 +122,12 @@ class DispatchByDongRequest(BaseModel):
     dongs: list[str] = Field(min_length=1)
 
 
+class DispatchByDongMultiRequest(BaseModel):
+    """동 단위 분배 배정 — 선택한 동들을 선택한 여러 기사에게 균등 분배(같은 동=같은 기사)"""
+    driver_ids: list[int] = Field(min_length=1)
+    dongs: list[str] = Field(min_length=1)
+
+
 class ResequenceItem(BaseModel):
     order_id: int
     sequence: int

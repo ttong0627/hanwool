@@ -36,6 +36,7 @@ from app.schemas.order import (
     BatchCreateRequest,
     DispatchByDriversRequest,
     DispatchByDongRequest,
+    DispatchByDongMultiRequest,
     OrderCreate,
     OrderEditRequest,
     OrderTransferOut,
@@ -697,6 +698,91 @@ async def dispatch_by_dong(
         "dongs": sorted({o.dong for o in orders}),
         "dong_count": len({o.dong for o in orders}),
         "driver_id": body.driver_id,
+    }
+
+
+@router.post("/dispatch/by-dong-multi")
+async def dispatch_by_dong_multi(
+    body: DispatchByDongMultiRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin),
+):
+    """선택한 동들을 선택한 여러 기사에게 균등 분배(같은 동=같은 기사). 준비단계(pending/assigned)만 이동, 배정 후 순번 자동."""
+    valid_rows = (await db.execute(
+        select(User.id).where(
+            User.id.in_(body.driver_ids),
+            or_(User.role == "driver", User.is_driver == True),
+            User.is_active == True,
+            User.deleted_at == None,
+        )
+    )).scalars().all()
+    valid_set = set(valid_rows)
+    driver_ids = [d for d in body.driver_ids if d in valid_set]
+    if not driver_ids:
+        raise HTTPException(status_code=400, detail="유효한 기사가 없습니다.")
+    if len(driver_ids) > 18:
+        raise HTTPException(status_code=400, detail="기사는 1~18명까지 배정할 수 있습니다.")
+
+    today = today_kst()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
+    today_filter = or_(
+        Order.market_date == today,
+        and_(Order.market_date.is_(None), Order.created_at >= today_start_utc, Order.created_at < today_end_utc),
+    )
+    orders = list((await db.execute(
+        select(Order).where(
+            today_filter,
+            Order.dong.in_(body.dongs),
+            Order.status.in_([OrderStatus.pending, OrderStatus.assigned]),
+        )
+    )).scalars().all())
+    if not orders:
+        return {"assigned": 0, "dongs": [], "driver_count": len(driver_ids), "message": "배정할 주문이 없습니다."}
+
+    # 동별 그룹 → 주문 많은 동부터 최소부하 기사에 배정(같은 동=같은 기사)
+    by_dong: dict[str, list] = {}
+    for o in orders:
+        by_dong.setdefault(o.dong, []).append(o)
+    load = {d: 0 for d in driver_ids}
+    order_target: dict[int, int] = {}
+    for dong in sorted(by_dong, key=lambda d: -len(by_dong[d])):
+        target = min(driver_ids, key=lambda d: load[d])
+        for o in by_dong[dong]:
+            order_target[o.id] = target
+        load[target] += len(by_dong[dong])
+
+    now = datetime.now(timezone.utc)
+    affected: set[int] = set(driver_ids)
+    for o in orders:
+        did = order_target[o.id]
+        if o.driver_id and o.driver_id != did:
+            affected.add(o.driver_id)
+        prev_status = o.status
+        o.driver_id = did
+        if o.status == OrderStatus.pending:
+            o.status = OrderStatus.assigned
+            o.assigned_at = now
+        await order_service.log_order_history(
+            db, o,
+            event_type="dispatched",
+            from_status=prev_status,
+            to_status=o.status,
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            driver_id=did,
+            note=f"동 분배 배정: {o.dong}",
+        )
+    await db.flush()
+    for did in affected:
+        await _auto_sequence_for_driver(db, did)
+
+    return {
+        "assigned": len(orders),
+        "dongs": sorted(by_dong.keys()),
+        "dong_count": len(by_dong),
+        "driver_count": len(driver_ids),
+        "per_driver": load,
     }
 
 
