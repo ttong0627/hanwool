@@ -1,8 +1,9 @@
-import { Tabs } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Platform } from 'react-native'
 
 import { useOfflineSync } from '@/hooks/useOfflineSync'
+import { useAuthStore } from '@/store/authStore'
 
 const T = {
   primary:  '#F97316',
@@ -15,6 +16,9 @@ const T = {
 export default function DriverLayout() {
   // 기사 화면 어디에 있든 오프라인 배송완료 큐를 백그라운드로 자동 전송
   useOfflineSync()
+  const router = useRouter()
+  const role = useAuthStore((s) => s.user?.role)
+  const isAdmin = role === 'super_admin' || role === 'admin'
 
   return (
     <Tabs
@@ -63,6 +67,23 @@ export default function DriverLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size ?? 24} color={color} />
           ),
+        }}
+      />
+      {/* 관리자 탭 — 최고관리자/관리자에게만 표시, 탭 누르면 관리자 화면으로 이동 */}
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: '관리자',
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="grid" size={size ?? 24} color={color} />
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault()
+            router.replace('/(admin)')
+          },
         }}
       />
       {/* 루트 미리보기 / 지도 / 상세 — 탭바에 표시하지 않고 화면에서만 접근 */}
