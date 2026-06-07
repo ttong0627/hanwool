@@ -1,6 +1,8 @@
-import { Tabs } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Platform } from 'react-native'
+
+import { useAuthStore } from '@/store/authStore'
 
 const T = {
   primary: '#F97316',
@@ -10,6 +12,9 @@ const T = {
 }
 
 export default function AdminLayout() {
+  const router = useRouter()
+  const isDriver = useAuthStore((s) => !!s.user?.is_driver)
+
   return (
     <Tabs
       screenOptions={{
@@ -39,6 +44,21 @@ export default function AdminLayout() {
         options={{
           title: '배송 확인',
           tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size ?? 24} color={color} />,
+        }}
+      />
+      {/* 배송하기 — 기사 겸직 관리자만 표시, 누르면 기사 화면으로 이동 */}
+      <Tabs.Screen
+        name="deliver"
+        options={{
+          title: '배송하기',
+          href: isDriver ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="car" size={size ?? 24} color={color} />,
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault()
+            router.replace('/(driver)')
+          },
         }}
       />
     </Tabs>

@@ -3,7 +3,7 @@
     "name": "경안시장 배송",
     "slug": "hanwool-delivery",
     "scheme": "hanwool",
-    "version": "1.0.39",
+    "version": "1.0.40",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.hanwool.delivery",
-      "versionCode": 20,
+      "versionCode": 21,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

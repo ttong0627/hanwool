@@ -191,6 +191,7 @@ export function SuperAdminDispatchScreen() {
 
           <Text style={styles.sectionTitle}>2) 예정 동 배분 ({driverIds.length}명 기준)</Text>
           <FlatList
+            style={{ flex: 1 }}
             data={reco?.groups ?? []}
             keyExtractor={(g) => String(g.index)}
             refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} />}
@@ -234,6 +235,7 @@ export function SuperAdminDispatchScreen() {
 
           <Text style={styles.sectionTitle}>2) 변경할 동 선택</Text>
           <FlatList
+            style={{ flex: 1 }}
             data={dongs}
             keyExtractor={(item) => item.dong}
             refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} />}
@@ -287,12 +289,13 @@ const styles = StyleSheet.create({
   reseqBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E2E8F0', borderRadius: 10, paddingVertical: 12, marginBottom: 12, minHeight: 48 },
   reseqText: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
   sectionTitle: { fontSize: 14, fontWeight: '800', color: '#111827', marginBottom: 6 },
-  driverScroll: { maxHeight: 64, marginBottom: 10 },
-  driverChip: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center', minWidth: 84 },
+  // 기사 칩 가로 스크롤 — 고정 높이로 보호(리스트가 길어도 눌려서 이름이 찌그러지지 않게)
+  driverScroll: { height: 80, flexGrow: 0, flexShrink: 0, marginBottom: 10 },
+  driverChip: { backgroundColor: 'white', borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', minWidth: 92, height: 64 },
   driverChipActive: { backgroundColor: '#f97316', borderColor: '#f97316' },
-  driverChipName: { fontSize: 14, fontWeight: '800', color: '#111827' },
+  driverChipName: { fontSize: 16, fontWeight: '800', color: '#111827' },
   driverChipNameActive: { color: '#fff' },
-  driverChipLoad: { marginTop: 2, fontSize: 11, color: '#6b7280' },
+  driverChipLoad: { marginTop: 3, fontSize: 12, color: '#6b7280' },
   list: { gap: 6, paddingBottom: 8 },
   emptyText: { textAlign: 'center', color: '#9ca3af', paddingVertical: 20 },
   recoItem: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
