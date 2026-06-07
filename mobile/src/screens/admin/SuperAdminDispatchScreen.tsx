@@ -13,13 +13,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 
-interface DispatchRequest {
-  id: number
-  requested_by_driver_name: string
-  requested_by_driver_phone: string
-  total_orders: number
-  pending_orders: number
-  recommended_driver_count: number
+interface TodayStatus {
+  total: number
+  by_status: {
+    pending: number
+    assigned: number
+    picked_up: number
+    in_transit: number
+    delivered: number
+    delayed: number
+  }
 }
 
 interface Driver {
@@ -29,18 +32,25 @@ interface Driver {
   is_active: boolean
 }
 
+interface DriverStat {
+  driver_id: number
+  total: number
+  delivered: number
+}
+
+const MAX_DRIVERS = 18
+
 export function SuperAdminDispatchScreen() {
   const qc = useQueryClient()
   const router = useRouter()
   const logout = useAuthStore((state) => state.logout)
   const user = useAuthStore((state) => state.user)
-  const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
   const [selectedDriverIds, setSelectedDriverIds] = useState<number[]>([])
 
-  const { data: requests = [], isLoading, refetch } = useQuery<DispatchRequest[]>({
-    queryKey: ['dispatch-requests', 'pending'],
-    queryFn: () => api.get('/admin/dispatch-requests', { params: { status_filter: 'pending' } }).then((r) => r.data),
-    refetchInterval: 20_000,
+  const { data: status, isLoading, refetch } = useQuery<TodayStatus>({
+    queryKey: ['dispatch-today-status'],
+    queryFn: () => api.get('/orders/dispatch/today-status').then((r) => r.data),
+    refetchInterval: 15_000,
   })
 
   const { data: drivers = [] } = useQuery<Driver[]>({
@@ -48,40 +58,63 @@ export function SuperAdminDispatchScreen() {
     queryFn: () => api.get('/users', { params: { role: 'driver' } }).then((r) => r.data),
   })
 
-  const activeDrivers = drivers.filter((driver) => driver.is_active)
-  const selectedRequest = requests.find((request) => request.id === selectedRequestId) || requests[0]
+  const { data: driverStats = [] } = useQuery<DriverStat[]>({
+    queryKey: ['driver-stats'],
+    queryFn: () => api.get('/admin/stats/drivers').then((r) => r.data),
+    refetchInterval: 15_000,
+  })
 
-  const resolveMutation = useMutation({
-    mutationFn: () => api.post(`/admin/dispatch-requests/${selectedRequest?.id}/resolve`, { driver_ids: selectedDriverIds }),
-    onSuccess: () => {
+  const activeDrivers = drivers.filter((d) => d.is_active)
+  const statMap: Record<number, DriverStat> = {}
+  driverStats.forEach((s) => { statMap[s.driver_id] = s })
+
+  const by = status?.by_status
+  const unassigned = by?.pending ?? 0
+  const ready = by?.assigned ?? 0
+  const moving = (by?.picked_up ?? 0) + (by?.in_transit ?? 0)
+  const done = by?.delivered ?? 0
+
+  const dispatchMutation = useMutation({
+    mutationFn: () => api.post('/orders/dispatch', { driver_ids: selectedDriverIds }).then((r) => r.data),
+    onSuccess: (data) => {
       setSelectedDriverIds([])
-      setSelectedRequestId(null)
-      qc.invalidateQueries({ queryKey: ['dispatch-requests', 'pending'] })
-      Alert.alert('배정 완료', '총관리자 결정에 따라 오늘 배송을 배정했습니다.')
+      qc.invalidateQueries({ queryKey: ['dispatch-today-status'] })
+      qc.invalidateQueries({ queryKey: ['driver-stats'] })
+      qc.invalidateQueries({ queryKey: ['driver-route'] })
+      Alert.alert('배정 완료', `${data?.total ?? 0}건을 선택한 기사에게 배송준비로 배정했습니다.\n기사가 앱에서 '배송업무 시작'을 누르면 출발합니다.`)
     },
-    onError: () => Alert.alert('오류', '배정 승인 중 문제가 발생했습니다.'),
+    onError: (err: any) => Alert.alert('오류', err?.response?.data?.detail ?? '배정 중 문제가 발생했습니다.'),
   })
 
   const toggleDriver = (id: number) => {
     setSelectedDriverIds((prev) => (
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id].slice(0, 4)
+      prev.includes(id) ? prev.filter((v) => v !== id) : (prev.length >= MAX_DRIVERS ? prev : [...prev, id])
     ))
   }
 
-  const approve = () => {
-    if (!selectedRequest || selectedDriverIds.length === 0) {
+  const runDispatch = () => {
+    if (selectedDriverIds.length === 0) {
       Alert.alert('기사 선택 필요', '배정할 기사를 1명 이상 선택해 주세요.')
       return
     }
-    resolveMutation.mutate()
+    const names = activeDrivers.filter((d) => selectedDriverIds.includes(d.id)).map((d) => d.name).join(', ')
+    const willReassign = ready > 0 || moving > 0
+    Alert.alert(
+      willReassign ? '재배정 확인' : '배정 확인',
+      `오늘 배송 ${status?.total ?? 0}건을\n${names} (${selectedDriverIds.length}명)\n에게 ${willReassign ? '재배정' : '배정'}합니다.\n\n각 기사에게 거리 기반으로 순번까지 자동 지정됩니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        { text: willReassign ? '재배정' : '배정', onPress: () => dispatchMutation.mutate() },
+      ],
+    )
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>총관리자 배정 알림</Text>
-          <Text style={styles.subtitle}>40건 초과 배송 요청을 직접 승인합니다.</Text>
+          <Text style={styles.title}>기사 배정 (총관리자)</Text>
+          <Text style={styles.subtitle}>기사를 선택해 오늘 배송을 배정/재배정합니다.</Text>
         </View>
         <View style={styles.headerBtns}>
           <TouchableOpacity style={styles.checkBtn} onPress={() => router.push('/(admin)/deliveries')}>
@@ -98,73 +131,71 @@ export function SuperAdminDispatchScreen() {
         </View>
       </View>
 
-      {!selectedRequest ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>대기 중인 배정 요청이 없습니다.</Text>
-          <Text style={styles.emptyText}>기사 요청이 들어오면 이 화면에 표시됩니다.</Text>
-        </View>
-      ) : (
-        <View style={styles.requestBox}>
-          <Text style={styles.alertLabel}>기사 추가/분배 결정 요청</Text>
-          <Text style={styles.requestTitle}>
-            총 {selectedRequest.total_orders}건 · 미배정 {selectedRequest.pending_orders}건
-          </Text>
-          <Text style={styles.requestSub}>
-            요청 기사: {selectedRequest.requested_by_driver_name} ({selectedRequest.requested_by_driver_phone})
-          </Text>
-          <Text style={styles.recommend}>권장 기사 수: {selectedRequest.recommended_driver_count}명</Text>
-        </View>
-      )}
+      {/* 오늘 현황 요약 */}
+      <View style={styles.statusRow}>
+        <View style={styles.statCard}><Text style={styles.statNum}>{status?.total ?? 0}</Text><Text style={styles.statLabel}>총 배송</Text></View>
+        <View style={[styles.statCard, unassigned > 0 && styles.statCardWarn]}><Text style={[styles.statNum, unassigned > 0 && styles.statNumWarn]}>{unassigned}</Text><Text style={styles.statLabel}>미배정</Text></View>
+        <View style={styles.statCard}><Text style={[styles.statNum, { color: '#2563EB' }]}>{ready}</Text><Text style={styles.statLabel}>배송준비</Text></View>
+        <View style={styles.statCard}><Text style={[styles.statNum, { color: '#F97316' }]}>{moving}</Text><Text style={styles.statLabel}>배송중</Text></View>
+        <View style={styles.statCard}><Text style={[styles.statNum, { color: '#059669' }]}>{done}</Text><Text style={styles.statLabel}>완료</Text></View>
+      </View>
 
-      <Text style={styles.sectionTitle}>배정 기사 선택</Text>
+      <Text style={styles.guide}>
+        기사를 선택하고 아래 버튼을 누르면 그 기사에게 <Text style={{ fontWeight: '800', color: '#2563EB' }}>배송준비</Text>로 배정됩니다.
+        다른 기사를 선택해 다시 누르면 <Text style={{ fontWeight: '800', color: '#c2410c' }}>재배정</Text>됩니다.
+      </Text>
+
+      <Text style={styles.sectionTitle}>배정할 기사 선택 ({selectedDriverIds.length}/{MAX_DRIVERS})</Text>
       <FlatList
         data={activeDrivers}
         keyExtractor={(item) => String(item.id)}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => { refetch(); qc.invalidateQueries({ queryKey: ['driver-stats'] }) }} />}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={<Text style={styles.emptyText}>활성 기사가 없습니다. 사용자 관리에서 기사를 등록·활성화해 주세요.</Text>}
         renderItem={({ item }) => {
           const selected = selectedDriverIds.includes(item.id)
+          const s = statMap[item.id]
           return (
             <TouchableOpacity
               style={[styles.driverItem, selected && styles.driverItemActive]}
               onPress={() => toggleDriver(item.id)}
+              activeOpacity={0.8}
             >
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.driverName, selected && styles.driverNameActive]}>{item.name}</Text>
                 <Text style={styles.driverPhone}>{item.phone}</Text>
               </View>
-              <Text style={[styles.check, selected && styles.checkActive]}>{selected ? '선택' : '대기'}</Text>
+              {s && s.total > 0 && (
+                <View style={styles.loadBadge}>
+                  <Text style={styles.loadText}>오늘 {s.total}건 · 완료 {s.delivered}</Text>
+                </View>
+              )}
+              <Text style={[styles.check, selected && styles.checkActive]}>{selected ? '✓ 선택' : '선택'}</Text>
             </TouchableOpacity>
           )
         }}
       />
 
       <TouchableOpacity
-        style={[styles.approveBtn, (!selectedRequest || selectedDriverIds.length === 0 || resolveMutation.isPending) && styles.approveDisabled]}
-        onPress={approve}
-        disabled={!selectedRequest || selectedDriverIds.length === 0 || resolveMutation.isPending}
+        style={[styles.approveBtn, (selectedDriverIds.length === 0 || dispatchMutation.isPending) && styles.approveDisabled]}
+        onPress={runDispatch}
+        disabled={selectedDriverIds.length === 0 || dispatchMutation.isPending}
       >
         <Text style={styles.approveText}>
-          {resolveMutation.isPending ? '배정 중...' : `${selectedDriverIds.length}명으로 배정 승인`}
+          {dispatchMutation.isPending
+            ? '배정 중...'
+            : selectedDriverIds.length === 0
+              ? '기사를 선택하세요'
+              : `${selectedDriverIds.length}명에게 ${(ready > 0 || moving > 0) ? '재배정' : '배정'}`}
         </Text>
       </TouchableOpacity>
-
-      {requests.length > 1 && (
-        <View style={styles.requestTabs}>
-          {requests.map((request) => (
-            <TouchableOpacity key={request.id} style={styles.requestTab} onPress={() => setSelectedRequestId(request.id)}>
-              <Text style={styles.requestTabText}>{request.total_orders}건 요청</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb', padding: 16, paddingTop: 48 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   myDeliveryBtn: { backgroundColor: '#F97316', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   myDeliveryText: { color: '#FFFFFF', fontWeight: '800' },
@@ -174,27 +205,26 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 4, fontSize: 13, color: '#6b7280' },
   logoutBtn: { backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   logoutText: { color: '#dc2626', fontWeight: '700' },
-  empty: { backgroundColor: 'white', borderRadius: 12, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#e5e7eb' },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  emptyText: { marginTop: 6, color: '#6b7280' },
-  requestBox: { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1, borderRadius: 12, padding: 16, marginBottom: 16 },
-  alertLabel: { color: '#c2410c', fontWeight: '800', marginBottom: 8 },
-  requestTitle: { fontSize: 20, fontWeight: '900', color: '#111827' },
-  requestSub: { marginTop: 6, color: '#7c2d12' },
-  recommend: { marginTop: 10, fontWeight: '800', color: '#c2410c' },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  statusRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  statCard: { flex: 1, backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  statCardWarn: { borderColor: '#fdba74', backgroundColor: '#fff7ed' },
+  statNum: { fontSize: 20, fontWeight: '900', color: '#111827' },
+  statNumWarn: { color: '#ea580c' },
+  statLabel: { marginTop: 2, fontSize: 11, color: '#6b7280', fontWeight: '600' },
+  guide: { fontSize: 12.5, color: '#374151', lineHeight: 18, backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 12 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 8 },
   list: { gap: 8, paddingBottom: 96 },
-  driverItem: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  emptyText: { textAlign: 'center', color: '#9ca3af', paddingVertical: 24 },
+  driverItem: { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
   driverItemActive: { borderColor: '#f97316', backgroundColor: '#fff7ed' },
   driverName: { fontSize: 16, fontWeight: '800', color: '#111827' },
   driverNameActive: { color: '#c2410c' },
   driverPhone: { marginTop: 3, color: '#6b7280' },
-  check: { color: '#9ca3af', fontWeight: '700' },
+  loadBadge: { backgroundColor: '#f1f5f9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  loadText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+  check: { color: '#9ca3af', fontWeight: '800', minWidth: 44, textAlign: 'right' },
   checkActive: { color: '#f97316' },
   approveBtn: { position: 'absolute', left: 16, right: 16, bottom: 24, backgroundColor: '#f97316', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   approveDisabled: { backgroundColor: '#fed7aa' },
   approveText: { color: 'white', fontSize: 17, fontWeight: '900' },
-  requestTabs: { position: 'absolute', left: 16, right: 16, bottom: 84, flexDirection: 'row', gap: 8 },
-  requestTab: { backgroundColor: '#e0f2fe', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999 },
-  requestTabText: { color: '#0369a1', fontWeight: '700', fontSize: 12 },
 })

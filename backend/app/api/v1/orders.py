@@ -28,7 +28,6 @@ from app.core.database import AsyncSessionLocal, get_db
 from app.models.address_resolution_log import AddressResolutionLog
 from app.models.complaint import Complaint
 from app.models.delivery import Delivery
-from app.models.dispatch_request import DispatchRequest, DispatchRequestStatus
 from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunStatus
 from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.order_history import OrderHistory
@@ -478,74 +477,20 @@ async def start_driver_work(
             "message": "이미 모두 배송 중입니다.",
         }
 
+    # 기사 자가배정 없음 — 무조건 '최고관리자 배정'이 업무 시작점이다.
+    # 배정된 주문이 없으면 관리자 배정을 기다린다.
     total_active = (await db.execute(
         select(func.count()).select_from(Order).where(
             today_filter,
             Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
         )
     )).scalar() or 0
-    pending_count = (await db.execute(
-        select(func.count()).select_from(Order).where(
-            today_filter,
-            Order.driver_id == None,
-            Order.status == OrderStatus.pending,
-        )
-    )).scalar() or 0
-
     if total_active == 0:
         return {"status": "no_orders", "assigned_count": 0, "message": "오늘 배정할 주문이 없습니다."}
-
-    if pending_count == 0:
-        return {
-            "status": "waiting_admin",
-            "assigned_count": 0,
-            "message": "총관리자 배정이 완료될 때까지 대기해 주세요.",
-        }
-
-    if total_active > AUTO_ASSIGN_LIMIT:
-        existing = await db.execute(
-            select(DispatchRequest).where(
-                DispatchRequest.request_date == today_kst(),
-                DispatchRequest.status == DispatchRequestStatus.pending,
-            )
-        )
-        request = existing.scalar_one_or_none()
-        if not request:
-            recommended = 2 if total_active <= 80 else 3
-            request = DispatchRequest(
-                request_date=today_kst(),
-                requested_by_driver_id=current_user.id,
-                total_orders=total_active,
-                pending_orders=pending_count,
-                recommended_driver_count=recommended,
-                status=DispatchRequestStatus.pending,
-                message=(
-                    f"오늘 배송 {total_active}건입니다. "
-                    "40건을 초과하여 총관리자 배정 결정이 필요합니다."
-                ),
-            )
-            db.add(request)
-            await db.flush()
-        return {
-            "status": "admin_decision_required",
-            "request_id": request.id,
-            "total_orders": total_active,
-            "pending_orders": pending_count,
-            "recommended_driver_count": request.recommended_driver_count,
-            "message": "배송 수량이 40건을 초과했습니다. 총관리자에게 기사 추가/분배 요청을 보냈습니다.",
-        }
-
-    dispatch_result = await _dispatch_today_orders(
-        db,
-        [current_user.id],
-        executed_by_id=current_user.id,
-        is_auto=True,
-    )
     return {
-        "status": "assigned",
-        "assigned_count": dispatch_result["total"],
-        "dispatch": dispatch_result,
-        "message": f"{dispatch_result['total']}건이 배정되었습니다.",
+        "status": "waiting_admin",
+        "assigned_count": 0,
+        "message": "총관리자가 기사 배정을 하면 배송이 시작됩니다. 배정되면 목록에 자동 표시됩니다.",
     }
 
 
