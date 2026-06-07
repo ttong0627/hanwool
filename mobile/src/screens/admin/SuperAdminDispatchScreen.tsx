@@ -191,6 +191,7 @@ export function SuperAdminDispatchScreen() {
 
           <Text style={styles.sectionTitle}>2) 예정 동 배분 ({driverIds.length}명 기준)</Text>
           <FlatList
+            key="reco-list"
             style={{ flex: 1 }}
             data={reco?.groups ?? []}
             keyExtractor={(g) => String(g.index)}
@@ -235,6 +236,7 @@ export function SuperAdminDispatchScreen() {
 
           <Text style={styles.sectionTitle}>2) 변경할 동 선택</Text>
           <FlatList
+            key="edit-dong-grid"
             style={{ flex: 1 }}
             data={dongs}
             keyExtractor={(item) => item.dong}
