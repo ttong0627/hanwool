@@ -356,6 +356,34 @@ async def _resolve_from_cache(address: str, db: AsyncSession) -> Optional[Addres
     )
 
 
+async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Optional[tuple]:
+    """이미 좌표가 저장된 동일 주소가 address_cache에 있으면 (lat, lng, source) 반환.
+    buildings(행안부) 매칭은 좌표가 없으므로, 한 번 구한 좌표는 이 캐시로 재사용해 API 호출을 막는다."""
+    road = result.standard_road_address
+    key = normalize_address_key(result.raw_address or "")
+    row = (
+        await db.execute(
+            text(
+                "SELECT lat, lng, source FROM address_cache "
+                "WHERE lat IS NOT NULL AND lng IS NOT NULL "
+                "  AND (road_address = :road OR normalized_query = :key) "
+                "ORDER BY (road_address = :road) DESC, hit_count DESC, id DESC LIMIT 1"
+            ),
+            {"road": road, "key": key},
+        )
+    ).first()
+    if not row:
+        return None
+    await db.execute(
+        text(
+            "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+            "WHERE lat IS NOT NULL AND lng IS NOT NULL AND (road_address = :road OR normalized_query = :key)"
+        ),
+        {"road": road, "key": key},
+    )
+    return (row.lat, row.lng, row.source or "cache")
+
+
 async def _apply_kakao_coordinates(result: AddressResolution) -> None:
     if result.lat and result.lng:
         return
@@ -475,7 +503,13 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
         result.match_status = "needs_review"
         result.match_message = "서비스 배송동에 포함되지 않은 법정동입니다."
 
-    if use_kakao:
+    # 좌표 우선순위: 로컬 매칭에 좌표가 없으면 → ① 저장된 캐시 좌표 재사용 → ② 그래도 없을 때만 Kakao API
+    if not (result.lat and result.lng):
+        cached = await _coords_from_cache(result, db)
+        if cached:
+            result.lat, result.lng, _csrc = cached
+            result.coord_source = result.coord_source or _csrc or "cache"
+    if use_kakao and not (result.lat and result.lng):
         await _apply_kakao_coordinates(result)
     if result.lat and result.lng and not result.coord_source:
         result.coord_source = "cache"
