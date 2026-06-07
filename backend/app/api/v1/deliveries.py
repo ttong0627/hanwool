@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.models.delivery import Delivery
 from app.models.user import User
 from app.services.order_service import get_orders_today
-from app.services.route_service import optimize_route
+from app.services.route_service import optimize_route_with_kakao_matrix
 from app.websocket.handler import manager
 
 router = APIRouter(prefix="/deliveries", tags=["배송"])
@@ -63,7 +63,7 @@ async def get_optimized_route(
     # 순번이 전혀 없을 때(미배차 등)만 최적화.
     if any(o.get("sequence") is not None for o in enriched):
         return sorted(enriched, key=lambda o: (o.get("sequence") is None, o.get("sequence") or 9999))
-    return optimize_route(enriched)
+    return await optimize_route_with_kakao_matrix(enriched)
 
 
 class DriverLocationIn(BaseModel):

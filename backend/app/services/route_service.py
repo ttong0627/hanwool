@@ -15,8 +15,17 @@ from app.core.config import settings
 MARKET_LOCATION = {"lat": 37.4090, "lng": 127.2574}
 
 # 성남 방향 기준점 (성남시청 인근) — 시장→성남 진행축을 정의한다.
-# 배송 순번은 시장에서 출발해 좌우로 쓸며 성남 방향에서 종료(기사 퇴근 동선 단축).
-SOUTH_ANCHOR = {"lat": 37.4200, "lng": 127.1267}
+# 배송 순번은 시장에서 가까운 지점부터 시작하고, 마지막이 성남 방향에 가깝도록 유도한다.
+SEONGNAM_ANCHOR = {"lat": 37.4200, "lng": 127.1267}
+SOUTH_ANCHOR = SEONGNAM_ANCHOR  # 이전 이름을 쓰는 코드/문서와의 호환용 별칭.
+
+# 직선거리 기반 휴리스틱 점수. 실제 도로 API가 없을 때도 빠르고 안정적으로 순번을 만든다.
+END_ANCHOR_WEIGHT = 0.18
+BACKTRACK_PENALTY_WEIGHT = 0.20
+TWO_OPT_MAX_PASSES = 8
+KAKAO_MATRIX_URL = "https://apis-navi.kakaomobility.com/affiliate/v1/matrix/directions"
+KAKAO_MATRIX_RADIUS_M = 20_000
+KAKAO_MATRIX_MAX_POINTS = 200
 
 JUMP_THRESHOLD_M = 300
 WALK_THRESHOLD_M = 120
@@ -38,6 +47,273 @@ def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 def _has_coord(p: dict) -> bool:
     return bool(p.get("lat")) and bool(p.get("lng"))
+
+
+def _distance_from_point(point: dict, order: dict) -> float:
+    return haversine(point["lat"], point["lng"], order["lat"], order["lng"])
+
+
+def _route_distance(ordered: list[dict], start: dict) -> float:
+    if not ordered:
+        return 0.0
+
+    total = _distance_from_point(start, ordered[0])
+    for prev, curr in zip(ordered, ordered[1:]):
+        total += haversine(prev["lat"], prev["lng"], curr["lat"], curr["lng"])
+    return total
+
+
+def _route_score(ordered: list[dict], start: dict) -> float:
+    """시장 출발 거리 + 배송 간 거리 + 성남 방향 종료 유도 점수."""
+    if not ordered:
+        return 0.0
+
+    return _route_distance(ordered, start) + (
+        _distance_from_point(SEONGNAM_ANCHOR, ordered[-1]) * END_ANCHOR_WEIGHT
+    )
+
+
+def _point_key(point: dict) -> str:
+    return str(point["_route_key"])
+
+
+def _road_distance(matrix: dict[tuple[str, str], float], a: dict, b: dict) -> float:
+    if _point_key(a) == _point_key(b):
+        return 0.0
+    distance = matrix.get((_point_key(a), _point_key(b)))
+    if distance is not None:
+        return distance
+    # 일부 구간 탐색 실패 시 전체 순번 계산을 멈추지 않도록 직선거리 보수값으로 보완한다.
+    return haversine(a["lat"], a["lng"], b["lat"], b["lng"]) * 1.35
+
+
+def _road_route_score(ordered: list[dict], start: dict, end_anchor: dict, matrix: dict[tuple[str, str], float]) -> float:
+    if not ordered:
+        return 0.0
+
+    total = _road_distance(matrix, start, ordered[0])
+    for prev, curr in zip(ordered, ordered[1:]):
+        total += _road_distance(matrix, prev, curr)
+    total += _road_distance(matrix, ordered[-1], end_anchor) * END_ANCHOR_WEIGHT
+    return total
+
+
+def _nearest_neighbor_by_matrix(
+    driver_orders: list[dict],
+    start: dict,
+    matrix: dict[tuple[str, str], float],
+    *,
+    start_order: Optional[dict] = None,
+) -> list[dict]:
+    remaining = list(driver_orders)
+    ordered: list[dict] = []
+    current = start
+
+    if start_order is not None and start_order in remaining:
+        ordered.append(start_order)
+        remaining.remove(start_order)
+        current = start_order
+
+    while remaining:
+        nxt = min(remaining, key=lambda order: _road_distance(matrix, current, order))
+        ordered.append(nxt)
+        remaining.remove(nxt)
+        current = nxt
+
+    return ordered
+
+
+def _two_opt_by_matrix(
+    ordered: list[dict],
+    start: dict,
+    end_anchor: dict,
+    matrix: dict[tuple[str, str], float],
+) -> list[dict]:
+    if len(ordered) < 4:
+        return ordered
+
+    best = list(ordered)
+    best_score = _road_route_score(best, start, end_anchor, matrix)
+
+    for _ in range(TWO_OPT_MAX_PASSES):
+        improved = False
+        for i in range(0, len(best) - 2):
+            for j in range(i + 2, len(best)):
+                candidate = best[:i] + list(reversed(best[i:j + 1])) + best[j + 1:]
+                score = _road_route_score(candidate, start, end_anchor, matrix)
+                if score + 0.01 < best_score:
+                    best = candidate
+                    best_score = score
+                    improved = True
+        if not improved:
+            break
+
+    return best
+
+
+def _optimize_with_road_matrix(
+    driver_orders: list[dict],
+    matrix: dict[tuple[str, str], float],
+    start: dict,
+    end_anchor: dict,
+    seed_ordered: list[dict],
+) -> list[dict]:
+    """Kakao Matrix 도로거리로 최종 순번을 조정한다."""
+    coord_orders = [o for o in driver_orders if _has_coord(o)]
+    no_coord = [o for o in driver_orders if not _has_coord(o)]
+    if not coord_orders:
+        return no_coord
+
+    nearest_to_market = sorted(coord_orders, key=lambda o: _road_distance(matrix, start, o))
+    candidates: list[list[dict]] = [
+        [o for o in seed_ordered if _has_coord(o)],
+        _nearest_neighbor_by_matrix(coord_orders, start, matrix),
+    ]
+    for order in nearest_to_market[: min(6, len(nearest_to_market))]:
+        candidates.append(_nearest_neighbor_by_matrix(coord_orders, start, matrix, start_order=order))
+
+    improved = [_two_opt_by_matrix(candidate, start, end_anchor, matrix) for candidate in candidates]
+    best = min(improved, key=lambda route: _road_route_score(route, start, end_anchor, matrix))
+    return best + no_coord
+
+
+async def _fetch_kakao_road_matrix(points: list[dict]) -> Optional[dict[tuple[str, str], float]]:
+    """Kakao Mobility Matrix API로 실제 차량 도로거리 행렬을 가져온다."""
+    if not settings.KAKAO_REST_API_KEY or len(points) > KAKAO_MATRIX_MAX_POINTS:
+        return None
+
+    origins = [{"key": _point_key(p), "x": p["lng"], "y": p["lat"]} for p in points]
+    destinations = [{"key": _point_key(p), "x": p["lng"], "y": p["lat"]} for p in points]
+    headers = {
+        "Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "priority": "DISTANCE",
+        "avoid": None,
+        "radius": KAKAO_MATRIX_RADIUS_M,
+        "origins": origins,
+        "destinations": destinations,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0)) as client:
+            resp = await client.post(KAKAO_MATRIX_URL, headers=headers, json=payload)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+    except Exception:
+        return None
+
+    matrix: dict[tuple[str, str], float] = {}
+    for route in data.get("routes", []):
+        if route.get("result_code") != 0:
+            continue
+        summary = route.get("summary") or {}
+        distance = summary.get("distance")
+        if distance is None:
+            continue
+        matrix[(str(route.get("origin_key")), str(route.get("destination_key")))] = float(distance)
+
+    return matrix or None
+
+
+def _progress_value(order: dict, start_lat: float, start_lng: float) -> float:
+    ref = start_lat
+    sx, sy = _to_local_xy(start_lat, start_lng, ref)
+    ax, ay = _to_local_xy(SEONGNAM_ANCHOR["lat"], SEONGNAM_ANCHOR["lng"], ref)
+    ux, uy = ax - sx, ay - sy
+    ulen = math.hypot(ux, uy) or 1.0
+    ux, uy = ux / ulen, uy / ulen
+    px, py = _to_local_xy(order["lat"], order["lng"], ref)
+    return ((px - sx) * ux) + ((py - sy) * uy)
+
+
+def _nearest_neighbor(
+    driver_orders: list[dict],
+    start: dict,
+    *,
+    start_order: Optional[dict] = None,
+    directional: bool = False,
+) -> list[dict]:
+    """시장 시작 최근접 경로. directional=True면 성남 진행축 역주행을 약하게 벌점 처리."""
+    remaining = list(driver_orders)
+    ordered: list[dict] = []
+
+    current_point = start
+    current_progress = 0.0
+    if start_order is not None and start_order in remaining:
+        ordered.append(start_order)
+        remaining.remove(start_order)
+        current_point = start_order
+        current_progress = _progress_value(start_order, start["lat"], start["lng"])
+
+    while remaining:
+        def _candidate_score(order: dict) -> float:
+            distance = _distance_from_point(current_point, order)
+            if not directional:
+                return distance
+            progress = _progress_value(order, start["lat"], start["lng"])
+            backtrack = max(0.0, current_progress - progress)
+            return distance + (backtrack * BACKTRACK_PENALTY_WEIGHT)
+
+        nxt = min(remaining, key=_candidate_score)
+        ordered.append(nxt)
+        remaining.remove(nxt)
+        current_point = nxt
+        current_progress = _progress_value(nxt, start["lat"], start["lng"])
+
+    return ordered
+
+
+def _two_opt_open_path(ordered: list[dict], start: dict) -> list[dict]:
+    """시장 시작점은 고정하고, 종료점은 성남 앵커 점수로 부드럽게 유도하는 2-opt."""
+    if len(ordered) < 4:
+        return ordered
+
+    best = list(ordered)
+    best_score = _route_score(best, start)
+
+    for _ in range(TWO_OPT_MAX_PASSES):
+        improved = False
+        for i in range(0, len(best) - 2):
+            for j in range(i + 2, len(best)):
+                candidate = best[:i] + list(reversed(best[i:j + 1])) + best[j + 1:]
+                score = _route_score(candidate, start)
+                if score + 0.01 < best_score:
+                    best = candidate
+                    best_score = score
+                    improved = True
+        if not improved:
+            break
+
+    return best
+
+
+def _optimize_shortest_to_seongnam(
+    driver_orders: list[dict], start_lat: float, start_lng: float
+) -> list[dict]:
+    """시장 근접 시작, 총 이동거리 최소화, 성남 방향 종료를 함께 만족시키는 경로."""
+    coord_orders = [o for o in driver_orders if _has_coord(o)]
+    no_coord = [o for o in driver_orders if not _has_coord(o)]
+    if not coord_orders:
+        return no_coord
+
+    start = {"lat": start_lat, "lng": start_lng}
+    nearest_to_market = sorted(coord_orders, key=lambda o: _distance_from_point(start, o))
+    candidates: list[list[dict]] = [
+        _optimize_directional(coord_orders, start_lat, start_lng),
+        _nearest_neighbor(coord_orders, start, directional=False),
+        _nearest_neighbor(coord_orders, start, directional=True),
+    ]
+
+    # 35건 규모에서는 초반 후보를 몇 개 더 넣어도 충분히 빠르다.
+    for order in nearest_to_market[: min(6, len(nearest_to_market))]:
+        candidates.append(_nearest_neighbor(coord_orders, start, start_order=order, directional=True))
+
+    improved = [_two_opt_open_path(candidate, start) for candidate in candidates]
+    best = min(improved, key=lambda route: _route_score(route, start))
+    return best + no_coord
 
 
 # ──────────────────────────────────────────────
@@ -128,7 +404,7 @@ def optimize_route(orders: list[dict]) -> list[dict]:
         start_lat = MARKET_LOCATION["lat"]
         start_lng = MARKET_LOCATION["lng"]
 
-        ordered = _optimize_directional(driver_orders, start_lat, start_lng)
+        ordered = _optimize_shortest_to_seongnam(driver_orders, start_lat, start_lng)
 
         for i, o in enumerate(ordered):
             o["sequence"] = i + 1
@@ -139,6 +415,68 @@ def optimize_route(orders: list[dict]) -> list[dict]:
         o["sequence"] = None
 
     return result
+
+
+async def optimize_route_with_kakao_matrix(orders: list[dict]) -> list[dict]:
+    """
+    기사별로 Kakao Mobility 실제 도로거리 행렬을 적용해 순번을 재조정한다.
+    Matrix API 사용이 불가능하면 기존 좌표 기반 최적화 결과를 그대로 반환한다.
+    """
+    fallback = optimize_route(orders)
+    if not fallback:
+        return []
+
+    driver_groups: dict[int, list[dict]] = {}
+    for o in fallback:
+        did = o.get("driver_id")
+        if did:
+            driver_groups.setdefault(did, []).append(o)
+
+    result_by_id: dict[int, dict] = {o["id"]: o for o in fallback if o.get("id") is not None}
+
+    for driver_id, driver_orders in driver_groups.items():
+        coord_orders = [o for o in driver_orders if _has_coord(o)]
+        if len(coord_orders) < 2:
+            continue
+
+        start = {
+            "_route_key": "start",
+            "lat": MARKET_LOCATION["lat"],
+            "lng": MARKET_LOCATION["lng"],
+        }
+        end_anchor = {
+            "_route_key": "seongnam",
+            "lat": SEONGNAM_ANCHOR["lat"],
+            "lng": SEONGNAM_ANCHOR["lng"],
+        }
+        keyed_orders = []
+        for idx, order in enumerate(coord_orders):
+            keyed = dict(order)
+            keyed["_route_key"] = f"o{idx}"
+            keyed_orders.append(keyed)
+
+        points = [start, *keyed_orders, end_anchor]
+        matrix = await _fetch_kakao_road_matrix(points)
+        if not matrix:
+            continue
+
+        seed_by_id = {o.get("id"): o for o in keyed_orders}
+        seed_ordered = [
+            seed_by_id[o.get("id")]
+            for o in sorted(driver_orders, key=lambda item: item.get("sequence") or 9999)
+            if o.get("id") in seed_by_id
+        ]
+        ordered = _optimize_with_road_matrix(keyed_orders, matrix, start, end_anchor, seed_ordered)
+
+        for sequence, item in enumerate(ordered, start=1):
+            original = result_by_id.get(item.get("id"))
+            if original is None:
+                continue
+            original["sequence"] = sequence
+            original["sequence_source"] = "kakao_matrix"
+            original["road_distance_source"] = "kakao_matrix"
+
+    return fallback
 
 
 # ──────────────────────────────────────────────
