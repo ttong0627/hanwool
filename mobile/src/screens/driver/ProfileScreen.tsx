@@ -273,8 +273,8 @@ const styles = StyleSheet.create({
   infoRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   infoIconWrap:{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   infoContent: { flex: 1 },
-  infoLabel:   { fontSize: 12, color: T.textMuted, marginBottom: 2 },
-  infoValue:   { fontSize: 15, fontWeight: '600', color: T.text },
+  infoLabel:   { fontSize: 13, color: T.textMuted, marginBottom: 2 },
+  infoValue:   { fontSize: 16.5, fontWeight: '600', color: T.text },
   divider:     { height: 1, backgroundColor: T.border, marginLeft: 64 },
 
   /* 로그아웃 */
@@ -287,5 +287,5 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#FEE2E2',
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  logoutText: { fontSize: 16, fontWeight: '700', color: T.error },
+  logoutText: { fontSize: 17, fontWeight: '800', color: T.error },
 })
