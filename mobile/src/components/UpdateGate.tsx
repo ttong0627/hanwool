@@ -34,6 +34,7 @@ export default function UpdateGate() {
 
   const checkingRef = useRef(false)
   const promptedRef = useRef(false) // 권장 업데이트는 세션당 1회만
+  const phaseRef = useRef<Phase>('hidden') // AppState 콜백에서 최신 phase 참조용
   const current = Constants.expoConfig?.version ?? ''
 
   const check = useCallback(async () => {
@@ -64,6 +65,11 @@ export default function UpdateGate() {
     }
   }, [current])
 
+  // AppState 콜백이 최신 phase를 읽도록 동기화
+  useEffect(() => {
+    phaseRef.current = phase
+  }, [phase])
+
   useEffect(() => {
     check()
     // 백그라운드에서 돌아올 때마다 재확인 (다운로드 중에는 건너뜀)
@@ -72,12 +78,6 @@ export default function UpdateGate() {
     })
     return () => sub.remove()
   }, [check])
-
-  // AppState 콜백에서 최신 phase 참조용
-  const phaseRef = useRef<Phase>('hidden')
-  useEffect(() => {
-    phaseRef.current = phase
-  }, [phase])
 
   const startUpdate = useCallback(async () => {
     if (!info) return
