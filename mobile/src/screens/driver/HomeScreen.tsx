@@ -824,6 +824,7 @@ export function DriverHomeScreen() {
   const [editSeqMode, setEditSeqMode] = useState(false)
   const [moveTarget, setMoveTarget] = useState<Order | null>(null)
   const [localOrders, setLocalOrders] = useState<Order[]>([])
+  const [filter, setFilter] = useState<'all' | 'active' | 'done'>('all')  // 상단 통계 탭 = 리스트 필터
   const [isResequencing, setIsResequencing] = useState(false)
   const [scanVisible, setScanVisible] = useState(false)
   const [entered, setEntered] = useState(false)   // 로그인 후 '출근 수락' 게이트 통과 여부
@@ -1087,6 +1088,8 @@ export function DriverHomeScreen() {
   const assignedOrders = localOrders.filter((o) => o.status === 'assigned')
   const otherDrivers = allDrivers.filter((d) => String(d.id) !== String(myId))
   const progress = localOrders.length > 0 ? Math.round((doneOrders.length / localOrders.length) * 100) : 0
+  // 상단 통계 탭에 따라 리스트 필터링
+  const visibleOrders = filter === 'active' ? activeOrders : filter === 'done' ? doneOrders : localOrders
 
   // 현재 날짜 표시
   const today = new Date()
@@ -1188,22 +1191,22 @@ export function DriverHomeScreen() {
         {/* 진행률 바 */}
         <View style={$s.progressSection}>
           <View style={$s.statsRow}>
-            {[
-              { label: '전체', value: localOrders.length, color: 'white' },
-              { label: '배송중', value: activeOrders.length, color: T.primary },
-              { label: '완료', value: doneOrders.length, color: T.success },
-            ].map(({ label, value, color }) => {
-              const tappable = label === '완료'
-              const Wrap: any = tappable ? TouchableOpacity : View
+            {([
+              { key: 'all', label: '전체', value: localOrders.length, color: 'white' },
+              { key: 'active', label: '배송중', value: activeOrders.length, color: T.primary },
+              { key: 'done', label: '완료', value: doneOrders.length, color: T.success },
+            ] as const).map(({ key, label, value, color }) => {
+              const on = filter === key
               return (
-                <Wrap
-                  key={label}
-                  style={$s.statItem}
-                  {...(tappable ? { onPress: () => router.push('/(driver)/history'), activeOpacity: 0.7 } : {})}
+                <TouchableOpacity
+                  key={key}
+                  style={[$s.statItem, on && $s.statItemOn]}
+                  activeOpacity={0.7}
+                  onPress={() => setFilter(key)}
                 >
                   <Text style={[$s.statNum, { color }]}>{value}</Text>
-                  <Text style={$s.statLabel}>{label}{tappable ? ' ›' : ''}</Text>
-                </Wrap>
+                  <Text style={[$s.statLabel, on && $s.statLabelOn]}>{label}</Text>
+                </TouchableOpacity>
               )
             })}
             <View style={$s.statDivider} />
@@ -1275,7 +1278,7 @@ export function DriverHomeScreen() {
 
       {/* ── 배송 목록 ── */}
       <FlatList
-        data={localOrders}
+        data={visibleOrders}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} tintColor={T.primary} />}
         contentContainerStyle={[$s.list, { paddingBottom: insets.bottom + 80 }]}
@@ -1284,8 +1287,10 @@ export function DriverHomeScreen() {
           isLoading ? null : (
             <View style={$s.empty}>
               <Ionicons name="cube-outline" size={48} color={T.textMuted} />
-              <Text style={$s.emptyTitle}>오늘 배송이 없습니다</Text>
-              <Text style={$s.emptySub}>관리자가 배차를 완료하면 자동으로 나타납니다</Text>
+              <Text style={$s.emptyTitle}>
+                {filter === 'done' ? '완료된 배송이 없습니다' : filter === 'active' ? '배송 중인 건이 없습니다' : '오늘 배송이 없습니다'}
+              </Text>
+              <Text style={$s.emptySub}>{filter === 'all' ? '관리자가 배차를 완료하면 자동으로 나타납니다' : '상단 전체를 누르면 모두 볼 수 있어요'}</Text>
             </View>
           )
         }
@@ -1369,7 +1374,9 @@ const $s = StyleSheet.create({
   // 진행률
   progressSection:{ paddingTop: 0 },
   statsRow:       { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  statItem:       { flex: 1, alignItems: 'center' },
+  statItem:       { flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 10 },
+  statItemOn:     { backgroundColor: 'rgba(255,255,255,0.14)' },
+  statLabelOn:    { color: '#fff', fontWeight: '800' },
   statNum:        { fontSize: 23, fontWeight: '900', lineHeight: 26 },
   statLabel:      { fontSize: 13, color: 'rgba(255,255,255,0.72)', marginTop: 2, fontWeight: '600' },
   statDivider:    { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
