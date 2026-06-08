@@ -113,7 +113,7 @@ async def create_order(
         delivery_address_enc=encrypt_field(data.delivery_address),
         dong=resolved_dong or data.dong,
         items_desc=data.items_desc,
-        item_code=data.item_code,
+        item_code=item_code,
         quantity=data.quantity,
         notes=data.notes,
         request=data.request,

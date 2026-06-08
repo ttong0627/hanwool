@@ -626,7 +626,7 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                 pass
 
         # ── 전략 2: 키워드 검색 fallback (도로명 약식 주소 대응) ────────────
-        for query in [f"광주시 {address}", address]:
+        for query in [f"경기도 광주시 {address}", address]:
             try:
                 resp = await client.get(
                     "https://dapi.kakao.com/v2/local/search/keyword.json",

@@ -387,7 +387,9 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
 async def _apply_kakao_coordinates(result: AddressResolution) -> None:
     if result.lat and result.lng:
         return
-    query = result.standard_road_address or result.raw_address
+    # 이중 접두어 방지: "경기도 광주시" 접두 제거 후 전달 (get_kakao_coordinates 내부에서 붙임)
+    raw = _strip_gwangju_prefix(result.raw_address or "")
+    query = raw or _strip_gwangju_prefix(result.standard_road_address or "") or result.raw_address or ""
     kakao = await get_kakao_coordinates(query)
     if not kakao:
         return
@@ -510,14 +512,20 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
             result.lat, result.lng, _csrc = cached
             result.coord_source = result.coord_source or _csrc or "cache"
     if use_kakao and not (result.lat and result.lng):
-        await _apply_kakao_coordinates(result)
+        try:
+            await _apply_kakao_coordinates(result)
+        except Exception:
+            pass  # 좌표 실패해도 주문 저장 계속
     if result.lat and result.lng and not result.coord_source:
         result.coord_source = "cache"
     if result.match_status == "matched" and (not result.lat or not result.lng):
         result.match_status = "needs_review"
         result.match_message = result.match_message or "주소는 매칭됐지만 지도 좌표가 없어 확인이 필요합니다."
 
-    await _save_cache(result, db)
+    try:
+        await _save_cache(result, db)
+    except Exception:
+        pass  # 캐시 저장 실패해도 주문 저장 계속
     return result
 
 
