@@ -27,7 +27,8 @@ function AuthGuard() {
       router.replace('/login')
     } else if (user && inAuth) {
       if (user.role === 'driver') router.replace('/(driver)')
-      else if (user.role === 'super_admin') router.replace('/(admin)')
+      else if (user.role === 'super_admin' || user.role === 'admin') router.replace('/(admin)')
+      else if (user.role === 'receiver') router.replace('/(receiver)')
       else router.replace('/(customer)')
     }
   }, [user, segments, navState?.key, hydrated])
