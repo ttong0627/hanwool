@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Linking, ActivityIndicator,
+  ActivityIndicator,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
+import { openKakaoNavi, openTmap } from '@/lib/navigation'
 
 /* ── 디자인 토큰 ─────────────────────────────────────────────── */
 const T = {
@@ -45,14 +46,8 @@ interface Order {
   items_desc?: string
   quantity: number
   sequence?: number
-}
-
-function openKakaoNavi(address: string) {
-  Linking.openURL(
-    `kakaomap://route?ep=${encodeURIComponent(address)}&by=CAR`
-  ).catch(() =>
-    Linking.openURL(`https://map.kakao.com/link/to/${encodeURIComponent(address)}`)
-  )
+  lat?: number | null
+  lng?: number | null
 }
 
 /* ── 통계 칩 ─────────────────────────────────────────────────── */
@@ -115,14 +110,24 @@ function StopCard({ order, index, total }: { order: Order; index: number; total:
 
         {/* 액션 버튼 (완료 아닌 경우만) */}
         {!isDone && (
-          <TouchableOpacity
-            style={sc.naviBtn}
-            onPress={() => openKakaoNavi(order.delivery_address)}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="map" size={14} color={T.primary} />
-            <Text style={sc.naviBtnText}>카카오맵 안내</Text>
-          </TouchableOpacity>
+          <View style={sc.naviRow}>
+            <TouchableOpacity
+              style={sc.naviBtn}
+              onPress={() => openKakaoNavi(order)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="map" size={14} color={T.primary} />
+              <Text style={sc.naviBtnText}>카카오맵</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={sc.tmapBtn}
+              onPress={() => openTmap(order)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="navigate" size={14} color="#4F46E5" />
+              <Text style={sc.tmapBtnText}>Tmap</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </View>
@@ -148,8 +153,11 @@ const sc = StyleSheet.create({
   address:  { fontSize: 14, color: T.textSub, lineHeight: 20, marginBottom: 6 },
   itemsRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
   itemsText:{ fontSize: 12, color: T.textMuted, flex: 1 },
+  naviRow:  { flexDirection: 'row', gap: 8 },
   naviBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#FFF7ED', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: '#FED7AA' },
   naviBtnText:{ fontSize: 13, color: T.primary, fontWeight: '700' },
+  tmapBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#EEF2FF', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: '#C7D2FE' },
+  tmapBtnText:{ fontSize: 13, color: '#4F46E5', fontWeight: '700' },
   textFaded:{ color: T.textMuted },
 })
 
@@ -250,16 +258,26 @@ export function DriverRoutePreviewScreen() {
           {/* 첫 번째 배송지 바로가기 CTA */}
           {firstPending && (
             <View style={[s.ctaWrap, { paddingBottom: insets.bottom + 16 }]}>
-              <TouchableOpacity
-                style={s.ctaBtn}
-                onPress={() => openKakaoNavi(firstPending.delivery_address)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="navigate" size={22} color="#FFFFFF" />
-                <Text style={s.ctaBtnText}>
-                  {firstPending.sequence ?? 1}번 배송지 바로 출발
-                </Text>
-              </TouchableOpacity>
+              <View style={s.ctaRow}>
+                <TouchableOpacity
+                  style={s.ctaBtn}
+                  onPress={() => openKakaoNavi(firstPending)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="navigate" size={22} color="#FFFFFF" />
+                  <Text style={s.ctaBtnText}>
+                    {firstPending.sequence ?? 1}번 카카오 출발
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.ctaTmapBtn}
+                  onPress={() => openTmap(firstPending)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="navigate" size={20} color="#FFFFFF" />
+                  <Text style={s.ctaTmapText}>Tmap</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </>
@@ -300,7 +318,9 @@ const s = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08, shadowRadius: 10, elevation: 8,
   },
+  ctaRow: { flexDirection: 'row', gap: 10 },
   ctaBtn: {
+    flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: T.primary, borderRadius: 16,
     paddingVertical: 18,
@@ -308,6 +328,13 @@ const s = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
   ctaBtnText: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  ctaTmapBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#4F46E5', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 18,
+    shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
+  },
+  ctaTmapText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
 
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   loadingText: { fontSize: 15, color: T.textMuted },

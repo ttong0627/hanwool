@@ -13,6 +13,7 @@ import api from '@/lib/api'
 import { DeliveryCompleteModal, uploadPhoto, uploadExtraPhoto, uploadSignature, sendMmsWithPhoto, describeApiError } from './HomeScreen'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 import { persistPhoto, enqueueCompletion } from '@/lib/offlineQueue'
+import { openKakaoNavi, openTmap } from '@/lib/navigation'
 
 const KAKAO_JS_KEY = 'ce845cbcc568d0d47ac8b2a284873459'
 const MAP_BASE_URL = 'https://ga.wssc.kr' // 카카오에 등록된 도메인 (JS 키 허용 도메인)
@@ -36,18 +37,6 @@ interface Order {
   status: string; sequence?: number; lat?: number; lng?: number
   customer_phone?: string; items_desc?: string; quantity?: number
   detail_address?: string | null; item_code?: string | null; request?: string | null; notes?: string | null
-}
-
-function openKakaoNavi(dest: { lat?: number | null; lng?: number | null; delivery_address: string }) {
-  const name = encodeURIComponent(dest.delivery_address || '배송지')
-  // 카카오맵 길찾기는 도착지를 '좌표'로 받아야 목적지가 정확히 찍힌다.
-  if (dest.lat != null && dest.lng != null) {
-    Linking.openURL(`kakaomap://route?ep=${dest.lat},${dest.lng}&by=CAR`).catch(() =>
-      Linking.openURL(`https://map.kakao.com/link/to/${name},${dest.lat},${dest.lng}`),
-    )
-  } else {
-    Linking.openURL(`https://map.kakao.com/link/search/${name}`).catch(() => {})
-  }
 }
 
 /* 카카오맵 HTML — 배송지 순번 핀 + 기사 트럭(window.setMe로 갱신, 지도 리로드 없음) */
@@ -149,7 +138,12 @@ function StopDetailModal({ order, onClose, onComplete, onMove }: { order: Order 
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: T.primary }]} activeOpacity={0.85}
               onPress={() => openKakaoNavi(order)}>
               <Ionicons name="navigate" size={18} color="#fff" />
-              <Text style={s.actionText}>카카오내비</Text>
+              <Text style={s.actionText}>카카오</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#4F46E5' }]} activeOpacity={0.85}
+              onPress={() => openTmap(order)}>
+              <Ionicons name="navigate" size={18} color="#fff" />
+              <Text style={s.actionText}>Tmap</Text>
             </TouchableOpacity>
           </View>
 
@@ -411,9 +405,14 @@ export function DriverMapScreen() {
                 {o.request ? <Text style={s.stopReq} numberOfLines={1}>📌 {o.request}</Text> : null}
               </View>
               {!seqEdit && (
-                <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o)}>
-                  <Ionicons name="navigate" size={16} color="#FFFFFF" />
-                </TouchableOpacity>
+                <View style={{ gap: 6 }}>
+                  <TouchableOpacity style={s.naviBtn} onPress={() => openKakaoNavi(o)}>
+                    <Ionicons name="navigate" size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.tmapBtn} onPress={() => openTmap(o)}>
+                    <Text style={s.tmapBtnText}>T맵</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </TouchableOpacity>
           )}
@@ -487,6 +486,8 @@ const s = StyleSheet.create({
   seqToggleText: { fontSize: 12, fontWeight: '800', color: T.primary },
   seqMoveIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginRight: 4 },
   naviBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
+  tmapBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
+  tmapBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 
   detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   detailSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10 },

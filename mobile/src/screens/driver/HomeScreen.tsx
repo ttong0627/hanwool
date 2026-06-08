@@ -23,6 +23,7 @@ import { SignaturePad } from './SignaturePad'
 import { MoveStopModal, reorderedSequences } from './MoveStopModal'
 import { persistPhoto, enqueueCompletion } from '@/lib/offlineQueue'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
+import { openKakaoNavi, openTmap } from '@/lib/navigation'
 
 const API_BASE = BASE_URL
 
@@ -193,19 +194,6 @@ export function describeApiError(e: unknown): string {
   const err = e as { response?: { status?: number; data?: { detail?: string } }; message?: string }
   if (err?.response) return `(${err.response.status ?? '?'}) ${err.response.data?.detail ?? '서버 오류'}`.trim()
   return err?.message ?? '네트워크 오류'
-}
-
-function openKakaoNavi(dest: { lat?: number | null; lng?: number | null; delivery_address: string }) {
-  const name = encodeURIComponent(dest.delivery_address || '배송지')
-  // 카카오맵 길찾기는 도착지를 '좌표'로 받아야 목적지가 정확히 찍힌다.
-  if (dest.lat != null && dest.lng != null) {
-    Linking.openURL(`kakaomap://route?ep=${dest.lat},${dest.lng}&by=CAR`).catch(() =>
-      Linking.openURL(`https://map.kakao.com/link/to/${name},${dest.lat},${dest.lng}`),
-    )
-  } else {
-    // 좌표가 없으면 주소명으로 검색 길찾기 폴백
-    Linking.openURL(`https://map.kakao.com/link/search/${name}`).catch(() => {})
-  }
 }
 
 /* ── WebSocket 라우트 리스너 ─────────────────────────────────────── */
@@ -648,13 +636,14 @@ function TransferModal({ order, drivers, onConfirm, onCancel }: {
 
 /* ── 배송 카드 ───────────────────────────────────────────────────── */
 function DeliveryCard({
-  order, seqInfo, editMode, onMoveStop, onNavi, onCall, onStatus, onDelay, onTransfer, onOpenDetail, retrying, onRetry, apiBase,
+  order, seqInfo, editMode, onMoveStop, onNavi, onTmap, onCall, onStatus, onDelay, onTransfer, onOpenDetail, retrying, onRetry, apiBase,
 }: {
   order: Order
   seqInfo?: { index: number; total: number }
   editMode: boolean
   onMoveStop: () => void
   onNavi: () => void
+  onTmap: () => void
   onCall: () => void
   onStatus: () => void
   onDelay: () => void
@@ -779,19 +768,23 @@ function DeliveryCard({
         <>
           <View style={$card.actions}>
             <TouchableOpacity style={$card.naviBtn} onPress={onNavi} activeOpacity={0.8}>
-              <Ionicons name="navigate-outline" size={16} color={T.error} />
-              <Text style={[$card.btnText, { color: T.error }]}>카카오내비</Text>
+              <Ionicons name="navigate-outline" size={15} color={T.error} />
+              <Text style={[$card.btnText, { color: T.error }]}>카카오</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={$card.tmapBtn} onPress={onTmap} activeOpacity={0.8}>
+              <Ionicons name="navigate-outline" size={15} color="#4F46E5" />
+              <Text style={[$card.btnText, { color: '#4F46E5' }]}>Tmap</Text>
             </TouchableOpacity>
             <TouchableOpacity style={$card.callBtn} onPress={onCall} activeOpacity={0.8}>
-              <Ionicons name="call-outline" size={16} color={T.info} />
+              <Ionicons name="call-outline" size={15} color={T.info} />
               <Text style={[$card.btnText, { color: T.info }]}>전화</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={$card.statusBtn} onPress={onStatus} activeOpacity={0.8}>
-              <Text style={$card.statusBtnText}>
-                {order.status === 'assigned' ? '픽업 완료' : order.status === 'picked_up' ? '출발 📨' : '완료 📷'}
-              </Text>
-            </TouchableOpacity>
           </View>
+          <TouchableOpacity style={$card.statusBtnFull} onPress={onStatus} activeOpacity={0.8}>
+            <Text style={$card.statusBtnText}>
+              {order.status === 'assigned' ? '픽업 완료' : order.status === 'picked_up' ? '출발 📨' : '완료 📷'}
+            </Text>
+          </TouchableOpacity>
           <View style={$card.subActions}>
             <TouchableOpacity style={$card.transferBtn} onPress={onTransfer} activeOpacity={0.8}>
               <Ionicons name="swap-horizontal-outline" size={14} color={T.info} />
@@ -1308,6 +1301,7 @@ export function DriverHomeScreen() {
             editMode={editSeqMode}
             onMoveStop={() => setMoveTarget(order)}
             onNavi={() => openKakaoNavi(order)}
+            onTmap={() => openTmap(order)}
             onCall={() => Linking.openURL(`tel:${order.customer_phone}`)}
             onStatus={() => handleStatusUpdate(order)}
             onDelay={() => handleDelayed(order)}
@@ -1441,10 +1435,11 @@ const $card = StyleSheet.create({
   retryBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', paddingVertical: 10, borderRadius: 10, paddingHorizontal: 14, marginTop: 8, borderWidth: 1, borderColor: '#FECACA' },
   retryText:    { fontSize: 13, fontWeight: '700', color: T.error },
   actions:      { flexDirection: 'row', gap: 8, marginTop: 8 },
-  naviBtn:      { flex: 2, flexDirection: 'row', gap: 5, backgroundColor: '#FEF2F2', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
-  callBtn:      { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#EFF6FF', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
-  statusBtn:    { flex: 2, backgroundColor: T.primary, paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
-  btnText:      { fontSize: 14, fontWeight: '800' },
+  naviBtn:      { flex: 1, flexDirection: 'row', gap: 4, backgroundColor: '#FEF2F2', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  tmapBtn:      { flex: 1, flexDirection: 'row', gap: 4, backgroundColor: '#EEF2FF', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  callBtn:      { flex: 1, flexDirection: 'row', gap: 4, backgroundColor: '#EFF6FF', paddingVertical: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  statusBtnFull:{ backgroundColor: T.primary, paddingVertical: 12, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 46, marginTop: 8 },
+  btnText:      { fontSize: 13, fontWeight: '800' },
   statusBtnText:{ color: 'white', fontSize: 15, fontWeight: '800' },
   subActions:   { flexDirection: 'row', gap: 8, marginTop: 6 },
   transferBtn:  { flex: 1, flexDirection: 'row', gap: 5, backgroundColor: '#F0F9FF', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BAE6FD' },
