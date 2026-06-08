@@ -639,7 +639,7 @@ export function OrderForm() {
           "
         >
           {isLocked
-            ? '🔒 접수 불가 (장날 11:00~15:00만 가능)'
+            ? '🔒 접수 불가 (장날 11:00~16:30만 가능)'
             : createMutation.isPending
             ? '접수 중...'
             : '주문 접수하기'}

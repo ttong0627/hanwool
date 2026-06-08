@@ -159,7 +159,7 @@ function MarketStatusBanner({ status }: { status: MarketStatus }) {
           </div>
           <div className="flex-1">
             <div className="font-bold text-sm">{status.message}</div>
-            <div className="text-xs text-green-100 mt-0.5">15:00까지 주문 접수 가능합니다</div>
+            <div className="text-xs text-green-100 mt-0.5">16:30까지 주문 접수 가능합니다</div>
           </div>
           <span className="text-xs font-bold bg-white text-green-700 rounded-full px-3 py-1.5 shrink-0 shadow-sm">
             접수 중

@@ -1,7 +1,7 @@
 """
 장날 / 접수 시간 유틸리티
 경안시장 장날: 매월 3·8·13·18·23·28일
-접수 시간: 장날 11:00 ~ 15:00 (KST)
+접수 시간: 장날 11:00 ~ 16:30 (KST)
 """
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -14,7 +14,8 @@ def today_kst() -> date:
     """서버 timezone과 무관하게 한국 기준 오늘 날짜를 반환"""
     return datetime.now(KST).date()
 RECEPTION_START_HOUR = 11
-RECEPTION_END_HOUR = 15
+RECEPTION_END_HOUR = 16
+RECEPTION_END_MINUTE = 30
 
 
 def is_market_day(d: date | None = None) -> bool:
@@ -30,7 +31,12 @@ def is_reception_open(dt: datetime | None = None) -> bool:
         dt = dt.replace(tzinfo=KST)
     if not is_market_day(dt.date()):
         return False
-    return RECEPTION_START_HOUR <= dt.hour < RECEPTION_END_HOUR
+    if dt.hour < RECEPTION_START_HOUR:
+        return False
+    # 마감 시각(16:30) 분 단위 비교
+    end_minutes = RECEPTION_END_HOUR * 60 + RECEPTION_END_MINUTE
+    now_minutes = dt.hour * 60 + dt.minute
+    return now_minutes < end_minutes
 
 
 def get_next_market_day(from_date: date | None = None) -> date:
@@ -53,7 +59,7 @@ def market_day_status(dt: datetime | None = None) -> dict:
 
     if is_today:
         if reception:
-            minutes_left = (RECEPTION_END_HOUR - dt.hour) * 60 - dt.minute
+            minutes_left = (RECEPTION_END_HOUR * 60 + RECEPTION_END_MINUTE) - (dt.hour * 60 + dt.minute)
             return {
                 "is_market_day": True,
                 "reception_open": True,
