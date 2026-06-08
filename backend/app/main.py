@@ -83,15 +83,10 @@ os.makedirs("photos", exist_ok=True)  # StaticFiles 마운트 전 반드시 존�
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    task = asyncio.create_task(_delay_detection_loop())
-    logger.info("delay_detection_loop started")
+    # 자동 지연 감지 비활성화 — 기사가 직접 지연 처리하기 전에는 자동으로 delayed 전환하지 않음
+    # (_detect_delayed_orders / _delay_detection_loop 함수는 보존하되 호출하지 않음)
+    logger.info("delay auto-detection disabled (driver manual only)")
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    logger.info("delay_detection_loop stopped")
 
 
 # ── FastAPI 앱 ────────────────────────────────────────────────────────────
