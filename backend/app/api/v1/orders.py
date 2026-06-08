@@ -940,16 +940,13 @@ async def edit_order(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    _EDITABLE = {OrderStatus.pending, OrderStatus.assigned, OrderStatus.picked_up}
-    if order.status not in _EDITABLE:
-        raise HTTPException(status_code=400, detail="배송 진행 중이거나 완료/취소된 주문은 수정할 수 없습니다.")
-
-    if order.status in {OrderStatus.assigned, OrderStatus.picked_up}:
-        if current_user.role not in {"admin", "super_admin"}:
-            raise HTTPException(status_code=403, detail="배정/픽업된 주문은 관리자 이상만 수정할 수 있습니다.")
+    is_admin_plus = current_user.role in {"admin", "super_admin"}
+    # admin+: 모든 상태 수정 가능 / 그 외: pending만
+    if not is_admin_plus and order.status != OrderStatus.pending:
+        raise HTTPException(status_code=403, detail="접수대기(pending) 상태 주문만 수정할 수 있습니다.")
 
     status_reset_message: Optional[str] = None
-    if order.status in {OrderStatus.assigned, OrderStatus.picked_up}:
+    if is_admin_plus and order.status in {OrderStatus.assigned, OrderStatus.picked_up}:
         prev_status = order.status
         label = "픽업" if prev_status == OrderStatus.picked_up else "배정"
         await order_service.log_order_history(
@@ -1232,11 +1229,7 @@ async def hard_delete_order(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    if order.status in {OrderStatus.in_transit, OrderStatus.delivered}:
-        raise HTTPException(status_code=403, detail="배송 진행 중이거나 완료된 주문은 삭제할 수 없습니다.")
-
-    if order.status == OrderStatus.picked_up and current_user.role not in {"admin", "super_admin"}:
-        raise HTTPException(status_code=403, detail="픽업 완료 주문은 관리자 이상만 삭제할 수 있습니다.")
+    # admin+ 이면 모든 상태 삭제 가능 (중복·오류 데이터 정리 목적)
 
     # 외래키 참조 레코드 먼저 정리 (CASCADE 없으므로 수동 삭제)
     await order_service.log_order_history(

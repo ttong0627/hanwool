@@ -111,6 +111,7 @@ function EditModal({ order, onConfirm, onClose }: {
   }
 
   const isResetStatus = order.status === 'assigned' || order.status === 'picked_up'
+  const isForceEdit = order.status === 'in_transit' || order.status === 'delivered'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -126,6 +127,14 @@ function EditModal({ order, onConfirm, onClose }: {
             <span className="text-amber-800">
               <strong>{order.status === 'picked_up' ? '픽업 완료' : '배정된'}</strong> 주문입니다.
               저장 시 {order.status === 'picked_up' ? '픽업' : '배정'}이 취소되고 <strong>접수대기</strong>로 초기화됩니다.
+            </span>
+          </div>
+        )}
+        {isForceEdit && (
+          <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 text-sm">
+            <AlertTriangle className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
+            <span className="text-orange-800">
+              <strong>{order.status === 'in_transit' ? '배송 중' : '배송 완료'}</strong> 주문입니다. 관리자 강제 수정 모드입니다.
             </span>
           </div>
         )}
@@ -366,12 +375,10 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore, o
   const userRole = useAuthStore((s) => s.user?.role ?? '')
   const hasIssue = order.match_status && order.match_status !== 'matched'
 
-  // 수정 가능: pending → 누구나(receiver+) / picked_up → super_admin만 / 그 외 잠금
-  const canEdit = order.status === 'pending' || (['assigned', 'picked_up'].includes(order.status) && ['admin', 'super_admin'].includes(userRole))
-  // 삭제 가능: pending·assigned → admin+ / picked_up → super_admin만 / cancelled → admin+ / in_transit·delivered 잠금
-  const canDelete = ['pending', 'assigned'].includes(order.status) ||
-    (order.status === 'picked_up' && ['admin', 'super_admin'].includes(userRole)) ||
-    (order.status === 'cancelled' && ['admin', 'super_admin'].includes(userRole))
+  // admin+: 모든 상태 수정·삭제 가능 / receiver: pending만 수정
+  const isAdminPlus = ['admin', 'super_admin'].includes(userRole)
+  const canEdit = order.status === 'pending' || isAdminPlus
+  const canDelete = isAdminPlus
 
   return (
     <div className={`flex items-center gap-2 px-4 py-2.5 transition-colors text-sm ${hasIssue ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
@@ -680,9 +687,9 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
                 {/* 좌표 매칭 / 수정 / 삭제 버튼 */}
                 {(() => {
                   const role = user?.role ?? ''
-                  const stagingCanEdit = order.status === 'pending' || (['assigned', 'picked_up'].includes(order.status) && ['admin', 'super_admin'].includes(role))
-                  const stagingCanDelete = ['pending', 'assigned'].includes(order.status) ||
-                    (order.status === 'picked_up' && ['admin', 'super_admin'].includes(role))
+                  const stagingIsAdminPlus = ['admin', 'super_admin'].includes(role)
+                  const stagingCanEdit = order.status === 'pending' || stagingIsAdminPlus
+                  const stagingCanDelete = stagingIsAdminPlus
                   const isGeocoding = geocodingIds.has(order.id)
                   return (
                     <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
