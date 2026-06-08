@@ -100,6 +100,7 @@ class OrderTransferOut(BaseModel):
 
 class OrderEditRequest(BaseModel):
     delivery_address: Optional[str] = None
+    detail_address: Optional[str] = None
     dong: Optional[str] = None
     items_desc: Optional[str] = None
     item_code: Optional[str] = None

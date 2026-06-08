@@ -23,6 +23,7 @@ async function downloadPdf(url: string, filename: string) {
 }
 import { StatusBadge } from '@/components/StatusBadge'
 import { DONG_LIST, STATUS_FILTER_OPTIONS, formatDate } from '@/lib/utils'
+import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 import { QrTab } from './orders/QrTab'
 import { ExcelTab } from './orders/ExcelTab'
 import { ManualTab } from './orders/ManualTab'
@@ -90,14 +91,27 @@ function AssignModal({ order, drivers, onConfirm, onClose }: {
 
 /* ── 주문 수정 모달 ─────────────────────────────────────────────────────────── */
 function EditModal({ order, onConfirm, onClose }: {
-  order: Order; onConfirm: (data: Partial<Order>) => void; onClose: () => void
+  order: Order & { detail_address?: string }; onConfirm: (data: Partial<Order & { detail_address?: string }>) => void; onClose: () => void
 }) {
   const [form, setForm] = useState({
-    delivery_address: order.delivery_address, dong: order.dong,
-    items_desc: order.items_desc ?? '', quantity: order.quantity,
-    notes: order.notes ?? '', request: order.request ?? '', weight_estimate: order.weight_estimate ?? '',
+    delivery_address: order.delivery_address ?? '',
+    detail_address: order.detail_address ?? '',
+    dong: order.dong,
+    items_desc: order.items_desc ?? '',
+    quantity: order.quantity,
+    notes: order.notes ?? '',
+    request: order.request ?? '',
+    weight_estimate: order.weight_estimate ?? '',
   })
   const set = (k: string, v: string | number) => setForm((f) => ({ ...f, [k]: v }))
+
+  const handleAddressSelect = (result: AddressResult) => {
+    const addr = result.road_address || result.address_name
+    setForm(f => ({ ...f, delivery_address: addr, ...(result.dong_name ? { dong: result.dong_name } : {}) }))
+  }
+
+  const isResetStatus = order.status === 'assigned' || order.status === 'picked_up'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
@@ -106,6 +120,15 @@ function EditModal({ order, onConfirm, onClose }: {
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <p className="text-sm text-gray-500 mb-4">{order.order_no} · {order.customer_name}님</p>
+        {isResetStatus && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-sm">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span className="text-amber-800">
+              <strong>{order.status === 'picked_up' ? '픽업 완료' : '배정된'}</strong> 주문입니다.
+              저장 시 {order.status === 'picked_up' ? '픽업' : '배정'}이 취소되고 <strong>접수대기</strong>로 초기화됩니다.
+            </span>
+          </div>
+        )}
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -116,8 +139,22 @@ function EditModal({ order, onConfirm, onClose }: {
             </div>
             <div className="col-span-2">
               <label className="label">배송 주소</label>
-              <input value={form.delivery_address} onChange={(e) => set('delivery_address', e.target.value)} className="input" />
+              <KakaoAddressSearch
+                value={form.delivery_address}
+                onChange={(addr) => set('delivery_address', addr)}
+                onSelect={handleAddressSelect}
+                placeholder="도로명·지번·건물명 검색"
+              />
             </div>
+          </div>
+          <div>
+            <label className="label">상세주소</label>
+            <input
+              value={form.detail_address}
+              onChange={(e) => set('detail_address', e.target.value)}
+              className="input"
+              placeholder="동·호·층 등"
+            />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
@@ -145,8 +182,8 @@ function EditModal({ order, onConfirm, onClose }: {
             </div>
           </div>
           <div>
-            <label className="label">비고</label>
-            <input value={form.notes} onChange={(e) => set('notes', e.target.value)} className="input" />
+            <label className="label">전달사항 (기사용 메모)</label>
+            <input value={form.notes} onChange={(e) => set('notes', e.target.value)} className="input" placeholder="기사에게 전달할 내용" />
           </div>
         </div>
         <div className="flex gap-2 mt-5">
@@ -330,10 +367,10 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore, o
   const hasIssue = order.match_status && order.match_status !== 'matched'
 
   // 수정 가능: pending → 누구나(receiver+) / picked_up → super_admin만 / 그 외 잠금
-  const canEdit = order.status === 'pending' || (order.status === 'picked_up' && userRole === 'super_admin')
+  const canEdit = order.status === 'pending' || (['assigned', 'picked_up'].includes(order.status) && ['admin', 'super_admin'].includes(userRole))
   // 삭제 가능: pending·assigned → admin+ / picked_up → super_admin만 / cancelled → admin+ / in_transit·delivered 잠금
   const canDelete = ['pending', 'assigned'].includes(order.status) ||
-    (order.status === 'picked_up' && userRole === 'super_admin') ||
+    (order.status === 'picked_up' && ['admin', 'super_admin'].includes(userRole)) ||
     (order.status === 'cancelled' && ['admin', 'super_admin'].includes(userRole))
 
   return (
@@ -643,9 +680,9 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
                 {/* 좌표 매칭 / 수정 / 삭제 버튼 */}
                 {(() => {
                   const role = user?.role ?? ''
-                  const stagingCanEdit = order.status === 'pending' || (order.status === 'picked_up' && role === 'super_admin')
+                  const stagingCanEdit = order.status === 'pending' || (['assigned', 'picked_up'].includes(order.status) && ['admin', 'super_admin'].includes(role))
                   const stagingCanDelete = ['pending', 'assigned'].includes(order.status) ||
-                    (order.status === 'picked_up' && role === 'super_admin')
+                    (order.status === 'picked_up' && ['admin', 'super_admin'].includes(role))
                   const isGeocoding = geocodingIds.has(order.id)
                   return (
                     <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -729,7 +766,12 @@ function OrderListTab() {
   })
   const editMutation = useMutation({
     mutationFn: ({ orderId, data }: { orderId: number; data: object }) => api.put(`/orders/${orderId}`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditTarget(null) },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      setEditTarget(null)
+      if (res.data?.address_warning) alert('⚠️ 주소 경고: ' + res.data.address_warning)
+      if (res.data?.status_reset_message) alert('ℹ️ ' + res.data.status_reset_message)
+    },
   })
   const cancelMutation = useMutation({
     mutationFn: (orderId: number) => api.delete(`/orders/${orderId}/hard`),

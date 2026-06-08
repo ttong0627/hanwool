@@ -934,24 +934,51 @@ async def edit_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_receiver_or_above),
 ):
-    """주문 수정 — pending: 접수자 이상 / picked_up: 최고관리자만 / in_transit+: 잠금"""
+    """주문 수정 — pending: 접수자 이상 / assigned·picked_up: 관리자 이상(픽업·배정 자동 취소) / in_transit+: 잠금"""
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    if order.status == OrderStatus.picked_up:
-        if current_user.role != "super_admin":
-            raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 수정할 수 있습니다.")
-    elif order.status != OrderStatus.pending:
-        raise HTTPException(status_code=400, detail="배송 진행 중이거나 완료된 주문은 수정할 수 없습니다.")
+    _EDITABLE = {OrderStatus.pending, OrderStatus.assigned, OrderStatus.picked_up}
+    if order.status not in _EDITABLE:
+        raise HTTPException(status_code=400, detail="배송 진행 중이거나 완료/취소된 주문은 수정할 수 없습니다.")
+
+    if order.status in {OrderStatus.assigned, OrderStatus.picked_up}:
+        if current_user.role not in {"admin", "super_admin"}:
+            raise HTTPException(status_code=403, detail="배정/픽업된 주문은 관리자 이상만 수정할 수 있습니다.")
+
+    status_reset_message: Optional[str] = None
+    if order.status in {OrderStatus.assigned, OrderStatus.picked_up}:
+        prev_status = order.status
+        label = "픽업" if prev_status == OrderStatus.picked_up else "배정"
+        await order_service.log_order_history(
+            db, order,
+            event_type="status_changed",
+            from_status=prev_status,
+            to_status=OrderStatus.pending,
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            note=f"수정으로 인한 {label} 취소 및 접수대기 초기화",
+        )
+        order.status = OrderStatus.pending
+        order.driver_id = None
+        order.picked_up_at = None
+        status_reset_message = f"{label}이 취소되고 접수대기 상태로 초기화되었습니다."
 
     from app.core.security import encrypt_field
+    addr_match_warning: Optional[str] = None
     if data.delivery_address is not None:
         order.delivery_address_enc = encrypt_field(data.delivery_address)
         address_resolution = await resolve_address(data.delivery_address, db)
         apply_resolution_to_order(order, address_resolution, fallback_dong=data.dong or order.dong)
         await log_address_resolution(db, address_resolution, order_id=order.id)
+        if address_resolution.match_status == "not_found":
+            addr_match_warning = "입력한 주소를 찾을 수 없습니다. 좌표 정보가 설정되지 않았습니다."
+        elif address_resolution.match_status == "needs_review":
+            addr_match_warning = "주소 매칭이 불완전합니다. 배송 동을 확인해 주세요."
+    if data.detail_address is not None:
+        order.detail_address = data.detail_address
     if data.dong is not None:
         order.dong = data.dong
     if data.items_desc is not None:
@@ -966,7 +993,12 @@ async def edit_order(
         order.request = data.request
 
     await db.flush()
-    return order_service.decrypt_order(order)
+    result_data = order_service.decrypt_order(order)
+    if addr_match_warning:
+        result_data["address_warning"] = addr_match_warning
+    if status_reset_message:
+        result_data["status_reset_message"] = status_reset_message
+    return result_data
 
 
 @router.put("/{order_id}/status")
@@ -1203,8 +1235,8 @@ async def hard_delete_order(
     if order.status in {OrderStatus.in_transit, OrderStatus.delivered}:
         raise HTTPException(status_code=403, detail="배송 진행 중이거나 완료된 주문은 삭제할 수 없습니다.")
 
-    if order.status == OrderStatus.picked_up and current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="픽업 완료 주문은 최고관리자만 삭제할 수 있습니다.")
+    if order.status == OrderStatus.picked_up and current_user.role not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="픽업 완료 주문은 관리자 이상만 삭제할 수 있습니다.")
 
     # 외래키 참조 레코드 먼저 정리 (CASCADE 없으므로 수동 삭제)
     await order_service.log_order_history(

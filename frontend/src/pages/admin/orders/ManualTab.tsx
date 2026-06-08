@@ -429,6 +429,22 @@ export function ManualTab() {
 
   const addBatch = () => setRows(prev => [...prev, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
 
+  // 저장 완료 행의 선택 필드(detail_address/items_desc/request) 변경 시 부분 업데이트
+  const triggerPartialUpdate = (rowIdx: number, key: 'detail_address' | 'items_desc' | 'request' | 'quantity') => {
+    const row = rowsRef.current[rowIdx]
+    if (!row?.savedOrderId) return
+    const timerId = `partial_${row._id}_${key}`
+    clearTimeout(saveTimers[timerId])
+    saveTimers[timerId] = setTimeout(async () => {
+      const cur = rowsRef.current[rowIdx]
+      if (!cur?.savedOrderId) return
+      try {
+        await api.put(`/orders/${cur.savedOrderId}`, { [key]: cur[key] || undefined })
+        qc.invalidateQueries({ queryKey: ['orders'] })
+      } catch { /* silent */ }
+    }, 900)
+  }
+
   // IME 경고 토스트 — 화면 우상단 고정
   const ImeWarnToast = koreanWarn && (
     <div className="fixed top-16 right-4 z-[9999] flex items-center gap-3 bg-red-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl animate-bounce">
@@ -683,6 +699,7 @@ export function ManualTab() {
                             onChange={(e) => {
                               checkKoreanIME(e.target.value, rowIdx, colIdx, 'detail_address')
                               updateCell(rowIdx, 'detail_address', e.target.value)
+                              triggerPartialUpdate(rowIdx, 'detail_address')
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -736,7 +753,10 @@ export function ManualTab() {
                             className={cellCls + ' text-center'}
                             value={row.quantity}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => updateCell(rowIdx, 'quantity', Number(e.target.value))}
+                            onChange={(e) => {
+                              updateCell(rowIdx, 'quantity', Number(e.target.value))
+                              triggerPartialUpdate(rowIdx, 'quantity')
+                            }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
@@ -779,6 +799,9 @@ export function ManualTab() {
                             onChange={(e) => {
                               checkKoreanIME(e.target.value, rowIdx, colIdx, key)
                               updateCell(rowIdx, key, e.target.value)
+                              if (key === 'items_desc' || key === 'request') {
+                                triggerPartialUpdate(rowIdx, key as 'items_desc' | 'request')
+                              }
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
