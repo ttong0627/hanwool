@@ -115,8 +115,7 @@ export function ManualTab() {
     if (!row) return
     if (row.savedOrderId) return
     if (!row.customer_name || !row.customer_phone || !row.delivery_address || !row.dong) return
-    if (row.addrStatus !== 'valid') return
-    if (row.dongStatus === 'out-of-zone' && !row.dongOverride) return
+    if (row.addrStatus === 'idle' || row.addrStatus === 'validating') return
 
     setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
     try {
@@ -132,7 +131,7 @@ export function ManualTab() {
         request: row.request || undefined,
         lat: row.lat,
         lng: row.lng,
-        dong_override: row.dongOverride ?? false,
+        dong_override: true,
       })
       const savedId: number = res.data.id
       setRows(prev => prev.map((r, i) =>
@@ -159,7 +158,7 @@ export function ManualTab() {
       if (row.savedOrderId) return
       const isReady =
         row.customer_name && row.customer_phone && row.delivery_address && row.dong &&
-        row.addrStatus === 'valid' && (row.dongStatus !== 'out-of-zone' || row.dongOverride)
+        (row.addrStatus === 'valid' || row.addrStatus === 'invalid')
       if (!isReady) return
       if (row.submitStatus === 'pending' || row.submitStatus === 'success' || row.submitStatus === 'error') return
       clearTimeout(saveTimers[row._id])
@@ -504,7 +503,7 @@ export function ManualTab() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <Save className="w-3.5 h-3.5 text-green-500" />
-          <span>필수 항목 입력 + 주소 확인 완료 시 자동 저장 | Ctrl+V 붙여넣기</span>
+          <span>필수 항목 입력 + 주소 확인 시 자동 저장 (지역 외도 저장 허용) | Ctrl+V 붙여넣기</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* 한글 입력 안내 뱃지 */}
@@ -593,14 +592,14 @@ export function ManualTab() {
           <tbody>
             {rows.map((row, rowIdx) => {
               if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = []
-              const isOutOfZone = row.dongStatus === 'out-of-zone' && !row.dongOverride
+              const isOutOfZone = row.dongStatus === 'out-of-zone'
 
               return (
                 <tr
                   key={row._id}
                   className={`border-b border-gray-100 ${
                     row.savedOrderId ? 'bg-green-50' :
-                    isOutOfZone ? 'bg-red-50 border-l-4 border-l-red-400' :
+                    isOutOfZone ? 'bg-orange-50 border-l-2 border-l-orange-300' :
                     row.submitStatus === 'error' ? 'bg-red-50' : 'hover:bg-brand-50/30'
                   }`}
                 >
@@ -717,28 +716,13 @@ export function ManualTab() {
                             ) : row.addrStatus === 'validating' ? (
                               <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />
                             ) : row.dongStatus === 'out-of-zone' ? (
-                              <>
-                                <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5 w-full justify-center">
-                                  <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
-                                  {row.dong || '지역 외'}
-                                </span>
-                                {isAdmin && !row.dongOverride && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setRows(prev => prev.map((r, i) =>
-                                      i === rowIdx ? { ...r, dongOverride: true, submitStatus: undefined, savedOrderId: undefined } : r
-                                    ))}
-                                    className="text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-200 leading-none w-full text-center"
-                                  >
-                                    강제등록 ✓
-                                  </button>
-                                )}
-                                {row.dongOverride && (
-                                  <span className="text-[9px] font-bold bg-amber-400 text-white px-1.5 py-0.5 rounded leading-none w-full text-center">
-                                    {row.dong} 허용됨
-                                  </span>
-                                )}
-                              </>
+                              <span
+                                className="text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded flex items-center gap-0.5 w-full justify-center"
+                                title="배송 대상 18개 동 외 — 저장은 허용됩니다"
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                                {row.dong || '지역 외'}
+                              </span>
                             ) : (row.dong && row.dongStatus === 'valid') ? (
                               <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 {row.dong}

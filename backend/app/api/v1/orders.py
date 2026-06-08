@@ -333,13 +333,7 @@ async def create_single_order(
     else:
         effective_dong = address_resolution.service_dong or data.dong
 
-    if effective_dong not in VALID_DONGS:
-        if not data.dong_override:
-            await log_address_resolution(db, address_resolution)
-            raise HTTPException(status_code=400, detail=f"서비스 지역 외 배송동입니다: {effective_dong}")
-        if current_user.role not in {"admin", "super_admin"}:
-            raise HTTPException(status_code=403, detail="지역 외 배송은 관리자 이상만 강제 등록 가능합니다.")
-
+    # 동 지역 외여도 저장 허용 (경고는 프론트에서 표시)
     lat = data.lat or address_resolution.lat
     lng = data.lng or address_resolution.lng
 
@@ -1718,15 +1712,6 @@ async def batch_create_orders(
             address_resolution = await resolve_address(address, db)
             dong = address_resolution.service_dong or row.get("dong", "경안동")
             dong_override = bool(row.get("dong_override", False))
-
-            if dong not in VALID_DONGS and not dong_override:
-                await log_address_resolution(db, address_resolution)
-                results.append({"ok": False, "error": f"서비스 지역 외 배송동: {dong}"})
-                continue
-            if dong not in VALID_DONGS and dong_override:
-                if current_user.role not in {"admin", "super_admin"}:
-                    results.append({"ok": False, "error": "지역 외 배송은 관리자만 가능합니다."})
-                    continue
 
             order_data = OrderCreate(
                 customer_name=row.get("customer_name", ""),
