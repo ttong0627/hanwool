@@ -21,18 +21,20 @@ def _generate_order_no(sequence: int) -> str:
 
 
 async def _next_sequence(db: AsyncSession) -> int:
+    # pg_advisory_xact_lock으로 동시 접수 시 중복 방지
     await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 2026052401})
-    # KST 자정을 UTC로 변환해 비교 (created_at은 UTC 저장). naive 비교 시
-    # KST 새벽(UTC 전날) 구간에서 오늘 주문이 누락돼 seq가 1로 고정되는 버그 방지.
-    today_start = (
-        datetime.combine(today_kst(), datetime.min.time())
-        .replace(tzinfo=_KST)
-        .astimezone(timezone.utc)
-    )
+    # order_no 접두어(YYYYMMDD-NNNN) 기준으로 오늘 최대 번호 조회
+    # sequence 컬럼 대신 order_no를 기준으로 삼아 두 값의 불일치 방어
+    today_prefix = today_kst().strftime("%Y%m%d") + "-%"
     result = await db.execute(
-        select(func.max(Order.sequence)).select_from(Order).where(Order.created_at >= today_start)
+        text(
+            "SELECT MAX(CAST(SPLIT_PART(order_no, '-', 2) AS INTEGER)) "
+            "FROM orders WHERE order_no LIKE :prefix"
+        ),
+        {"prefix": today_prefix},
     )
-    return (result.scalar() or 0) + 1
+    last_num = result.scalar()
+    return (last_num or 0) + 1
 
 
 def _parse_extra_photos(raw: str | None) -> list[str]:
