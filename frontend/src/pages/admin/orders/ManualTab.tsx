@@ -25,10 +25,13 @@ function AddrIcon({ status }: { status: AddrStatus }) {
   return null
 }
 
-function RowStatusDot({ row }: { row: StagingRow }) {
+function RowStatusDot({ row, onRetry }: { row: StagingRow; onRetry?: () => void }) {
   if (row.savedOrderId) return <span title="저장 완료" className="text-green-500 text-xs">✓</span>
   if (row.submitStatus === 'pending') return <Loader2 className="w-3 h-3 text-orange-400 animate-spin" />
-  if (row.submitStatus === 'error') return <span title={row.submitError} className="text-red-400 text-xs">!</span>
+  if (row.submitStatus === 'error') return (
+    <button title={`오류: ${row.submitError}\n클릭하면 재시도`} onClick={onRetry}
+      className="text-red-400 text-xs hover:text-red-600 font-bold cursor-pointer leading-none">!</button>
+  )
   return <span className="text-gray-300 text-xs">●</span>
 }
 
@@ -604,7 +607,9 @@ export function ManualTab() {
                   <td className="text-center text-xs text-gray-400 border-r border-gray-200 py-0.5 select-none">
                     <div className="flex flex-col items-center gap-0.5">
                       <span>{rowIdx + 1}</span>
-                      <RowStatusDot row={row} />
+                      <RowStatusDot row={row} onRetry={() =>
+                        setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, submitStatus: undefined } : r))
+                      } />
                     </div>
                   </td>
 

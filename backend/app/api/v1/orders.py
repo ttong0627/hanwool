@@ -326,7 +326,12 @@ async def create_single_order(
     """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
     _enforce_reception_window(current_user.role)
     address_resolution = await resolve_address(data.delivery_address, db)
-    effective_dong = address_resolution.service_dong or data.dong
+
+    # 사용자가 명시적으로 선택한 dong이 유효하면 최우선 사용 (address_resolution이 다른 동을 반환해도 무시)
+    if data.dong in VALID_DONGS:
+        effective_dong = data.dong
+    else:
+        effective_dong = address_resolution.service_dong or data.dong
 
     if effective_dong not in VALID_DONGS:
         if not data.dong_override:
