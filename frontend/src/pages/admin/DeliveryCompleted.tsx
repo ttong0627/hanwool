@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search, CheckCircle2, Clock, Truck, ImageIcon, AlertTriangle, X, MapPin,
   Calendar, Maximize2, Map as MapIcon, Phone,
@@ -122,7 +122,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; onClose: () => void; onZoom: (src: string) => void }) {
+function DetailModal({ order, onClose, onZoom, onComplete, completing }: { order: OverviewOrder | null; onClose: () => void; onZoom: (src: string) => void; onComplete: (id: number) => void; completing: boolean }) {
   const [showMap, setShowMap] = useState(false)
   if (!order) return null
   const isDelivered = order.status === 'delivered'
@@ -240,6 +240,19 @@ function DetailModal({ order, onClose, onZoom }: { order: OverviewOrder | null; 
                 distanceM={order.coord_distance_m}
               />
             )}
+
+            {/* 관리자 수동 완료 처리 — 미완료 주문만 (기사 사진 없이 직접 완료) */}
+            {!isDelivered && order.status !== 'cancelled' && (
+              <button
+                type="button"
+                onClick={() => onComplete(order.id)}
+                disabled={completing}
+                className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {completing ? '처리 중...' : '배송 완료로 처리'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -272,6 +285,23 @@ export function DeliveryCompleted() {
     queryFn: () => fetchCompleted(dateFrom, dateTo),
     refetchInterval: 20000,
   })
+
+  const qc = useQueryClient()
+  const completeMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      api.put(`/orders/${orderId}/status`, undefined, { params: { status: 'delivered' } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['delivery-completed'] })
+      setDetail(null)
+    },
+    onError: (e: any) => alert(e?.response?.data?.detail ?? '완료 처리에 실패했습니다.'),
+  })
+
+  const handleComplete = (orderId: number) => {
+    if (window.confirm('이 주문을 배송 완료로 처리할까요?\n관리자가 직접 완료 처리하며, 기사 사진은 기록되지 않습니다.')) {
+      completeMutation.mutate(orderId)
+    }
+  }
 
   const active = useMemo(() => rows.filter((r) => r.status !== 'cancelled'), [rows])
   const deliveredCount = useMemo(() => active.filter((r) => r.status === 'delivered').length, [active])
@@ -408,7 +438,7 @@ export function DeliveryCompleted() {
         })}
       </div>
 
-      <DetailModal order={detail} onClose={() => setDetail(null)} onZoom={(src) => setLightbox(src)} />
+      <DetailModal order={detail} onClose={() => setDetail(null)} onZoom={(src) => setLightbox(src)} onComplete={handleComplete} completing={completeMutation.isPending} />
       <Lightbox src={lightbox} onClose={() => setLightbox(null)} />
     </div>
   )
