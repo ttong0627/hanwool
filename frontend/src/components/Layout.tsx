@@ -3,15 +3,17 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut,
   Shield, QrCode, UserCog, MapPin, Route, UserCircle, FileCheck2,
-  PanelLeftClose, PanelLeftOpen, PackageCheck, Settings,
+  PanelLeftClose, PanelLeftOpen, PackageCheck, Settings, AlertCircle,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
+import api from '@/lib/api'
 import { HanwoolLogo } from './HanwoolLogo'
 
 const adminNavs = [
   { to: '/admin',                    icon: LayoutDashboard, label: '대시보드' },
   { to: '/admin/orders',             icon: ClipboardList,   label: '주문 관리' },
+  { to: '/admin/address-review',     icon: AlertCircle,     label: '주소 확인' },
   { to: '/admin/delivery-tracking',  icon: MapPin,          label: '배송 확인' },
   { to: '/admin/delivery-completed', icon: PackageCheck,    label: '배송 완료' },
   { to: '/admin/delivery-receipts',  icon: FileCheck2,      label: '배송 수령증' },
@@ -29,6 +31,7 @@ const adminManagementNavs = [
 
 const receiverNavs = [
   { to: '/receiver',                  icon: ClipboardList,   label: '주문 접수' },
+  { to: '/receiver/address-review',   icon: AlertCircle,     label: '주소 확인' },
   { to: '/receiver/list',             icon: LayoutDashboard, label: '오늘 명단' },
   { to: '/receiver/labels',           icon: QrCode,          label: '라벨 출력' },
   { to: '/receiver/delivery-receipts', icon: FileCheck2,     label: '배송 수령증' },
@@ -48,6 +51,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const managementMenuRef = useRef<HTMLDivElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
   const [managementMenuOpen, setManagementMenuOpen] = useState(false)
+  const [reviewCount, setReviewCount] = useState(0)
   const navs = ['admin', 'super_admin'].includes(user?.role || '') ? adminNavs : receiverNavs
   const homePath = ['admin', 'super_admin'].includes(user?.role || '') ? '/admin' : '/receiver'
   const managementNavs = adminManagementNavs.filter((item) => {
@@ -77,6 +81,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [])
+
+  // 주소 확인 대기 건수 — 사이드바 배지 (60초 폴링)
+  useEffect(() => {
+    if (!['admin', 'super_admin', 'receiver'].includes(user?.role || '')) return
+    let alive = true
+    const fetchCount = async () => {
+      try {
+        const { data } = await api.get('/orders/address-review/count')
+        if (alive) setReviewCount(data?.count ?? 0)
+      } catch {
+        /* 무시 — 배지는 부가 정보 */
+      }
+    }
+    fetchCount()
+    const timer = setInterval(fetchCount, 60_000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [user?.role])
 
   return (
     <div
@@ -166,6 +187,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     isActive ? 'text-brand-400' : 'text-slate-500 group-hover:text-slate-300'
                   )} />
                   {!sidebarCollapsed && label}
+                  {/* 주소 확인 대기 건수 배지 */}
+                  {to.endsWith('address-review') && reviewCount > 0 && (
+                    sidebarCollapsed ? (
+                      <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
+                    ) : (
+                      <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                        {reviewCount > 99 ? '99+' : reviewCount}
+                      </span>
+                    )
+                  )}
                 </>
               )}
             </NavLink>

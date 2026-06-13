@@ -384,6 +384,15 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     return (row.lat, row.lng, row.source or "cache")
 
 
+def _ensure_gwangju_prefix(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return value
+    if value.startswith("경기") or value.startswith(GWANGJU_PREFIX):
+        return value
+    return f"{GWANGJU_PREFIX} {value}".strip()
+
+
 async def _apply_kakao_coordinates(result: AddressResolution) -> None:
     if result.lat and result.lng:
         return
@@ -398,6 +407,28 @@ async def _apply_kakao_coordinates(result: AddressResolution) -> None:
     result.coord_source = "kakao"
     if not result.legal_emd and kakao.get("dong_name"):
         result.legal_emd = kakao["dong_name"]
+
+    # 로컬 DB에서 표준 주소를 못 찾았을 때만(not_found) Kakao가 돌려준 주소로 채운다.
+    # 로컬 매칭이 이미 있으면 좌표만 보강하고 주소 텍스트는 행안부 값을 유지한다.
+    if result.match_status == "not_found":
+        kakao_addr = _ensure_gwangju_prefix(kakao.get("address_name") or "")
+        kakao_jibun = _ensure_gwangju_prefix(kakao.get("jibun_address") or "")
+        if kakao_addr:
+            result.standard_road_address = kakao_addr
+            result.match_source = "kakao"
+            if kakao_jibun and not result.jibun_address:
+                result.jibun_address = kakao_jibun
+            # 정확 주소(address.json) 매칭은 신뢰, 키워드 매칭은 담당자 확인 권장
+            if kakao.get("match_type") == "address":
+                result.match_status = "matched"
+                result.match_score = 0.9
+                result.match_message = "로컬 DB에 없어 Kakao 정확주소로 매칭했습니다."
+            else:
+                result.match_status = "needs_review"
+                result.match_score = 0.72
+                result.match_message = (
+                    "로컬 DB에 없어 Kakao 키워드 검색으로 매칭했습니다. 담당자 확인을 권장합니다."
+                )
 
 
 async def _save_cache(result: AddressResolution, db: AsyncSession) -> None:
@@ -516,6 +547,10 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
             await _apply_kakao_coordinates(result)
         except Exception:
             pass  # 좌표 실패해도 주문 저장 계속
+        # Kakao가 legal_emd를 새로 채웠으면 배송동/행정동 재계산 (Kakao는 좌표 이후 실행되므로)
+        if result.legal_emd and not result.service_dong:
+            result.admin_emd = result.admin_emd or await _admin_emd_for_legal(result.legal_emd, db)
+            result.service_dong = await _service_dong_for_legal(result.legal_emd, db)
     if result.lat and result.lng and not result.coord_source:
         result.coord_source = "cache"
     if result.match_status == "matched" and (not result.lat or not result.lng):

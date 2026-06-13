@@ -612,15 +612,21 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                         d = docs[0]
                         # 도로명 주소에는 동 이름이 없으므로 region_3depth_name 별도 추출
                         dong_name = None
-                        if d.get("road_address"):
-                            dong_name = d["road_address"].get("region_3depth_name")
+                        road_obj = d.get("road_address") or {}
+                        if road_obj:
+                            dong_name = road_obj.get("region_3depth_name")
                         if not dong_name and d.get("address"):
                             dong_name = d["address"].get("region_3depth_name")
+                        # 표준 주소는 도로명주소 우선, 없으면 지번 전체주소
+                        std_addr = road_obj.get("address_name") or d.get("address_name", query)
+                        jibun_addr = (d.get("address") or {}).get("address_name")
                         return {
                             "lat": float(d["y"]),
                             "lng": float(d["x"]),
-                            "address_name": d.get("address_name", query),
+                            "address_name": std_addr,
+                            "jibun_address": jibun_addr,
                             "dong_name": dong_name,
+                            "match_type": "address",
                         }
             except Exception:
                 pass
@@ -650,7 +656,9 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                             "lat": float(d["y"]),
                             "lng": float(d["x"]),
                             "address_name": addr_name,
+                            "jibun_address": jibun or None,
                             "dong_name": dong_name,
+                            "match_type": "keyword",
                         }
             except Exception:
                 pass

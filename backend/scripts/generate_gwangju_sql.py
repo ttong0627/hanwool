@@ -79,6 +79,21 @@ def read_txt(path: Path) -> Iterator[list]:
             yield line.split("|")
 
 
+def find_data_file(data_dir: Path, dir_suffix: str, filename: str) -> Path:
+    """월 접두어(202604_, 202605_ 등)에 무관하게 데이터 파일을 찾는다.
+    행안부 다운로드는 월마다 폴더 접두어가 바뀌므로 접미어로 매칭한다."""
+    for sub in sorted(data_dir.glob(f"*{dir_suffix}*")):
+        if sub.is_dir():
+            cand = sub / filename
+            if cand.exists():
+                return cand
+    # 폴백: 평탄 구조(폴더 없이 파일만 둔 경우)
+    flat = data_dir / filename
+    if flat.exists():
+        return flat
+    return data_dir / dir_suffix / filename  # 없으면 기본 경로(호출부가 경고)
+
+
 def esc(value) -> str:
     """SQL 문자열 이스케이프"""
     if value is None:
@@ -96,7 +111,7 @@ def parse_road_codes(data_dir: Path) -> dict:
     개선_도로명코드_전체분.txt 에서 광주시 road_codes 파싱
     col[0]=road_code, col[1]=road_name, col[4]=sido, col[6]=sigungu, col[8]=emd(행정동)
     """
-    fpath = data_dir / "202604_주소DB_전체분" / "개선_도로명코드_전체분.txt"
+    fpath = find_data_file(data_dir, "주소DB_전체분", "개선_도로명코드_전체분.txt")
     if not fpath.exists():
         print(f"[WARN] road_codes file not found: {fpath}", file=sys.stderr)
         return {}
@@ -127,7 +142,7 @@ def parse_addresses(data_dir: Path, road_codes: dict) -> list:
     col[9]=road_code, col[10]=underground_yn, col[11]=bldg_main_no, col[12]=bldg_sub_no,
     col[13]=building_name
     """
-    fpath = data_dir / "202604_도로명주소 한글_전체분" / "jibun_rnaddrkor_gyunggi.txt"
+    fpath = find_data_file(data_dir, "도로명주소 한글_전체분", "jibun_rnaddrkor_gyunggi.txt")
     if not fpath.exists():
         print(f"[WARN] addresses file not found: {fpath}", file=sys.stderr)
         return []
@@ -198,7 +213,7 @@ def parse_buildings(data_dir: Path, road_codes: dict) -> list:
     col[9]=road_name, col[10]=underground_yn, col[11]=main_no, col[12]=sub_no,
     col[15]=building_mgt_no, col[20]=zip_no, col[25]=building_name
     """
-    fpath = data_dir / "202604_건물DB_전체분" / "build_gyunggi.txt"
+    fpath = find_data_file(data_dir, "건물DB_전체분", "build_gyunggi.txt")
     if not fpath.exists():
         print(f"[WARN] buildings file not found: {fpath}", file=sys.stderr)
         return []
@@ -230,6 +245,12 @@ def parse_buildings(data_dir: Path, road_codes: dict) -> list:
         building_name = clean_text(cols[25])
         road_code = clean_text(cols[8])
 
+        # 건물DB 표준 레이아웃: col[5]=산여부, col[6]=지번본번, col[7]=지번부번
+        # → 건물마다 지번이 있으므로 jibun_addresses를 건물 전체에서 완전하게 추출한다.
+        jibun_san = clean_text(cols[5])
+        jibun_main_no = int_or_none(cols[6])
+        jibun_sub_no = int_or_none(cols[7]) or 0
+
         road_addr = road_address_text(
             sido, sigungu, "", road_name, underground_yn, main_no, sub_no
         )
@@ -251,6 +272,10 @@ def parse_buildings(data_dir: Path, road_codes: dict) -> list:
             "building_sub_no": sub_no,
             "zip_no": zip_no or None,
             "is_apartment": is_apartment(building_name),
+            # 지번 정보 (jibun_addresses 생성용 — 건물 기준 완전 추출)
+            "_jibun_san_yn": jibun_san if jibun_san in ("0", "1") else "0",
+            "_jibun_main_no": jibun_main_no,
+            "_jibun_sub_no": jibun_sub_no,
         })
 
     print(f"[buildings] 광주시 {len(rows)}개", file=sys.stderr)
@@ -312,6 +337,30 @@ def build_admin_dong_map(road_codes: dict, addresses: list) -> dict:
     }
     print(f"[admin_dong_map] 행정동→법정동 {len(result)}쌍", file=sys.stderr)
     return result
+
+
+def _inspect_columns(data_dir: Path) -> None:
+    """적재 전 컬럼 인덱스 검증용 — 건물/주소 파일의 광주시 첫 2행을 인덱스와 함께 출력.
+    건물DB에서 col[5]=산여부, col[6]=지번본번, col[7]=지번부번 인지 눈으로 확인한 뒤 본 적재를 실행한다."""
+    targets = [
+        ("건물DB", find_data_file(data_dir, "건물DB_전체분", "build_gyunggi.txt")),
+        ("도로명주소", find_data_file(data_dir, "도로명주소 한글_전체분", "jibun_rnaddrkor_gyunggi.txt")),
+    ]
+    for label, fpath in targets:
+        print(f"\n===== {label}: {fpath} =====", file=sys.stderr)
+        if not fpath.exists():
+            print("  [파일 없음 — 경로/파일명 확인]", file=sys.stderr)
+            continue
+        shown = 0
+        for cols in read_txt(fpath):
+            if "광주시" not in "|".join(cols):
+                continue
+            for i, c in enumerate(cols):
+                print(f"  [{i:>2}] {c}", file=sys.stderr)
+            print("  " + "-" * 40, file=sys.stderr)
+            shown += 1
+            if shown >= 2:
+                break
 
 
 # ──────────────────────────────────────────────
@@ -417,12 +466,18 @@ def main():
                         help="nexus-pipeline 루트 경로")
     parser.add_argument("--out", default="gwangju_address.sql",
                         help="출력 SQL 파일명 (.gz 확장자 시 gzip 압축)")
+    parser.add_argument("--inspect", action="store_true",
+                        help="건물/주소 파일의 광주시 첫 행을 컬럼 인덱스와 함께 출력하고 종료 (적재 전 검증용)")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
     if not data_dir.exists():
         print(f"[ERROR] data-dir not found: {data_dir}", file=sys.stderr)
         sys.exit(1)
+
+    if args.inspect:
+        _inspect_columns(data_dir)
+        return
 
     print("[1/5] 도로명코드 파싱...", file=sys.stderr)
     road_codes = parse_road_codes(data_dir)
@@ -433,8 +488,9 @@ def main():
     print("[3/5] 건물 파싱...", file=sys.stderr)
     buildings = parse_buildings(data_dir, road_codes)
 
-    print("[4/5] 지번 주소 추출...", file=sys.stderr)
-    jibun_rows = build_jibun_rows(addresses)
+    print("[4/5] 지번 주소 추출 (주소 + 건물DB 전체)...", file=sys.stderr)
+    # 주소 파일(건물 매칭)뿐 아니라 건물DB 전체에서도 지번을 추출해 커버리지를 극대화한다.
+    jibun_rows = build_jibun_rows(addresses + buildings)
 
     print("[5/5] 행정동→법정동 매핑 계산...", file=sys.stderr)
     admin_dong_map = build_admin_dong_map(road_codes, addresses)

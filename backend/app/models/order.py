@@ -71,6 +71,9 @@ class Order(Base):
     match_score: Mapped[float] = mapped_column(Float, nullable=True)                # 매칭 신뢰도 0~1
     coord_source: Mapped[str] = mapped_column(String(20), nullable=True)             # nexus/kakao/cache/manual
     address_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 담당자 주소 확인 워크플로우: 미매칭/저신뢰 주소를 담당자가 확정한 시각·주체 (NULL = 확인 대기)
+    address_reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    address_reviewed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

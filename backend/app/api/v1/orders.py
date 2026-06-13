@@ -32,7 +32,9 @@ from app.models.dispatch_run import DispatchRun, DispatchRunItem, DispatchRunSta
 from app.models.order import Order, OrderStatus, OrderTransfer
 from app.models.order_history import OrderHistory
 from app.models.user import User
+from app.models.address_override import AddressOverride
 from app.schemas.order import (
+    AddressConfirmRequest,
     BatchCreateRequest,
     DispatchByDriversRequest,
     DispatchByDongRequest,
@@ -51,6 +53,7 @@ from app.services.address_resolver import apply_resolution_to_order, log_address
 from app.services.dispatch_service import DispatchOrder, group_summary, recommended_dong_groups, run_dispatch
 from app.services.route_service import (
     analyze_sequence_quality,
+    get_kakao_coordinates,
     optimize_route,
     optimize_route_with_kakao_matrix,
 )
@@ -877,6 +880,138 @@ async def list_orders(
     result = await db.execute(q)
     items = await order_service.attach_driver_info(db, [order_service.decrypt_order(o) for o in result.scalars().all()])
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+_REVIEW_STATUSES = ("not_found", "needs_review")
+
+
+def _address_review_filter():
+    """담당자 확인이 필요한 주문 조건: 미매칭/저신뢰 + 미확정 + 진행중(취소 제외)."""
+    return and_(
+        Order.match_status.in_(_REVIEW_STATUSES),
+        Order.address_reviewed_at.is_(None),
+        Order.status != OrderStatus.cancelled.value,
+        Order.is_test.is_(False),
+    )
+
+
+@router.get("/address-review")
+async def list_address_review_queue(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """주소 확인 대기 큐 — 로컬·Kakao 모두 정확 매칭 못 한 주문을 담당자가 확정하도록 모은다."""
+    q = (
+        select(Order)
+        .where(_address_review_filter())
+        .order_by(Order.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(q)
+    items = [order_service.decrypt_order(o) for o in result.scalars().all()]
+    total = (
+        await db.execute(select(func.count()).select_from(
+            select(Order).where(_address_review_filter()).subquery()
+        ))
+    ).scalar()
+    return {"items": items, "total": total}
+
+
+@router.get("/address-review/count")
+async def address_review_count(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_receiver_or_above),
+):
+    """사이드바 배지용 — 주소 확인 대기 건수만 가볍게 반환."""
+    total = (
+        await db.execute(select(func.count()).select_from(
+            select(Order.id).where(_address_review_filter()).subquery()
+        ))
+    ).scalar()
+    return {"count": total or 0}
+
+
+@router.post("/{order_id:int}/address-confirm")
+async def confirm_order_address(
+    order_id: int,
+    body: AddressConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_receiver_or_above),
+):
+    """담당자가 미매칭 주문의 정확 주소를 확정한다.
+    주문을 갱신하고, 같은 입력이 다음에 자동 매칭되도록 address_overrides에 보정 규칙을 저장한다."""
+    from app.core.security import decrypt_field
+
+    order = (await db.execute(select(Order).where(Order.id == order_id))).scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    now = datetime.now(timezone.utc)
+    order.standard_road_address = body.standard_road_address.strip()
+    if body.jibun_address:
+        order.jibun_address = body.jibun_address.strip()
+    if body.legal_emd:
+        order.legal_emd = body.legal_emd.strip()
+    if body.detail_address is not None:
+        order.detail_address = body.detail_address.strip() or None
+    order.service_dong = body.service_dong.strip()
+    order.dong = body.service_dong.strip()
+
+    # 좌표 미제공(로컬 매칭 선택 등) 시 표준주소로 지오코딩
+    lat, lng = body.lat, body.lng
+    if lat is None or lng is None:
+        try:
+            kakao = await get_kakao_coordinates(order.standard_road_address)
+            if kakao:
+                lat = kakao.get("lat")
+                lng = kakao.get("lng")
+        except Exception:
+            pass
+    if lat is None or lng is None:
+        raise HTTPException(
+            status_code=400,
+            detail="좌표를 확인하지 못했습니다. 주소를 다시 검색해 선택하세요.",
+        )
+    order.lat = lat
+    order.lng = lng
+    order.coord_source = "manual"
+    order.match_status = "matched"
+    order.match_score = 1.0
+    order.address_verified_at = now
+    order.address_reviewed_at = now
+    order.address_reviewed_by_id = current_user.id
+
+    # 같은 주소가 다음부터 자동 매칭되도록 보정 규칙 저장 (resolve_address가 1순위로 조회)
+    if body.save_override:
+        raw_pattern = (order.raw_address or decrypt_field(order.delivery_address_enc) or "").strip()[:500]
+        if raw_pattern:
+            existing = (
+                await db.execute(
+                    select(AddressOverride).where(AddressOverride.raw_pattern == raw_pattern)
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.standard_road_address = order.standard_road_address
+                existing.force_service_dong = order.service_dong
+                existing.force_lat = lat
+                existing.force_lng = lng
+                existing.memo = body.memo or existing.memo
+                existing.created_by_id = current_user.id
+            else:
+                db.add(AddressOverride(
+                    raw_pattern=raw_pattern,
+                    standard_road_address=order.standard_road_address,
+                    force_service_dong=order.service_dong,
+                    force_lat=lat,
+                    force_lng=lng,
+                    memo=body.memo or "담당자 주소 확인으로 등록",
+                    created_by_id=current_user.id,
+                ))
+
+    await db.commit()
+    await db.refresh(order)
+    return order_service.decrypt_order(order)
 
 
 @router.get("/history/by-order-no/{order_no}")

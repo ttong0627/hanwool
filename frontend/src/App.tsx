@@ -14,6 +14,7 @@ import { Reports } from '@/pages/admin/Reports'
 import { Privacy } from '@/pages/admin/Privacy'
 import { StaffUsers } from '@/pages/admin/Users'
 import { MyAccount } from '@/pages/admin/MyAccount'
+import { AddressReview } from '@/pages/admin/AddressReview'
 import { OrderForm } from '@/pages/receiver/OrderForm'
 import { ReceiverOrderList } from '@/pages/receiver/OrderList'
 import { LabelPrint } from '@/pages/receiver/LabelPrint'
@@ -57,6 +58,7 @@ export default function App() {
             <Routes>
               <Route index element={<Dashboard />} />
               <Route path="orders" element={<Orders />} />
+              <Route path="address-review" element={<AddressReview />} />
               <Route path="delivery-tracking" element={<DeliveryTracking />} />
               <Route path="delivery-completed" element={<DeliveryCompleted />} />
               <Route path="dispatch" element={<PrivateRoute roles={['super_admin']}><DeliveryDispatch /></PrivateRoute>} />
@@ -77,6 +79,7 @@ export default function App() {
           <Layout>
             <Routes>
               <Route index element={<OrderForm />} />
+              <Route path="address-review" element={<AddressReview />} />
               <Route path="list" element={<ReceiverOrderList />} />
               <Route path="labels" element={<LabelPrint />} />
               <Route path="delivery-receipts" element={<DeliveryReceipts />} />

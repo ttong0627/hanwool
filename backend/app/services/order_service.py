@@ -171,6 +171,7 @@ def decrypt_order(order: Order) -> dict:
         "match_score": order.match_score,
         "coord_source": order.coord_source,
         "address_verified_at": order.address_verified_at.isoformat() if order.address_verified_at else None,
+        "address_reviewed_at": order.address_reviewed_at.isoformat() if order.address_reviewed_at else None,
         "lat": order.lat,
         "lng": order.lng,
         "items_desc": order.items_desc,

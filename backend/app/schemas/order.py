@@ -146,3 +146,17 @@ class BatchCreateRequest(BaseModel):
     """복수 주문 일괄 등록 — 행 내부는 소스(QR/엑셀/직접)별로 가변이라 dict 유지"""
     rows: list[dict] = Field(min_length=1)
     is_test: bool = False
+
+
+class AddressConfirmRequest(BaseModel):
+    """담당자 주소 확인 확정 — 미매칭/저신뢰 주문의 정확 주소를 담당자가 확정한다."""
+    standard_road_address: str = Field(min_length=2)
+    service_dong: str = Field(min_length=1)
+    # 좌표 미제공(로컬 매칭은 좌표가 없음) 시 서버가 표준주소로 지오코딩한다.
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    jibun_address: Optional[str] = None
+    legal_emd: Optional[str] = None
+    detail_address: Optional[str] = None
+    memo: Optional[str] = None
+    save_override: bool = True  # 같은 주소 입력 시 다음부터 자동 매칭되도록 보정 규칙 저장
