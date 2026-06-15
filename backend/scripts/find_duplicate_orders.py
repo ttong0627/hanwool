@@ -53,7 +53,7 @@ async def main() -> int:
         recs.append({
             "order_no": r[0], "status": r[1], "dong": r[2], "match": r[3],
             "date": str(r[4]), "time": r[5], "name": name, "phone": phone,
-            "addr": addr, "is_test": r[10],
+            "addr": addr, "is_test": r[9],
         })
 
     by_phone = defaultdict(list)   # (전화digits, 날짜)
