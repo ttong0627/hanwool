@@ -324,7 +324,12 @@ export function DeliveryCompleted() {
           .filter(Boolean)
           .some((v) => String(v).toLowerCase().includes(keyword))
       })
-      .sort((a, b) => (a.sequence ?? 999) - (b.sequence ?? 999))
+      // 배송완료 시간 역순(최신 완료 먼저). 미완료(완료시각 없음)는 뒤로.
+      .sort((a, b) => {
+        const ta = a.delivered_at ? new Date(a.delivered_at).getTime() : 0
+        const tb = b.delivered_at ? new Date(b.delivered_at).getTime() : 0
+        return tb - ta
+      })
   }, [active, search, statusFilter])
 
   const FILTERS: { key: StatusFilter; label: string }[] = [
@@ -388,7 +393,7 @@ export function DeliveryCompleted() {
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className="grid grid-cols-[44px_110px_90px_120px_70px_1.4fr_84px_96px_80px_72px] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
-          <div>순번</div>
+          <div>일련번호</div>
           <div>주문번호</div>
           <div>이름</div>
           <div>연락처</div>
@@ -401,7 +406,7 @@ export function DeliveryCompleted() {
         </div>
         {isLoading && <div className="py-16 text-center text-sm text-gray-400">불러오는 중...</div>}
         {!isLoading && filtered.length === 0 && <div className="py-16 text-center text-sm text-gray-400">표시할 주문이 없습니다.</div>}
-        {!isLoading && filtered.map((row) => {
+        {!isLoading && filtered.map((row, idx) => {
           const isDelivered = row.status === 'delivered'
           return (
             <div
@@ -409,7 +414,7 @@ export function DeliveryCompleted() {
               onClick={() => setDetail(row)}
               className="grid cursor-pointer grid-cols-[44px_110px_90px_120px_70px_1.4fr_84px_96px_80px_72px] items-center gap-2 border-t border-gray-100 px-3 py-2 text-xs hover:bg-gray-50"
             >
-              <div className="font-bold text-gray-400">{row.sequence ?? '-'}</div>
+              <div className="font-bold tabular-nums text-gray-500">{idx + 1}</div>
               <div className="font-semibold text-brand-700">{row.order_no}</div>
               <div className="font-medium text-gray-900">{row.customer_name}</div>
               <div className="tabular-nums text-gray-600">{row.customer_phone}</div>

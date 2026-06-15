@@ -368,8 +368,8 @@ function matchIssueText(order: Order): string {
 }
 
 /* ── 압축형 주문 행 ──────────────────────────────────────────────────────── */
-function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore, onHistory }: {
-  order: Order; driverMap: Record<number, string>
+function CompactRow({ order, serialNo, driverMap, onAssign, onEdit, onDelete, onRestore, onHistory }: {
+  order: Order; serialNo: number; driverMap: Record<number, string>
   onAssign: () => void; onEdit: () => void; onDelete: () => void; onRestore: () => void; onHistory: () => void
 }) {
   const userRole = useAuthStore((s) => s.user?.role ?? '')
@@ -382,7 +382,9 @@ function CompactRow({ order, driverMap, onAssign, onEdit, onDelete, onRestore, o
 
   return (
     <div className={`flex items-center gap-2 px-4 py-2.5 transition-colors text-sm ${hasIssue ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
-      {/* 순번 */}
+      {/* 일련번호 (화면 행번호) */}
+      <div className="w-9 shrink-0 text-center text-xs font-bold text-gray-400 tabular-nums">{serialNo}</div>
+      {/* 배송순번 (경로) */}
       <div className="w-5 shrink-0 text-center">
         {order.sequence
           ? <span className="w-5 h-5 bg-brand-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">{order.sequence}</span>
@@ -876,10 +878,11 @@ function OrderListTab() {
       {isLoading && <div className="text-center text-gray-400 py-12">불러오는 중...</div>}
 
       <div className="rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-100 bg-white">
-        {items.map((order) => (
+        {items.map((order, idx) => (
           <CompactRow
             key={order.id}
             order={order}
+            serialNo={(page - 1) * 100 + idx + 1}
             driverMap={driverMap}
             onAssign={() => setAssignTarget(order)}
             onEdit={() => setEditTarget(order)}
