@@ -291,10 +291,6 @@ async def _dispatch_today_orders(
             for item in geo_optimized
             if item.get("sequence") is not None
         }
-        geo_source_map: dict[int, str] = {
-            item["id"]: item.get("sequence_source") or ("auto" if is_auto else "manual")
-            for item in geo_optimized
-        }
         id_to_dispatch_item: dict[int, DispatchOrder] = {
             item.id: item
             for group in groups
