@@ -168,7 +168,7 @@ def _from_building_row(address: str, row) -> AddressResolution:
     if building_name and building_name not in road_address:
         road_address = f"{road_address} ({building_name})"
     rn_mgt_sn = row.road_code
-    return AddressResolution(
+    result = AddressResolution(
         raw_address=address,
         standard_road_address=road_address,
         legal_emd=row.legal_emd,
@@ -183,6 +183,14 @@ def _from_building_row(address: str, row) -> AddressResolution:
         match_source="nexus",
         coord_source=None,
     )
+    # 건물 테이블에 미리 수집해 둔 Kakao 좌표가 있으면 사용 → 주문 시 API 호출 0
+    lat = getattr(row, "lat", None)
+    lng = getattr(row, "lng", None)
+    if lat is not None and lng is not None:
+        result.lat = lat
+        result.lng = lng
+        result.coord_source = "nexus_kakao"
+    return result
 
 
 async def _resolve_by_road(address: str, db: AsyncSession) -> Optional[AddressResolution]:
@@ -194,7 +202,8 @@ async def _resolve_by_road(address: str, db: AsyncSession) -> Optional[AddressRe
             text(
                 "SELECT b.building_mgt_no, b.road_code, COALESCE(b.road_name, r.road_name) AS road_name, "
                 "       b.road_address, b.building_name, b.legal_emd, b.building_main_no, "
-                "       b.building_sub_no, COALESCE(a.underground_yn, '0') AS underground_yn "
+                "       b.building_sub_no, COALESCE(a.underground_yn, '0') AS underground_yn, "
+                "       b.lat, b.lng "
                 "FROM nexus_address.buildings b "
                 "LEFT JOIN nexus_address.road_codes r ON b.road_code = r.road_code "
                 "LEFT JOIN nexus_address.addresses a ON a.road_code = b.road_code "
@@ -216,7 +225,7 @@ async def _resolve_by_road(address: str, db: AsyncSession) -> Optional[AddressRe
             text(
                 "SELECT b.building_mgt_no, b.road_code, COALESCE(b.road_name, r.road_name) AS road_name, "
                 "       b.road_address, b.building_name, b.legal_emd, b.building_main_no, "
-                "       b.building_sub_no, '0' AS underground_yn "
+                "       b.building_sub_no, '0' AS underground_yn, b.lat, b.lng "
                 "FROM nexus_address.buildings b "
                 "LEFT JOIN nexus_address.road_codes r ON b.road_code = r.road_code "
                 "WHERE COALESCE(b.road_name, r.road_name) = :road_name "
@@ -293,7 +302,7 @@ async def _resolve_by_similarity(address: str, db: AsyncSession) -> Optional[Add
         await db.execute(
             text(
                 "SELECT building_mgt_no, road_code, road_name, road_address, building_name, legal_emd, "
-                "       building_main_no, building_sub_no, '0' AS underground_yn, "
+                "       building_main_no, building_sub_no, '0' AS underground_yn, lat, lng, "
                 "       word_similarity(:key, full_key) AS score "
                 "FROM nexus_address.buildings "
                 "WHERE full_key ILIKE '%' || :key || '%' OR word_similarity(:key, full_key) > 0.35 "

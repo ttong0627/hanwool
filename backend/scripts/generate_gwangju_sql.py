@@ -12,6 +12,7 @@ import re
 import sys
 import os
 import gzip
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Iterator, Optional
@@ -80,18 +81,14 @@ def read_txt(path: Path) -> Iterator[list]:
 
 
 def find_data_file(data_dir: Path, dir_suffix: str, filename: str) -> Path:
-    """월 접두어(202604_, 202605_ 등)에 무관하게 데이터 파일을 찾는다.
-    행안부 다운로드는 월마다 폴더 접두어가 바뀌므로 접미어로 매칭한다."""
-    for sub in sorted(data_dir.glob(f"*{dir_suffix}*")):
-        if sub.is_dir():
-            cand = sub / filename
-            if cand.exists():
-                return cand
-    # 폴백: 평탄 구조(폴더 없이 파일만 둔 경우)
-    flat = data_dir / filename
-    if flat.exists():
-        return flat
-    return data_dir / dir_suffix / filename  # 없으면 기본 경로(호출부가 경고)
+    """폴더명(한글·월접두어)에 무관하게 파일명으로 데이터 파일을 찾는다.
+    Windows에서 한글 폴더/파일명이 NFD로 저장되는 경우가 있어 NFC 정규화 후 비교한다."""
+    needle = unicodedata.normalize("NFC", filename)
+    for root, _dirs, files in os.walk(data_dir):
+        for f in files:
+            if unicodedata.normalize("NFC", f) == needle:
+                return Path(root) / f
+    return data_dir / filename  # 없으면 기본 경로(호출부가 경고)
 
 
 def esc(value) -> str:
@@ -241,7 +238,8 @@ def parse_buildings(data_dir: Path, road_codes: dict) -> list:
         sub_no = int_or_none(cols[12]) or 0
         legal_emd = clean_text(cols[3])
         underground_yn = clean_text(cols[10]) or "0"
-        zip_no = clean_text(cols[20])
+        # 건물DB 레이아웃: col[19]=우편번호(새주소), col[25]=시군구용 건물명
+        zip_no = clean_text(cols[19]) or (clean_text(cols[27]) if len(cols) > 27 else "")
         building_name = clean_text(cols[25])
         road_code = clean_text(cols[8])
 
