@@ -111,7 +111,7 @@ async def create_order(
         customer_phone_enc=encrypt_field(data.customer_phone),
         customer_phone_hash=hash_phone(data.customer_phone) if data.customer_phone else None,
         receiver_id=receiver_id,
-        sequence=seq,
+        # 배송순번은 배차 시 당일 전역 고유 번호로 부여(_renumber_sequences). 생성 시엔 비워둠.
         delivery_address_enc=encrypt_field(data.delivery_address),
         dong=resolved_dong or data.dong,
         items_desc=data.items_desc,

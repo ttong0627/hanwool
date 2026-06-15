@@ -14,7 +14,7 @@ logger = logging.getLogger("hanwool.orders")
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, bindparam, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -112,6 +112,43 @@ async def _get_today_orders_for_dispatch(
         .order_by(Order.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def _renumber_sequences(
+    db: AsyncSession,
+    by_driver: dict[int, list[Order]],
+    *,
+    source: str = "auto",
+) -> None:
+    """배송순번을 당일 전역 고유 번호로 (재)부여한다.
+
+    설계:
+    - 완료/제외된 주문(=재부여 대상이 아닌 오늘 주문)의 최대 순번 다음부터 이어서 부여 → 1로 재시작 안 함, 완료 번호와 중복 0.
+    - 기사별로 묶어 연속 블록(A:1·2·3, B:4·5·6)으로 부여 → 기사별로 나뉘어 표시, 전역 중복 없음.
+    - 신규 주문도 자연히 max+1 위치로 들어간다.
+    by_driver: {driver_id: [경로 순서대로 정렬된 Order 객체]}
+    """
+    renum_ids = [o.id for olist in by_driver.values() for o in olist]
+    if not renum_ids:
+        return
+
+    today = today_kst()
+    start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    end_utc = start_utc + timedelta(days=1)
+    base_stmt = text(
+        "SELECT COALESCE(MAX(sequence), 0) FROM orders "
+        "WHERE (market_date = :d OR (market_date IS NULL AND created_at >= :s AND created_at < :e)) "
+        "  AND status <> 'cancelled' "
+        "  AND id NOT IN :ids"
+    ).bindparams(bindparam("ids", expanding=True))
+    base = (await db.execute(base_stmt, {"d": today, "s": start_utc, "e": end_utc, "ids": renum_ids})).scalar() or 0
+
+    counter = int(base)
+    for driver_id in sorted(by_driver.keys(), key=lambda x: (x is None, x or 0)):
+        for o in by_driver[driver_id]:
+            counter += 1
+            o.sequence = counter
+            o.sequence_source = source
 
 
 async def _push_route_to_drivers(today_orders: list[Order]) -> None:
@@ -240,6 +277,16 @@ async def _dispatch_today_orders(
             if oid in id_to_dispatch_item:
                 id_to_dispatch_item[oid].sequence = geo_seq
 
+    # 배송순번을 당일 전역 고유 번호로 부여 (기사별 블록, 완료 번호 이후 연속, 1로 재시작·중복 방지)
+    _id_to_order = {o.id: o for o in today_orders}
+    seq_by_driver: dict[int, list[Order]] = {}
+    for group in groups:
+        for item in sorted(group.orders, key=lambda it: it.sequence or 0):
+            o = _id_to_order.get(item.id)
+            if o is not None:
+                seq_by_driver.setdefault(group.driver_id, []).append(o)
+    await _renumber_sequences(db, seq_by_driver, source=("auto" if is_auto else "manual"))
+
     dispatch_run = DispatchRun(
         market_date=today_kst(),
         executed_by_id=executed_by_id,
@@ -265,8 +312,7 @@ async def _dispatch_today_orders(
                 previous_status = db_order.status
                 previous_driver_id = db_order.driver_id
                 db_order.driver_id = group.driver_id
-                db_order.sequence = dispatch_item.sequence
-                db_order.sequence_source = geo_source_map.get(db_order.id) or ("auto" if is_auto else "manual")
+                # 순번은 위 _renumber_sequences에서 전역 고유로 부여됨 (여기서 덮어쓰지 않음)
                 if db_order.status in {OrderStatus.pending, OrderStatus.assigned}:
                     db_order.assigned_at = now
                     if is_auto:
@@ -305,7 +351,7 @@ async def _dispatch_today_orders(
                         dispatch_run_id=dispatch_run.id,
                         order_id=db_order.id,
                         driver_id=group.driver_id,
-                        sequence=dispatch_item.sequence,
+                        sequence=db_order.sequence,
                         service_dong=db_order.service_dong or db_order.dong,
                         lat=db_order.lat,
                         lng=db_order.lng,
@@ -1305,12 +1351,9 @@ async def _auto_sequence_for_driver(db: AsyncSession, driver_id: int) -> None:
     ]
     optimized = await optimize_route_with_kakao_matrix(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
-    source_map = {item["id"]: item.get("sequence_source") or "auto" for item in optimized}
-    for o in orders:
-        new_seq = seq_map.get(o.id)
-        if new_seq is not None:
-            o.sequence = new_seq
-            o.sequence_source = source_map.get(o.id) or "auto"
+    # 이 기사의 활성 주문을 경로 순서대로 정렬 → 당일 전역 고유 번호로 (완료 번호 이후) 부여
+    ordered = sorted(orders, key=lambda o: seq_map.get(o.id) or o.sequence or 0)
+    await _renumber_sequences(db, {driver_id: ordered}, source="auto")
     await db.flush()
     await _push_route_to_drivers(orders)
 
@@ -1745,15 +1788,14 @@ async def auto_sequence(
 
     optimized = await optimize_route_with_kakao_matrix(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
-    changed_count = 0
-    for order in today_orders:
-        new_seq = seq_map.get(order.id)
-        if new_seq is not None:
-            if order.sequence != new_seq:
-                changed_count += 1
-            order.sequence = new_seq
-            optimized_item = next((item for item in optimized if item["id"] == order.id), None)
-            order.sequence_source = (optimized_item or {}).get("sequence_source") or "auto"
+    # 완료 주문은 번호 고정, 활성 주문만 기사별로 묶어 전역 고유 번호(완료 max 이후)로 재부여
+    active = [o for o in today_orders if o.status != OrderStatus.delivered]
+    by_driver: dict[int, list[Order]] = {}
+    for o in sorted(active, key=lambda x: seq_map.get(x.id) or x.sequence or 0):
+        by_driver.setdefault(o.driver_id, []).append(o)
+    before = {o.id: o.sequence for o in active}
+    await _renumber_sequences(db, by_driver, source="auto")
+    changed_count = sum(1 for o in active if before.get(o.id) != o.sequence)
 
     await db.flush()
     await _push_route_to_drivers(list(today_orders))
