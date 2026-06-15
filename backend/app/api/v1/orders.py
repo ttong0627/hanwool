@@ -151,6 +151,33 @@ async def _renumber_sequences(
             o.sequence_source = source
 
 
+async def _renumber_all_active(db: AsyncSession, *, source: str = "auto") -> None:
+    """오늘 활성(미완료) 배정 주문 '전체'를 기사별 블록으로 일괄 재부여.
+
+    개별 기사를 자주 재배정해도 항상 완료 번호 다음부터 기사별 연속 블록(A:1·2·3, B:4·5·6)으로
+    깔끔하게 다시 매겨 → 중복도, 번호 인플레이션도 없다. 각 기사 내부 순서(경로)는 현재 순번을 보존.
+    """
+    today = today_kst()
+    start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
+    end_utc = start_utc + timedelta(days=1)
+    result = await db.execute(
+        select(Order)
+        .where(
+            or_(
+                Order.market_date == today,
+                and_(Order.market_date.is_(None), Order.created_at >= start_utc, Order.created_at < end_utc),
+            ),
+            Order.driver_id.isnot(None),
+            Order.status.notin_([OrderStatus.cancelled, OrderStatus.delivered]),
+        )
+        .order_by(Order.driver_id.asc(), func.coalesce(Order.sequence, 999999).asc(), Order.id.asc())
+    )
+    by_driver: dict[int, list[Order]] = {}
+    for o in result.scalars().all():
+        by_driver.setdefault(o.driver_id, []).append(o)
+    await _renumber_sequences(db, by_driver, source=source)
+
+
 async def _push_route_to_drivers(today_orders: list[Order]) -> None:
     """배차/순번 계산 후 각 기사 WS 채널에 route_updated 푸시"""
     from app.core.security import decrypt_field
@@ -1351,9 +1378,11 @@ async def _auto_sequence_for_driver(db: AsyncSession, driver_id: int) -> None:
     ]
     optimized = await optimize_route_with_kakao_matrix(order_dicts)
     seq_map = {item["id"]: item.get("sequence") for item in optimized}
-    # 이 기사의 활성 주문을 경로 순서대로 정렬 → 당일 전역 고유 번호로 (완료 번호 이후) 부여
-    ordered = sorted(orders, key=lambda o: seq_map.get(o.id) or o.sequence or 0)
-    await _renumber_sequences(db, {driver_id: ordered}, source="auto")
+    # 이 기사 경로 순서를 임시 부여(전체 일괄 재부여 시 이 기사 내부 정렬 기준이 됨)
+    for i, o in enumerate(sorted(orders, key=lambda o: seq_map.get(o.id) or o.sequence or 0), start=1):
+        o.sequence = i
+    # 전체 활성 주문을 기사별 블록으로 일괄 재부여 → 개별 재배정 반복에도 중복·인플레이션 없음
+    await _renumber_all_active(db, source="auto")
     await db.flush()
     await _push_route_to_drivers(orders)
 
