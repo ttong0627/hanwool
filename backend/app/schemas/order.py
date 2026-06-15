@@ -36,6 +36,7 @@ class SingleOrderCreate(BaseModel):
     lng: Optional[float] = None
     dong_override: bool = False
     birth_year: Optional[int] = None  # 출생연도 (고객 기본정보)
+    client_row_id: Optional[str] = None  # 직접입력 행 멱등키 — 같은 행 재저장 시 중복 대신 갱신
 
 
 class OrderUpdate(BaseModel):

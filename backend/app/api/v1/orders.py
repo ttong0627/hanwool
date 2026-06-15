@@ -340,6 +340,50 @@ async def create_single_order(
     lat = data.lat or address_resolution.lat
     lng = data.lng or address_resolution.lng
 
+    # ── 멱등 처리: 같은 행(client_row_id)이 이미 미배차(pending)로 저장돼 있으면
+    #    새 주문을 만들지 말고 그 주문을 갱신한다 → 오타/영문 수정 시 중복 등록 방지
+    if data.client_row_id:
+        existing = (
+            await db.execute(
+                select(Order)
+                .where(
+                    Order.client_row_id == data.client_row_id,
+                    Order.receiver_id == current_user.id,
+                    Order.status == OrderStatus.pending.value,
+                )
+                .order_by(Order.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            from app.core.security import encrypt_field, hash_phone
+            from app.services.customer_service import upsert_customer
+
+            existing.customer_name_enc = encrypt_field(data.customer_name)
+            existing.customer_phone_enc = encrypt_field(data.customer_phone)
+            existing.customer_phone_hash = hash_phone(data.customer_phone) if data.customer_phone else None
+            existing.delivery_address_enc = encrypt_field(data.delivery_address)
+            existing.items_desc = data.items_desc
+            existing.quantity = data.quantity
+            existing.request = data.request
+            existing.dong_override = data.dong_override
+            existing.dong = effective_dong
+            if data.detail_address is not None:
+                existing.detail_address = data.detail_address or None
+            apply_resolution_to_order(existing, address_resolution, fallback_dong=effective_dong)
+            if lat and lng:
+                existing.lat = lat
+                existing.lng = lng
+            if data.customer_phone:
+                await upsert_customer(
+                    db, name=data.customer_name or "", phone=data.customer_phone,
+                    dong=effective_dong or "경안동", address=data.delivery_address or "",
+                )
+            await db.flush()
+            result = order_service.decrypt_order(existing)
+            result.update({"lat": existing.lat, "lng": existing.lng})
+            return result
+
     order_data = OrderCreate(
         customer_name=data.customer_name,
         customer_phone=data.customer_phone,
@@ -352,6 +396,7 @@ async def create_single_order(
         dong_override=data.dong_override,
     )
     order = await order_service.create_order(db, order_data, current_user.id, _pre_resolved=address_resolution)
+    order.client_row_id = data.client_row_id
     if lat and lng:
         order.lat = lat
         order.lng = lng

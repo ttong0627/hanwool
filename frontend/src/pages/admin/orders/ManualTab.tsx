@@ -132,6 +132,8 @@ export function ManualTab() {
         lat: row.lat,
         lng: row.lng,
         dong_override: true,
+        // 행 멱등키: 같은 행을 다시 저장(오타/영문 수정)해도 중복 생성 대신 기존 주문 갱신
+        client_row_id: row._id,
       })
       const savedId: number = res.data.id
       setRows(prev => prev.map((r, i) =>
