@@ -8,6 +8,7 @@
 백엔드 컨테이너에서 실행 (AES 키·DB 접근 필요):
   python scripts/find_duplicate_orders.py
 """
+import argparse
 import asyncio
 import os
 import sys
@@ -31,17 +32,24 @@ def norm(s: str) -> str:
 
 
 async def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--include-cancelled", action="store_true",
+                        help="취소된 주문도 포함해 과거 중복까지 스캔")
+    args = parser.parse_args()
+
+    where = "" if args.include_cancelled else "WHERE status <> 'cancelled' "
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(text(
             "SELECT order_no, status, dong, match_status, "
             "       (created_at AT TIME ZONE 'Asia/Seoul')::date AS d, "
             "       to_char(created_at AT TIME ZONE 'Asia/Seoul', 'HH24:MI') AS t, "
             "       customer_name_enc, customer_phone_enc, delivery_address_enc, is_test "
-            "FROM orders WHERE status <> 'cancelled' "
+            "FROM orders " + where +
             "ORDER BY order_no"
         ))).all()
 
-    print(f"전체 활성 주문(취소 제외): {len(rows)}건")
+    scope = "전체(취소 포함)" if args.include_cancelled else "활성(취소 제외)"
+    print(f"전체 {scope} 주문: {len(rows)}건")
     if not rows:
         return 0
 
