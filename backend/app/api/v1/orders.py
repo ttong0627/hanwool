@@ -955,8 +955,21 @@ async def confirm_order_address(
         order.legal_emd = body.legal_emd.strip()
     if body.detail_address is not None:
         order.detail_address = body.detail_address.strip() or None
-    order.service_dong = body.service_dong.strip()
-    order.dong = body.service_dong.strip()
+    # 배송동 자동 매칭: 담당자가 동을 고르지 않아도 표준주소에서 자동 판별한다(로컬 DB 우선).
+    dong = (body.service_dong or "").strip()
+    if not dong:
+        try:
+            res = await resolve_address(order.standard_road_address, db, use_kakao=False)
+            dong = (res.service_dong or res.legal_emd or "").strip()
+        except Exception:
+            dong = ""
+    if not dong:
+        raise HTTPException(
+            status_code=400,
+            detail="배송동을 자동 판별하지 못했습니다. 주소를 다시 검색해 선택하세요.",
+        )
+    order.service_dong = dong
+    order.dong = dong
 
     # 좌표 미제공(로컬 매칭 선택 등) 시 표준주소로 지오코딩
     lat, lng = body.lat, body.lng

@@ -3,12 +3,6 @@ import { AlertCircle, CheckCircle2, Loader2, MapPin, RefreshCw } from 'lucide-re
 import api from '@/lib/api'
 import { KakaoAddressSearch, type AddressResult } from '@/components/KakaoAddressSearch'
 
-// 백엔드 SERVICE_DONGS와 동일한 18개 배송 허용 동
-const SERVICE_DONGS = [
-  '경안동', '송정동', '쌍령동', '탄벌동', '고산동', '매산동', '목동', '목현동', '문형동',
-  '삼동', '양벌동', '역동', '장지동', '중대동', '직동', '추자동', '태전동', '회덕동',
-]
-
 interface ReviewOrder {
   id: number
   order_no: string
@@ -57,7 +51,7 @@ function ReviewCard({ order, onConfirmed }: { order: ReviewOrder; onConfirmed: (
   const handleConfirm = async () => {
     setError(null)
     if (!roadAddress.trim()) { setError('정확한 주소를 검색해서 선택하세요.'); return }
-    if (!serviceDong) { setError('배송동을 선택하세요.'); return }
+    // 배송동은 서버가 표준주소에서 자동 매칭하므로 담당자가 고르지 않아도 된다
     // 좌표가 없으면 서버가 표준주소로 지오코딩하므로 막지 않는다
     const lat = chosen?.lat ?? order.lat ?? undefined
     const lng = chosen?.lng ?? order.lng ?? undefined
@@ -122,16 +116,10 @@ function ReviewCard({ order, onConfirmed }: { order: ReviewOrder; onConfirmed: (
           placeholder="정확한 도로명/지번 주소 검색"
         />
         <div className="flex items-center gap-2">
-          <input
-            list="service-dong-list"
-            value={serviceDong}
-            onChange={(e) => setServiceDong(e.target.value)}
-            placeholder="배송동 (18개 외도 입력 가능)"
-            className="w-40 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-          <datalist id="service-dong-list">
-            {SERVICE_DONGS.map((d) => <option key={d} value={d} />)}
-          </datalist>
+          <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+            <span className="text-[11px] text-gray-400">배송동</span>
+            <span className="font-semibold text-gray-700">{serviceDong || '주소 선택 시 자동'}</span>
+          </div>
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}

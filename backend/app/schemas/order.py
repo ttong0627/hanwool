@@ -151,7 +151,8 @@ class BatchCreateRequest(BaseModel):
 class AddressConfirmRequest(BaseModel):
     """담당자 주소 확인 확정 — 미매칭/저신뢰 주문의 정확 주소를 담당자가 확정한다."""
     standard_road_address: str = Field(min_length=2)
-    service_dong: str = Field(min_length=1)
+    # 배송동 미제공 시 서버가 표준주소에서 자동 판별한다(담당자가 동을 고를 필요 없음).
+    service_dong: Optional[str] = None
     # 좌표 미제공(로컬 매칭은 좌표가 없음) 시 서버가 표준주소로 지오코딩한다.
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lng: Optional[float] = Field(default=None, ge=-180, le=180)
