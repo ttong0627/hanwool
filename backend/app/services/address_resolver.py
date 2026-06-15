@@ -542,8 +542,9 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
     result.admin_emd = result.admin_emd or await _admin_emd_for_legal(result.legal_emd, db)
     result.service_dong = result.service_dong or await _service_dong_for_legal(result.legal_emd, db)
     if result.legal_emd and not result.service_dong:
-        result.match_status = "needs_review"
-        result.match_message = "서비스 배송동에 포함되지 않은 법정동입니다."
+        # 18개 배송동이 아니어도 저장 허용 — 실제 법정동을 배송동으로 사용한다.
+        # 매칭 자체는 성공했으므로 needs_review로 강등하지 않는다(주소확인 큐는 진짜 미매칭만 모은다).
+        result.service_dong = result.legal_emd
 
     # 좌표 우선순위: 로컬 매칭에 좌표가 없으면 → ① 저장된 캐시 좌표 재사용 → ② 그래도 없을 때만 Kakao API
     if not (result.lat and result.lng):
@@ -559,7 +560,8 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
         # Kakao가 legal_emd를 새로 채웠으면 배송동/행정동 재계산 (Kakao는 좌표 이후 실행되므로)
         if result.legal_emd and not result.service_dong:
             result.admin_emd = result.admin_emd or await _admin_emd_for_legal(result.legal_emd, db)
-            result.service_dong = await _service_dong_for_legal(result.legal_emd, db)
+            # 18개 배송동이 아니어도 실제 법정동을 배송동으로 사용(저장 허용)
+            result.service_dong = await _service_dong_for_legal(result.legal_emd, db) or result.legal_emd
     if result.lat and result.lng and not result.coord_source:
         result.coord_source = "cache"
     if result.match_status == "matched" and (not result.lat or not result.lng):

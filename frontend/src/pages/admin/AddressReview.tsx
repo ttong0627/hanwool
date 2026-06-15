@@ -33,9 +33,9 @@ const STATUS_LABEL: Record<string, string> = {
   needs_review: '확인 필요',
 }
 
+// 18개 서비스동이 아니어도 실제 감지된 동을 그대로 사용(저장 허용)
 function pickDong(dongName?: string | null): string {
-  if (dongName && SERVICE_DONGS.includes(dongName)) return dongName
-  return ''
+  return dongName || ''
 }
 
 function ReviewCard({ order, onConfirmed }: { order: ReviewOrder; onConfirmed: (id: number) => void }) {
@@ -122,14 +122,16 @@ function ReviewCard({ order, onConfirmed }: { order: ReviewOrder; onConfirmed: (
           placeholder="정확한 도로명/지번 주소 검색"
         />
         <div className="flex items-center gap-2">
-          <select
+          <input
+            list="service-dong-list"
             value={serviceDong}
             onChange={(e) => setServiceDong(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          >
-            <option value="">배송동 선택</option>
-            {SERVICE_DONGS.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
+            placeholder="배송동 (18개 외도 입력 가능)"
+            className="w-40 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-brand-400 focus:outline-none"
+          />
+          <datalist id="service-dong-list">
+            {SERVICE_DONGS.map((d) => <option key={d} value={d} />)}
+          </datalist>
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
