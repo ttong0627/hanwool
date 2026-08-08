@@ -356,6 +356,17 @@ async def _resolve_from_cache(address: str, db: AsyncSession) -> Optional[Addres
     ).first()
     if not row:
         return None
+
+    # 캐시가 다른 도로/다른 번지를 가리키면 쓰지 않는다.
+    # 과거 유사도 매칭이 '광주대로 142 → 광주대로 148'처럼 잘못 저장해 둔 항목 방어.
+    parsed = _parse_road(address)
+    if parsed and row.road_address:
+        cached = _parse_road(row.road_address)
+        if cached and (
+            cached["road_name"] != parsed["road_name"] or cached["main_no"] != parsed["main_no"]
+        ):
+            return None
+
     await db.execute(
         text("UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() WHERE id = :id"),
         {"id": row.id},
@@ -387,15 +398,19 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     buildings(행안부) 매칭은 좌표가 없으므로, 한 번 구한 좌표는 이 캐시로 재사용해 API 호출을 막는다."""
     road = result.standard_road_address
     key = normalize_address_key(result.raw_address or "")
+    # 표준주소가 있으면 그 주소의 좌표만 재사용한다.
+    # 원문 키(normalized_query)로 찾으면 과거 잘못 저장된 다른 번지의 좌표가 딸려온다.
+    cond = "road_address = :road" if road else "normalized_query = :key"
+    params = {"road": road} if road else {"key": key}
     row = (
         await db.execute(
             text(
                 "SELECT lat, lng, source FROM address_cache "
                 "WHERE lat IS NOT NULL AND lng IS NOT NULL "
-                "  AND (road_address = :road OR normalized_query = :key) "
-                "ORDER BY (road_address = :road) DESC, hit_count DESC, id DESC LIMIT 1"
+                f"  AND {cond} "
+                "ORDER BY hit_count DESC, id DESC LIMIT 1"
             ),
-            {"road": road, "key": key},
+            params,
         )
     ).first()
     if not row:
@@ -403,9 +418,9 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     await db.execute(
         text(
             "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
-            "WHERE lat IS NOT NULL AND lng IS NOT NULL AND (road_address = :road OR normalized_query = :key)"
+            f"WHERE lat IS NOT NULL AND lng IS NOT NULL AND {cond}"
         ),
-        {"road": road, "key": key},
+        params,
     )
     return (row.lat, row.lng, row.source or "cache")
 
