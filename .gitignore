@@ -59,3 +59,9 @@ _err_*.png
 # 행안부 주소 원본 대용량 데이터 (수백MB~GB, 커밋 금지)
 202604_*/
 *.gz
+
+# 로컬 개발 전용 설정 — 커밋 금지
+# docker-compose.override.yml은 docker compose가 자동 로드하므로,
+# 커밋되면 운영 VM에서 nginx 설정이 localhost용으로 덮여 도메인 라우팅이 깨진다.
+docker-compose.override.yml
+frontend/nginx.local.conf

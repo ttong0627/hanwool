@@ -11,12 +11,19 @@
 - **헬스체크 결과(2026-08-08 13:12): `/health` 200 (0.06s), `/` 200 → 운영 정상**
 - 호스팅: GCE VM e2-small + Docker Compose (nginx + backend + postgres + redis + 백업컨테이너)
 - 빌드: `frontend` → `npm run build` / `desktop` → `npm run build:win` / `mobile` → Expo(로컬 Gradle APK)
-- 배포:
+- 배포: ⚠️ **`docker compose up -d --build`(전체 동시 빌드) 금지 — 2026-08-08 이 명령으로 VM이 멈췄다.**
+  e2-small은 메모리 2GB인데 `frontend/Dockerfile`이 VM 안에서 `npm ci` + vite 빌드(3,362 모듈)를 돌린다.
+  Postgres·Redis·backend가 떠 있는 상태에서 동시 빌드하면 메모리가 고갈돼 SSH까지 죽는다.
+  **반드시 아래처럼 한 서비스씩 순차로 빌드한다.**
   ```bash
   git add . && git commit -m "..." && git push origin master
   gcloud compute ssh hanwool-server --project=hanwool-delivery-2026 --zone=asia-northeast3-a \
-    --command="cd /opt/hanwool && sudo git pull && sudo docker compose up -d --build"
+    --command="cd /opt/hanwool && sudo git pull && \
+      sudo docker compose build backend  && sudo docker compose up -d backend && \
+      sudo docker compose build frontend && sudo docker compose up -d frontend"
   ```
+  긴 빌드는 SSH 세션이 끊겨도 이어지도록 `setsid nohup ... > /tmp/deploy.log 2>&1 &`로 띄우고 로그를 폴링한다.
+- 스왑: **2GB `/swapfile` 상시 활성** (2026-08-08 추가, `/etc/fstab` 등록, `vm.swappiness=20`). 빌드 OOM 방어선이므로 끄지 말 것.
 - ⚠️ **배포 전 gcloud 계정 전환 필수**: 현재 active `ttong627@gmail.com`은 hanwool-delivery-2026 **권한 없음**(compute.instances.list 거부 확인). → `gcloud config set account ttong0627@gmail.com` 또는 명령마다 `--account=ttong0627@gmail.com`
 - 커밋·푸시: gh active 계정 `ttong0627` = repo owner → **일치(전환 불필요)**
 
