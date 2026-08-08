@@ -9,6 +9,9 @@ import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
 import { formatPhone, detectDong, normalizeAddress } from '@/lib/utils'
+import { latinToHangul, hasLatinLetter } from '@/lib/hangul'
+
+const AUTO_HANGUL_KEY = 'hanwool_auto_hangul'
 
 type CellRef = HTMLInputElement | HTMLSelectElement | null
 
@@ -78,7 +81,31 @@ export function ManualTab() {
     }, 3500)
   }, [])
 
+  // ── 영타 자동 한글 변환 ────────────────────────────────────────────────────
+  // 브라우저는 IME(한/영)를 강제로 켤 수 없다. 전화번호·수량 칸에서 크롬이 IME를
+  // 영문으로 내려버리므로, 한글 칸에 들어온 영문을 두벌식 매핑으로 되돌린다.
+  const [autoHangul, setAutoHangul] = useState<boolean>(() => {
+    try { return localStorage.getItem(AUTO_HANGUL_KEY) !== 'off' } catch { return true }
+  })
+
+  const toggleAutoHangul = useCallback(() => {
+    setAutoHangul(prev => {
+      const next = !prev
+      try { localStorage.setItem(AUTO_HANGUL_KEY, next ? 'on' : 'off') } catch { /* 저장 실패는 무시 */ }
+      return next
+    })
+  }, [])
+
+  /** 한글 칸의 입력값을 한글로 보정한다. IME 조합 중이거나 영문이 없으면 원본 그대로. */
+  const koValue = useCallback((raw: string, cellKey: string) => {
+    if (!autoHangul) return raw
+    if (composingRef.current[cellKey]) return raw
+    if (!hasLatinLetter(raw)) return raw
+    return latinToHangul(raw)
+  }, [autoHangul])
+
   const checkKoreanIME = useCallback((value: string, rowIdx: number, colIdx: number, key: ColKey) => {
+    if (autoHangul) return // 자동 변환이 켜져 있으면 경고할 일이 없다
     const meta = CELL_META[key]
     if (meta?.lang !== 'ko') return
     const cellKey = `${rowIdx}-${colIdx}`
@@ -86,7 +113,7 @@ export function ManualTab() {
     if (LATIN_RE.test(value) && !HANGUL_RE.test(value.slice(-1))) {
       triggerIMEWarn(rowIdx, colIdx)
     }
-  }, [triggerIMEWarn])
+  }, [triggerIMEWarn, autoHangul])
 
   const focusCell = useCallback((row: number, col: number) => {
     const el = cellRefs.current[row]?.[col]
@@ -508,11 +535,21 @@ export function ManualTab() {
           <span>필수 항목 입력 + 주소 확인 시 자동 저장 (지역 외도 저장 허용) | Ctrl+V 붙여넣기</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 한글 입력 안내 뱃지 */}
-          <div className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full">
+          {/* 영타 자동 한글 변환 토글 — 파란 열(한글 칸)에만 적용 */}
+          <button
+            type="button"
+            onClick={toggleAutoHangul}
+            title={autoHangul
+              ? '파란 열(한글 칸)에 영문이 들어오면 자동으로 한글로 바꿉니다. 한/영 키를 눌러도 됩니다.\n영문 이름 등을 그대로 입력하려면 눌러서 끄세요.'
+              : '자동 변환이 꺼져 있습니다. 한/영 키로 직접 전환해야 합니다.'}
+            className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border transition-colors shrink-0
+              ${autoHangul
+                ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'}`}
+          >
             <Keyboard className="w-3 h-3" />
-            <span>파란 열 = 한글 입력</span>
-          </div>
+            <span>{autoHangul ? '자동 한글 변환 ON' : '자동 한글 변환 OFF'}</span>
+          </button>
 
           {/* 전체 주소 확인 버튼 — 미검증 행이 있을 때 강조 표시 */}
           {(() => {
@@ -667,8 +704,9 @@ export function ManualTab() {
                               onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                               onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                               onChange={(e) => {
-                                checkKoreanIME(e.target.value, rowIdx, colIdx, 'delivery_address')
-                                handleAddressChange(rowIdx, e.target.value)
+                                const v = koValue(e.target.value, cellKey)
+                                checkKoreanIME(v, rowIdx, colIdx, 'delivery_address')
+                                handleAddressChange(rowIdx, v)
                               }}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -703,8 +741,9 @@ export function ManualTab() {
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => {
-                              checkKoreanIME(e.target.value, rowIdx, colIdx, 'detail_address')
-                              updateCell(rowIdx, 'detail_address', e.target.value)
+                              const v = koValue(e.target.value, cellKey)
+                              checkKoreanIME(v, rowIdx, colIdx, 'detail_address')
+                              updateCell(rowIdx, 'detail_address', v)
                               triggerPartialUpdate(rowIdx, 'detail_address')
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
@@ -788,8 +827,9 @@ export function ManualTab() {
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => {
-                              checkKoreanIME(e.target.value, rowIdx, colIdx, key)
-                              updateCell(rowIdx, key, e.target.value)
+                              const v = isKoField ? koValue(e.target.value, cellKey) : e.target.value
+                              checkKoreanIME(v, rowIdx, colIdx, key)
+                              updateCell(rowIdx, key, v)
                               if (key === 'items_desc' || key === 'request') {
                                 triggerPartialUpdate(rowIdx, key as 'items_desc' | 'request')
                               }

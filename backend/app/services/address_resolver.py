@@ -18,6 +18,10 @@ SERVICE_DONGS = {
 }
 GWANGJU_PREFIX = "경기도 광주시"
 
+# 로컬 행안부 DB 스냅샷으로 "근사" 매칭한 출처들.
+# 이 출처의 결과는 주소 텍스트가 실제와 다를 수 있으므로 Kakao 최신 주소로 재확인한다.
+APPROX_SOURCES = {"nexus_approx", "nexus_similar"}
+
 
 @dataclass
 class AddressResolution:
@@ -239,6 +243,7 @@ async def _resolve_by_road(address: str, db: AsyncSession) -> Optional[AddressRe
         result = _from_building_row(address, fallback)
         result.match_status = "needs_review"
         result.match_score = 0.82
+        result.match_source = "nexus_approx"
         result.match_message = "건물 본번은 일치하지만 부번은 근사값으로 매칭했습니다."
         return result
     return None
@@ -313,10 +318,22 @@ async def _resolve_by_similarity(address: str, db: AsyncSession) -> Optional[Add
     ).first()
     if not row:
         return None
+
+    # 도로명 + 건물본번이 명확한 입력이면 다른 도로/다른 번지로 스냅하지 않는다.
+    # (예: '광주대로 142' → '광주대로 148' 강제 치환 방지)
+    # 로컬 행안부 스냅샷에 없는 신축 건물은 여기서 포기하고 Kakao 최신 주소로 넘긴다.
+    parsed = _parse_road(address)
+    if parsed and (
+        (row.road_name or "") != parsed["road_name"]
+        or (row.building_main_no if row.building_main_no is not None else -1) != parsed["main_no"]
+    ):
+        return None
+
     result = _from_building_row(address, row)
     score = float(row.score or 0.7)
     result.match_score = min(0.9, max(0.7, score))
     result.match_status = "matched" if result.match_score >= 0.86 else "needs_review"
+    result.match_source = "nexus_similar"
     result.match_message = "정규화 문자열 유사도로 매칭했습니다."
     return result
 
@@ -403,7 +420,10 @@ def _ensure_gwangju_prefix(value: str) -> str:
 
 
 async def _apply_kakao_coordinates(result: AddressResolution) -> None:
-    if result.lat and result.lng:
+    is_approx = result.match_source in APPROX_SOURCES
+    had_coords = bool(result.lat and result.lng)
+    # 근사 매칭(부번 근사·유사도)은 좌표가 있어도 최신 주소로 재확인한다.
+    if had_coords and not is_approx:
         return
     # 이중 접두어 방지: "경기도 광주시" 접두 제거 후 전달 (get_kakao_coordinates 내부에서 붙임)
     raw = _strip_gwangju_prefix(result.raw_address or "")
@@ -411,33 +431,55 @@ async def _apply_kakao_coordinates(result: AddressResolution) -> None:
     kakao = await get_kakao_coordinates(query)
     if not kakao:
         return
-    result.lat = kakao.get("lat")
-    result.lng = kakao.get("lng")
-    result.coord_source = "kakao"
+
+    exact = kakao.get("match_type") == "address"
+    # 로컬 행안부 스냅샷이 낡아 주소 텍스트 자체가 틀릴 수 있다.
+    # 미매칭이거나, 근사 매칭인데 Kakao가 정확주소를 알고 있으면 최신 주소를 우선한다.
+    replace_address = bool(kakao.get("address_name")) and (
+        result.match_status == "not_found" or (is_approx and exact)
+    )
+
+    k_lat, k_lng = kakao.get("lat"), kakao.get("lng")
+    if k_lat and k_lng and (replace_address or not had_coords):
+        result.lat = k_lat
+        result.lng = k_lng
+        result.coord_source = "kakao"
     if not result.legal_emd and kakao.get("dong_name"):
         result.legal_emd = kakao["dong_name"]
 
-    # 로컬 DB에서 표준 주소를 못 찾았을 때만(not_found) Kakao가 돌려준 주소로 채운다.
-    # 로컬 매칭이 이미 있으면 좌표만 보강하고 주소 텍스트는 행안부 값을 유지한다.
-    if result.match_status == "not_found":
-        kakao_addr = _ensure_gwangju_prefix(kakao.get("address_name") or "")
-        kakao_jibun = _ensure_gwangju_prefix(kakao.get("jibun_address") or "")
-        if kakao_addr:
-            result.standard_road_address = kakao_addr
-            result.match_source = "kakao"
-            if kakao_jibun and not result.jibun_address:
-                result.jibun_address = kakao_jibun
-            # 정확 주소(address.json) 매칭은 신뢰, 키워드 매칭은 담당자 확인 권장
-            if kakao.get("match_type") == "address":
-                result.match_status = "matched"
-                result.match_score = 0.9
-                result.match_message = "로컬 DB에 없어 Kakao 정확주소로 매칭했습니다."
-            else:
-                result.match_status = "needs_review"
-                result.match_score = 0.72
-                result.match_message = (
-                    "로컬 DB에 없어 Kakao 키워드 검색으로 매칭했습니다. 담당자 확인을 권장합니다."
-                )
+    if not replace_address:
+        return
+
+    result.standard_road_address = _ensure_gwangju_prefix(kakao.get("address_name") or "")
+    result.match_source = "kakao"
+    kakao_jibun = _ensure_gwangju_prefix(kakao.get("jibun_address") or "")
+
+    if is_approx:
+        # 다른 번지에서 끌어온 표준키·동 정보는 폐기하고 Kakao 기준으로 다시 세운다.
+        result.jibun_address = kakao_jibun or None
+        result.adm_cd = None
+        result.rn_mgt_sn = None
+        result.bd_mgt_sn = None
+        result.buld_mnnm = None
+        result.buld_slno = None
+        if kakao.get("dong_name"):
+            result.legal_emd = kakao["dong_name"]
+            result.admin_emd = None
+            result.service_dong = None  # resolve_address에서 재계산
+    elif kakao_jibun and not result.jibun_address:
+        result.jibun_address = kakao_jibun
+
+    # 정확 주소(address.json) 매칭은 신뢰, 키워드 매칭은 담당자 확인 권장
+    if exact:
+        result.match_status = "matched"
+        result.match_score = 0.9
+        result.match_message = "행안부 로컬 DB에 없어 Kakao 최신 주소로 매칭했습니다."
+    else:
+        result.match_status = "needs_review"
+        result.match_score = 0.72
+        result.match_message = (
+            "로컬 DB에 없어 Kakao 키워드 검색으로 매칭했습니다. 담당자 확인을 권장합니다."
+        )
 
 
 async def _save_cache(result: AddressResolution, db: AsyncSession) -> None:
@@ -552,7 +594,9 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
         if cached:
             result.lat, result.lng, _csrc = cached
             result.coord_source = result.coord_source or _csrc or "cache"
-    if use_kakao and not (result.lat and result.lng):
+    # 근사 매칭(부번 근사·유사도)은 좌표가 있어도 Kakao로 최신 주소를 재확인한다.
+    # 로컬 행안부 스냅샷에 없는 신축 건물이 엉뚱한 번지로 굳어지는 것을 막는다.
+    if use_kakao and (result.match_source in APPROX_SOURCES or not (result.lat and result.lng)):
         try:
             await _apply_kakao_coordinates(result)
         except Exception:
