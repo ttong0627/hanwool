@@ -75,7 +75,7 @@ export function LoginPage() {
             {[
               { dot: 'bg-green-400', text: '실시간 배송 현황 추적' },
               { dot: 'bg-brand-400', text: '광주시 18개 동 배송 관리' },
-              { dot: 'bg-blue-400',  text: '장날(3·8일) 자동 접수 관리' },
+              { dot: 'bg-blue-400',  text: '365일 24시간 자동 접수 관리' },
             ].map(({ dot, text }) => (
               <div key={text} className="flex items-center gap-3 text-slate-400 text-sm">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />

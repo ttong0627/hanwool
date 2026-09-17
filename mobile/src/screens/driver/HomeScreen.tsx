@@ -1115,7 +1115,7 @@ export function DriverHomeScreen() {
                   ? <ActivityIndicator color="#fff" />
                   : <><Ionicons name="play-circle" size={24} color="#fff" style={{ marginRight: 8 }} /><Text style={{ color: '#fff', fontSize: 19, fontWeight: '900' }}>배송업무 시작</Text></>}
               </TouchableOpacity>
-              <Text style={{ marginTop: 12, fontSize: 12.5, color: '#94A3B8' }}>버튼을 누르면 배정된 배송이 출발합니다</Text>
+              <Text style={{ marginTop: 12, fontSize: 12.5, color: '#94A3B8' }}>배정분이 없으면 미배정 배송을 직접 가져와 출발합니다</Text>
             </View>
           </View>
         </Modal>

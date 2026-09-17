@@ -57,7 +57,7 @@ from app.services.route_service import (
     optimize_route,
     optimize_route_with_kakao_matrix,
 )
-from app.utils.market_day import is_market_day, is_reception_open, today_kst
+from app.utils.market_day import today_kst
 from app.websocket.handler import manager
 
 router = APIRouter(prefix="/orders", tags=["주문"])
@@ -65,6 +65,7 @@ router = APIRouter(prefix="/orders", tags=["주문"])
 PHOTO_DIR = "photos"
 VALID_DONGS = SERVICE_DONGS  # 배송 허용동 단일 소스 (address_resolver.SERVICE_DONGS, 18개 동)
 DRIVER_CAPABLE_ROLES = frozenset({"driver", "admin", "super_admin"})
+SELF_ASSIGNMENT_LIMIT = 40
 
 
 def is_driver_capable(user) -> bool:
@@ -73,13 +74,8 @@ def is_driver_capable(user) -> bool:
 
 
 def _enforce_reception_window(role: str) -> None:
-    """장날·접수시간 서버 강제 검증. admin/super_admin은 예외(상시 등록 가능)."""
-    if role in {"admin", "super_admin"}:
-        return
-    if not is_market_day():
-        raise HTTPException(status_code=400, detail="오늘은 장날이 아닙니다. 접수일: 매월 3·8·13·18·23·28일")
-    if not is_reception_open():
-        raise HTTPException(status_code=400, detail="접수 시간이 아닙니다. 접수 가능: 장날 오전 11시 ~ 오후 3시")
+    """365일 24시간 접수 정책. 기존 호출부 호환을 위해 함수를 유지한다."""
+    return
 
 
 def _today_start() -> datetime:
@@ -487,7 +483,7 @@ async def create_order(
 ):
     from app.core.security import decrypt_field
 
-    # 장날·접수시간 서버 강제 검증 (admin/super_admin은 bypass)
+    # 365일 24시간 접수 정책 검증(호환 함수 호출)
     _enforce_reception_window(current_user.role)
 
     if current_user.role == "customer":
@@ -600,8 +596,80 @@ async def start_driver_work(
             "message": "이미 모두 배송 중입니다.",
         }
 
-    # 기사 자가배정 없음 — 무조건 '최고관리자 배정'이 업무 시작점이다.
-    # 배정된 주문이 없으면 관리자 배정을 기다린다.
+    # 관리자 사전 배정이 없으면 로그인한 기사가 미배정 주문을 직접 가져간다.
+    # advisory lock + row lock으로 여러 기사가 동시에 눌러도 같은 주문을 중복 배정하지 않는다.
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 2026060602})
+    unassigned_result = await db.execute(
+        select(Order)
+        .where(
+            today_filter,
+            Order.driver_id.is_(None),
+            Order.status == OrderStatus.pending,
+        )
+        .order_by(Order.dong.asc(), Order.id.asc())
+        .limit(SELF_ASSIGNMENT_LIMIT)
+        .with_for_update(skip_locked=True)
+    )
+    claimed_orders = list(unassigned_result.scalars().all())
+
+    if claimed_orders:
+        now_utc = datetime.now(timezone.utc)
+        for order in claimed_orders:
+            previous_status = order.status
+            order.driver_id = current_user.id
+            order.status = OrderStatus.in_transit
+            order.assigned_at = now_utc
+            order.picked_up_at = order.picked_up_at or now_utc
+            await order_service.log_order_history(
+                db,
+                order,
+                event_type="self_assigned",
+                from_status=previous_status,
+                to_status=OrderStatus.in_transit,
+                actor_user_id=current_user.id,
+                actor_role="driver",
+                driver_id=current_user.id,
+                note="기사 직접 배정 및 배송 시작",
+            )
+
+        await db.flush()
+        await _auto_sequence_for_driver(db, current_user.id)
+
+        dispatch_run = DispatchRun(
+            market_date=today,
+            executed_by_id=current_user.id,
+            driver_count=1,
+            order_count=len(claimed_orders),
+            is_auto=True,
+            split_applied=False,
+            status=DispatchRunStatus.confirmed,
+            notes=f"기사 직접 배정 {len(claimed_orders)}건",
+        )
+        db.add(dispatch_run)
+        await db.flush()
+        for order in claimed_orders:
+            db.add(
+                DispatchRunItem(
+                    dispatch_run_id=dispatch_run.id,
+                    order_id=order.id,
+                    driver_id=current_user.id,
+                    sequence=order.sequence,
+                    service_dong=order.service_dong or order.dong,
+                    lat=order.lat,
+                    lng=order.lng,
+                    sequence_source=order.sequence_source,
+                )
+            )
+
+        await db.flush()
+        sms_jobs = sms_service.build_departure_messages(claimed_orders)
+        return {
+            "status": "self_assigned",
+            "assigned_count": len(claimed_orders),
+            "message": f"미배정 배송 {len(claimed_orders)}건을 가져와 시작합니다.",
+            "sms_jobs": sms_jobs,
+        }
+
     total_active = (await db.execute(
         select(func.count()).select_from(Order).where(
             today_filter,
@@ -609,11 +677,11 @@ async def start_driver_work(
         )
     )).scalar() or 0
     if total_active == 0:
-        return {"status": "no_orders", "assigned_count": 0, "message": "오늘 배정할 주문이 없습니다."}
+        return {"status": "no_orders", "assigned_count": 0, "message": "오늘 배송할 주문이 없습니다."}
     return {
-        "status": "waiting_admin",
+        "status": "no_unassigned_orders",
         "assigned_count": 0,
-        "message": "총관리자가 기사 배정을 하면 배송이 시작됩니다. 배정되면 목록에 자동 표시됩니다.",
+        "message": "현재 가져올 수 있는 미배정 주문이 없습니다.",
     }
 
 
@@ -972,7 +1040,7 @@ async def list_orders(
     if date_from:
         from datetime import date as _date
         d_from = _date.fromisoformat(date_from[:10])
-        # market_date 우선 필터 (KST 기준 장날), null인 경우 created_at 폴백
+        # market_date 우선 필터 (KST 기준 배송일), null인 경우 created_at 폴백
         kst_from_utc = datetime.combine(d_from, datetime.min.time()).replace(tzinfo=_KST).astimezone(timezone.utc)
         q = q.where(or_(
             Order.market_date >= d_from,
@@ -1961,7 +2029,7 @@ async def batch_create_orders(
     # 테스트 모드: True면 생성되는 주문·신규 고객을 is_test=True로 표시
     is_test = body.is_test
 
-    # 실데이터 등록은 장날·접수시간 강제(테스트 등록은 예외)
+    # 실데이터 등록은 365일 24시간 허용(호환 함수 호출)
     if not is_test:
         _enforce_reception_window(current_user.role)
 

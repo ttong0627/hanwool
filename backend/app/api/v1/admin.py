@@ -26,7 +26,7 @@ router = APIRouter(prefix="/admin", tags=["관리자"])
 
 @router.get("/market-status")
 async def get_market_status(_: User = Depends(require_admin)):
-    """장날·접수 시간 현황 (프론트 Dashboard 용)"""
+    """365일 24시간 배송 접수 현황 (프론트 Dashboard 용)"""
     return market_day_status()
 
 
@@ -344,7 +344,7 @@ async def stats_by_market_date(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """장날별 통계 (최근 limit 회 장날)"""
+    """배송일별 통계 (최근 limit일)"""
     result = await db.execute(
         select(
             Order.market_date,

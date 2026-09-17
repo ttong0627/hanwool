@@ -30,10 +30,6 @@ function todayLabel() {
   const d = new Date(Date.now() + KST)
   return (d.getUTCMonth()+1).toString().padStart(2,'0')+'월 '+d.getUTCDate().toString().padStart(2,'0')+'일'
 }
-function isMarketDay() {
-  return [3,8,13,18,23,28].includes(new Date(Date.now()+KST).getUTCDate())
-}
-
 /* ── 동 선택 모달 ─────────────────────────────────────────────── */
 function DongPickerModal({ visible, selected, onSelect, onClose }: {
   visible: boolean; selected: string; onSelect: (d: string) => void; onClose: () => void
@@ -176,7 +172,7 @@ export default function ManualEntryScreen() {
       <View style={s.header}>
         <View>
           <Text style={s.hTitle}>주문 접수</Text>
-          <Text style={s.hSub}>{todayLabel()} {isMarketDay() ? '장날' : '장외'}</Text>
+          <Text style={s.hSub}>{todayLabel()} · 매일 배송</Text>
         </View>
         <View style={s.hRole}>
           <Ionicons name="person-circle" size={18} color={T.primary} />

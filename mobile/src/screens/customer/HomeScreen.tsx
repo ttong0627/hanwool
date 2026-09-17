@@ -173,11 +173,8 @@ export function CustomerHomeScreen() {
     },
   })
 
-  // 접수 가능 시간: 장날(3·8·13·18·23·28일) 11:00~16:30 (KST). 서버에서도 강제됨.
-  const kstNow = new Date(Date.now() + (new Date().getTimezoneOffset() + 540) * 60000)
-  const isMarketDay = [3, 8, 13, 18, 23, 28].includes(kstNow.getDate())
-  const nowMinutes = kstNow.getHours() * 60 + kstNow.getMinutes()
-  const isReceptionOpen = isMarketDay && nowMinutes >= 11 * 60 && nowMinutes < 16 * 60 + 30
+  // 365일 24시간 접수 가능. 서버에서도 동일 정책을 적용한다.
+  const isReceptionOpen = true
   const canSubmit = isReceptionOpen && address.trim().length > 0 && items.trim().length > 0
 
   /* 주문 완료 화면 */
@@ -289,12 +286,12 @@ export function CustomerHomeScreen() {
               textAlignVertical="top"
             />
 
-            {/* 접수 시간 안내 — 장날 11:00~16:30이 아니면 신청 불가 */}
+            {/* 서버 정책 변경 시를 대비한 접수 상태 안내 */}
             {!isReceptionOpen && (
               <View style={main.closedBox}>
                 <Ionicons name="time-outline" size={20} color="#B45309" />
                 <Text style={main.closedText}>
-                  지금은 접수 시간이 아닙니다.{'\n'}장날(3·8·13·18·23·28일) 오전 11시~오후 4시 30분에 신청해 주세요.
+                  현재 주문 접수가 일시 중단되었습니다.{'\n'}잠시 후 다시 시도해 주세요.
                 </Text>
               </View>
             )}

@@ -12,7 +12,7 @@ from app.core.security import encrypt_field, decrypt_field, hash_phone
 from app.models.order import Order, OrderStatus
 from app.models.order_history import OrderHistory
 from app.schemas.order import OrderCreate
-from app.utils.market_day import is_market_day, today_kst
+from app.utils.market_day import today_kst
 
 
 def _generate_order_no(sequence: int) -> str:
@@ -121,7 +121,7 @@ async def create_order(
         request=data.request,
         weight_estimate=data.weight_estimate,
         pickup_location=data.pickup_location,
-        market_date=today if is_market_day(today) else None,
+        market_date=today,
         is_test=is_test,
     )
     db.add(order)

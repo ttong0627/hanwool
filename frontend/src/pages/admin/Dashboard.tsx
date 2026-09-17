@@ -146,7 +146,7 @@ function DriverLocationCard({
   )
 }
 
-// ── 장날 배너 ─────────────────────────────────────────────────────
+// ── 매일 배송 배너 ─────────────────────────────────────────────────────
 function MarketStatusBanner({ status }: { status: MarketStatus }) {
   if (status.reception_open) {
     return (
@@ -159,7 +159,7 @@ function MarketStatusBanner({ status }: { status: MarketStatus }) {
           </div>
           <div className="flex-1">
             <div className="font-bold text-sm">{status.message}</div>
-            <div className="text-xs text-green-100 mt-0.5">16:30까지 주문 접수 가능합니다</div>
+            <div className="text-xs text-green-100 mt-0.5">365일 24시간 주문 접수 가능합니다</div>
           </div>
           <span className="text-xs font-bold bg-white text-green-700 rounded-full px-3 py-1.5 shrink-0 shadow-sm">
             접수 중
@@ -180,7 +180,7 @@ function MarketStatusBanner({ status }: { status: MarketStatus }) {
           </div>
           <div>
             <div className="font-bold text-sm">{status.message}</div>
-            <div className="text-xs text-amber-100 mt-0.5">오늘은 장날입니다</div>
+            <div className="text-xs text-amber-100 mt-0.5">365일 매일 배송합니다</div>
           </div>
         </div>
       </div>
@@ -196,7 +196,7 @@ function MarketStatusBanner({ status }: { status: MarketStatus }) {
         <div className="font-semibold text-sm text-gray-700">{status.message}</div>
         {status.next_market_date && (
           <div className="text-xs text-gray-400 mt-0.5">
-            다음 장날 <span className="font-semibold text-gray-600">{status.next_market_date}</span>
+            다음 배송일 <span className="font-semibold text-gray-600">{status.next_market_date}</span>
             {status.days_until_next > 0 && ` (${status.days_until_next}일 후)`}
           </div>
         )}
@@ -337,7 +337,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* 장날 배너 */}
+      {/* 매일 배송 배너 */}
       {marketStatus && <MarketStatusBanner status={marketStatus} />}
 
       {/* 통계 카드 그리드 */}

@@ -38,6 +38,13 @@
 배송 허용동 단일 소스: 백엔드 `address_resolver.SERVICE_DONGS`, 프론트 `@/lib/utils`의 `DONG_LIST`.
 배송 구역 정책은 코드 상수보다 `delivery_zones` DB를 우선한다. 법정동과 실제 배송 구역이 다르면 `address_overrides.force_service_dong`을 우선한다.
 
+## 배송 운영 규칙
+
+- 주문 접수와 배송은 365일 24시간 가능하다.
+- 기존 `market_date` 필드는 호환성을 위해 배송 접수일로 유지한다.
+- 로그인한 기사 계정은 관리자 사전 배정 없이 미배정 주문을 최대 40건까지 직접 가져와 배송을 시작할 수 있다.
+- 기존 관리자 배정 기능은 유지하며, 기사 직접 배정도 `dispatch_runs`와 `dispatch_run_items`에 기록한다.
+
 ## 배차/순번 규칙
 
 - 배차 실행 결과는 `dispatch_runs`, `dispatch_run_items`에 반드시 남긴다.

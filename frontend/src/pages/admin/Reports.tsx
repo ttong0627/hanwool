@@ -102,7 +102,7 @@ function GovTab({
   const deliveryRate = totalOrders > 0 ? Math.round((totalDelivered / totalOrders) * 100) : 0
   const missedOrders = totalOrders - totalDelivered
 
-  // 장날 평균 완료율
+  // 배송일 평균 완료율
   const avgCompletionRate =
     marketStats.length > 0
       ? Math.round(marketStats.reduce((s, m) => s + m.delivery_rate, 0) / marketStats.length)
@@ -143,9 +143,9 @@ function GovTab({
             badge={deliveryRate >= 90 ? '우수' : deliveryRate >= 70 ? '양호' : '주의'}
           />
           <SummaryCard
-            label="장날 평균 완료율"
+            label="일평균 완료율"
             value={`${avgCompletionRate}%`}
-            sub={`${marketStats.length}회 장날 집계`}
+            sub={`${marketStats.length}일 집계`}
             icon={CalendarDays}
             color="bg-indigo-500"
           />
@@ -186,13 +186,13 @@ function GovTab({
         </div>
       )}
 
-      {/* 장날별 서비스 완료율 */}
+      {/* 배송일별 서비스 완료율 */}
       <div className="card-elevated rounded-xl p-5">
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-blue-500" />
-          장날별 서비스 완료율
+          배송일별 서비스 완료율
         </h2>
-        <p className="text-xs text-gray-400 mb-4">3·8·13·18·23·28일 장날 — 완료율 80% 이상이 서비스 목표입니다</p>
+        <p className="text-xs text-gray-400 mb-4">매일 배송 — 완료율 80% 이상이 서비스 목표입니다</p>
         {marketStats.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-gray-400 text-sm">데이터 없음</div>
         ) : (
@@ -200,7 +200,7 @@ function GovTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-gray-500 text-xs">
-                  <th className="pb-2 pr-4">장날</th>
+                  <th className="pb-2 pr-4">배송일</th>
                   <th className="pb-2 pr-4 text-right">접수</th>
                   <th className="pb-2 pr-4 text-right">완료</th>
                   <th className="pb-2 pr-4 text-right">미완료</th>
@@ -382,9 +382,9 @@ function MarketTab({
             color="bg-brand-500"
           />
           <SummaryCard
-            label="장날 평균 물량"
+            label="일평균 물량"
             value={`${avgPerMarketDay}건`}
-            sub={`${marketStats.length}회 장날 기준`}
+            sub={`${marketStats.length}일 기준`}
             icon={CalendarDays}
             color="bg-orange-500"
           />
@@ -405,15 +405,15 @@ function MarketTab({
         </div>
       </div>
 
-      {/* 장날별 물량 차트 */}
+      {/* 배송일별 물량 차트 */}
       <div className="card-elevated rounded-xl p-5">
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-brand-500" />
-          장날별 배송 물량
+          배송일별 배송 물량
         </h2>
-        <p className="text-xs text-gray-400 mb-4">어느 장날에 물량이 많은지 — 인력·재고 계획에 활용하세요</p>
+        <p className="text-xs text-gray-400 mb-4">어느 날짜에 물량이 많은지 — 인력·재고 계획에 활용하세요</p>
         {marketStats.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 text-sm">장날 데이터 없음</div>
+          <div className="flex items-center justify-center h-48 text-gray-400 text-sm">배송 데이터 없음</div>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={240}>
@@ -426,7 +426,7 @@ function MarketTab({
                 <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} allowDecimals={false} />
                 <Tooltip
                   formatter={(value: number, name: string) => [value, name === 'total' ? '전체' : '완료']}
-                  labelFormatter={(label) => `장날: ${label}`}
+                  labelFormatter={(label) => `배송일: ${label}`}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
                 />
                 <Bar dataKey="total" name="total" fill="#fdba74" radius={[4, 4, 0, 0]} />
@@ -683,7 +683,7 @@ export function Reports() {
       <div className={`card-elevated rounded-xl px-4 py-3 text-sm border-l-4 ${tab === 'gov' ? 'border-blue-400 text-blue-700' : 'border-brand-400 text-brand-700'}`}>
         {tab === 'gov'
           ? '복지 서비스 완료율, 고객 현황, 동별 서비스 균형을 중심으로 행정 목적 보고서를 제공합니다.'
-          : '장날 물량 추이, 기사 실적, 최다 이용 고객, 동별 수요를 중심으로 시장 운영 현황 보고서를 제공합니다.'}
+          : '일별 물량 추이, 기사 실적, 최다 이용 고객, 동별 수요를 중심으로 운영 현황 보고서를 제공합니다.'}
       </div>
 
       {/* 탭 컨텐츠 */}

@@ -256,7 +256,7 @@ export function OrderForm() {
         </div>
       </div>
 
-      {/* ── 장날 상태 배너 ────────────────────────────────────────────────── */}
+      {/* ── 매일 배송 상태 배너 ────────────────────────────────────────────────── */}
       {marketStatus && (
         <div
           className={`flex items-center gap-3 rounded-2xl px-4 py-3.5 border-2 transition-colors ${
@@ -639,7 +639,7 @@ export function OrderForm() {
           "
         >
           {isLocked
-            ? '🔒 접수 불가 (장날 11:00~16:30만 가능)'
+            ? '🔒 주문 접수가 일시 중단되었습니다'
             : createMutation.isPending
             ? '접수 중...'
             : '주문 접수하기'}

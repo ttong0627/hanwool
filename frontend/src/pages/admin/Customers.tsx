@@ -523,7 +523,7 @@ function CustomerDetailPanel({
                         <span className="font-semibold text-sm text-gray-900">{order.order_no}</span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>{st.label}</span>
                         {order.market_date && (
-                          <span className="text-xs text-gray-400">{order.market_date} 장날</span>
+                          <span className="text-xs text-gray-400">{order.market_date} 배송일</span>
                         )}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">{order.delivery_address}</div>
