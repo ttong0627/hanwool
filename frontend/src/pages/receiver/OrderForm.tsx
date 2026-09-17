@@ -126,9 +126,8 @@ export function OrderForm() {
     queryFn: () => api.get('/admin/market-status').then((r) => r.data),
     refetchInterval: 60_000,
   })
-  const isLocked = marketStatus
-    ? !marketStatus.is_market_day || !marketStatus.reception_open
-    : false
+  // 365일 24시간 접수 정책: 상태 조회 실패나 오래된 캐시가 입력을 막지 않도록 한다.
+  const isLocked = false
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers'],

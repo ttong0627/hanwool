@@ -25,8 +25,8 @@ router = APIRouter(prefix="/admin", tags=["관리자"])
 
 
 @router.get("/market-status")
-async def get_market_status(_: User = Depends(require_admin)):
-    """365일 24시간 배송 접수 현황 (프론트 Dashboard 용)"""
+async def get_market_status(_: User = Depends(require_receiver_or_above)):
+    """365일 24시간 배송 접수 현황 (관리자·접수자 화면 용)"""
     return market_day_status()
 
 
