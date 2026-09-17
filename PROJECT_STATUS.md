@@ -1,5 +1,5 @@
 # 📋 PROJECT STATUS — hanwool (경안시장 집배송)
-> 자동 갱신: 2026-09-17 12:08 KST
+> 자동 갱신: 2026-09-17 12:36 KST
 
 ## 식별
 - GitHub: `ttong0627/hanwool` · 브랜치 `master`
@@ -34,6 +34,7 @@
 - backend·frontend 순차 빌드 및 재기동 완료
 - 컨테이너 backend healthy · Alembic `z1a2b3c4d567 (head)` 확인
 - https://ga.wssc.kr/health → HTTP 200 확인
+- 모바일 APK 1.0.50 (versionCode 31) ARM release 빌드 완료 · SHA-256 E087DFC237722A279E880CA58894E75D958A2107D776DB8AB0D9BF9D1F3B9E80
 
 ## 규칙 문서
 - `AGENTS.md`
