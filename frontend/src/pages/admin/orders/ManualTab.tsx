@@ -41,6 +41,37 @@ function RowStatusDot({ row, onRetry }: { row: StagingRow; onRetry?: () => void 
 const addrTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 
+function rowValidationError(row: StagingRow): string | null {
+  if (!row.customer_name.trim()) return '성명을 입력하세요.'
+  if (!row.customer_phone.trim()) return '전화번호를 입력하세요.'
+  if (!row.delivery_address.trim()) return '주소를 입력하세요.'
+  if (row.delivery_address.trim().length < 5) return '주소를 5자 이상 입력하세요.'
+  if (!row.dong.trim()) return '배송동을 확인하세요.'
+  if (row.addrStatus === 'idle') return '주소 확인이 필요합니다.'
+  if (row.addrStatus === 'validating') return '주소 확인이 끝날 때까지 기다려 주세요.'
+  if (!Number.isInteger(row.quantity) || row.quantity < 1 || row.quantity > 999) {
+    return '수량은 1~999 사이의 숫자로 입력하세요.'
+  }
+  return null
+}
+
+function apiErrorMessage(err: unknown): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const value = item as { loc?: unknown[]; msg?: string }
+        const field = Array.isArray(value.loc) && value.loc.length ? value.loc[value.loc.length - 1] : null
+        return value.msg ? (field ? String(field) + ': ' : '') + value.msg : null
+      })
+      .filter(Boolean)
+    if (messages.length) return messages.join(', ')
+  }
+  return '저장에 실패했습니다. 입력값을 확인한 뒤 다시 저장해 주세요.'
+}
+
 // 컬럼별 IME 메타
 const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInputElement['inputMode']; hint: string; hintColor: string; hintBg: string }>> = {
   customer_name:    { lang: 'ko', hint: '한글', hintColor: 'text-blue-700', hintBg: 'bg-blue-100 border-blue-300' },
@@ -61,6 +92,7 @@ export function ManualTab() {
   const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
   const rowsRef = useRef(rows)
   rowsRef.current = rows
+  const savingRowIdsRef = useRef(new Set<string>())
   const cellRefs = useRef<CellRef[][]>([])
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
 
@@ -128,7 +160,7 @@ export function ManualTab() {
     setRows(prev => prev.map((r, i) => i === rowIdx ? {
       ...r, [key]: value,
       // 저장 실패 상태에서 편집하면 재시도 가능하도록 초기화
-      ...(r.submitStatus === 'error' && !r.savedOrderId ? { submitStatus: undefined } : {}),
+      ...(r.submitStatus === 'error' && !r.savedOrderId ? { submitStatus: undefined, submitError: undefined } : {}),
     } : r))
   }, [])
 
@@ -137,14 +169,25 @@ export function ManualTab() {
   }, [])
 
   // ── 자동저장 ──────────────────────────────────────────────────────────────
-  const autoSaveRow = useCallback(async (rowIdx: number) => {
-    const row = rowsRef.current[rowIdx]
+  const autoSaveRow = useCallback(async (rowId: string, showValidationError = false) => {
+    const row = rowsRef.current.find((item) => item._id === rowId)
     if (!row) return
     if (row.savedOrderId) return
-    if (!row.customer_name || !row.customer_phone || !row.delivery_address || !row.dong) return
-    if (row.addrStatus === 'idle' || row.addrStatus === 'validating') return
+    const validationError = rowValidationError(row)
+    if (validationError) {
+      if (showValidationError) {
+        setRows(prev => prev.map((item) =>
+          item._id === rowId ? { ...item, submitStatus: 'error', submitError: validationError } : item
+        ))
+      }
+      return
+    }
+    if (savingRowIdsRef.current.has(rowId)) return
+    savingRowIdsRef.current.add(rowId)
 
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, submitStatus: 'pending' } : r))
+    setRows(prev => prev.map((item) =>
+      item._id === rowId ? { ...item, submitStatus: 'pending', submitError: undefined } : item
+    ))
     try {
       const res = await api.post('/orders/single', {
         customer_name: row.customer_name,
@@ -163,8 +206,8 @@ export function ManualTab() {
         client_row_id: row._id,
       })
       const savedId: number = res.data.id
-      setRows(prev => prev.map((r, i) =>
-        i === rowIdx ? { ...r, savedOrderId: savedId, item_code: res.data.item_code ?? r.item_code, submitStatus: 'success', submitError: undefined } : r
+      setRows(prev => prev.map((item) =>
+        item._id === rowId ? { ...item, savedOrderId: savedId, item_code: res.data.item_code ?? item.item_code, submitStatus: 'success', submitError: undefined } : item
       ))
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['customers'] })
@@ -175,15 +218,22 @@ export function ManualTab() {
           .catch(() => {})
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '저장 실패'
-      setRows(prev => prev.map((r, i) =>
-        i === rowIdx ? { ...r, submitStatus: 'error', submitError: msg } : r
+      const msg = apiErrorMessage(err)
+      setRows(prev => prev.map((item) =>
+        item._id === rowId ? { ...item, submitStatus: 'error', submitError: msg } : item
       ))
+    } finally {
+      savingRowIdsRef.current.delete(rowId)
     }
   }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
+  const saveRowNow = useCallback((rowId: string) => {
+    clearTimeout(saveTimers[rowId])
+    void autoSaveRow(rowId, true)
+  }, [autoSaveRow])
+
   useEffect(() => {
-    rows.forEach((row, rowIdx) => {
+    rows.forEach((row) => {
       if (row.savedOrderId) return
       const isReady =
         row.customer_name && row.customer_phone && row.delivery_address && row.dong &&
@@ -191,7 +241,7 @@ export function ManualTab() {
       if (!isReady) return
       if (row.submitStatus === 'pending' || row.submitStatus === 'success' || row.submitStatus === 'error') return
       clearTimeout(saveTimers[row._id])
-      saveTimers[row._id] = setTimeout(() => autoSaveRow(rowIdx), 1200)
+      saveTimers[row._id] = setTimeout(() => void autoSaveRow(row._id), 1200)
     })
   }, [rows]) // eslint-disable-line
 
@@ -598,7 +648,7 @@ export function ManualTab() {
             {COL_KEYS.map((k) => (
               COL_WIDTHS[k] ? <col key={k} style={{ width: COL_WIDTHS[k] }} /> : <col key={k} />
             ))}
-            <col style={{ width: 28 }} />
+            <col style={{ width: 64 }} />
           </colgroup>
 
           <thead className="sticky top-0 z-10 bg-gradient-to-b from-gray-100 to-gray-50 border-b-2 border-gray-200 shadow-sm">
@@ -624,7 +674,7 @@ export function ManualTab() {
                   </th>
                 )
               })}
-              <th />
+              <th className="text-center text-gray-500 font-semibold text-xs">저장</th>
             </tr>
           </thead>
 
@@ -845,6 +895,19 @@ export function ManualTab() {
                   <td className="text-center py-0.5">
                     <button
                       type="button"
+                      onClick={() => saveRowNow(row._id)}
+                      disabled={Boolean(row.savedOrderId) || row.submitStatus === 'pending'}
+                      title={row.savedOrderId ? '저장 완료' : '이 행 저장'}
+                      className="p-1 text-brand-600 hover:text-brand-800 disabled:text-green-500 disabled:cursor-default transition-colors"
+                    >
+                      {row.submitStatus === 'pending'
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : row.savedOrderId
+                          ? <CheckCircle className="w-3.5 h-3.5" />
+                          : <Save className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
                       tabIndex={-1}
                       onClick={() => deleteRow(rowIdx)}
                       className="p-1 text-gray-300 hover:text-red-500 transition-colors"
@@ -858,6 +921,17 @@ export function ManualTab() {
           </tbody>
         </table>
       </div>
+
+      {rows.some((row) => row.submitStatus === 'error' && row.submitError) && (
+        <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          <p className="font-bold">저장하지 못한 행이 있습니다.</p>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {rows.map((row, index) => row.submitStatus === 'error' && row.submitError ? (
+              <li key={row._id}>{index + 1}행: {row.submitError}</li>
+            ) : null)}
+          </ul>
+        </div>
+      )}
 
       {/* 지역 외 경고 배너 */}
       {rows.some((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride) && (

@@ -964,7 +964,7 @@ export function Orders() {
           <div className="h-4 w-px bg-gray-200 shrink-0" />
           <div className="flex items-center gap-1 flex-wrap">
             {tabBtn('list', ClipboardList, '주문목록')}
-            {tabBtn('manual', TableProperties, '직접입력')}
+            {tabBtn('manual', TableProperties, '신규 주문 접수')}
             <button
               onClick={() => setExcelModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-all whitespace-nowrap"
