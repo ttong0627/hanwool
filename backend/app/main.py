@@ -23,6 +23,7 @@ from app.utils.market_day import today_kst
 from app.websocket.handler import manager
 
 logger = logging.getLogger(__name__)
+order_event_logger = logging.getLogger("uvicorn.error")
 
 # ── 배송 지연 자동 감지 (5분마다 실행) ─────────────────────────────────────
 DELAY_THRESHOLD_MINUTES = 45   # in_transit 후 45분 초과 시 지연 처리
@@ -123,7 +124,7 @@ async def trace_order_writes(request: Request, call_next):
         and request.url.path.startswith("/api/v1/orders")
     )
     if is_order_write:
-        logger.info(
+        order_event_logger.info(
             "order_write_received request_id=%s method=%s path=%s",
             request_id,
             request.method,
@@ -133,7 +134,7 @@ async def trace_order_writes(request: Request, call_next):
         response = await call_next(request)
     except Exception as exc:
         if is_order_write:
-            logger.error(
+            order_event_logger.error(
                 "order_write_failed request_id=%s method=%s path=%s status=500 duration_ms=%d error_type=%s",
                 request_id,
                 request.method,
@@ -146,7 +147,7 @@ async def trace_order_writes(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     if is_order_write:
         event = "order_write_failed" if response.status_code >= 400 else "order_write_completed"
-        logger.info(
+        order_event_logger.info(
             "%s request_id=%s method=%s path=%s status=%d duration_ms=%d",
             event,
             request_id,
