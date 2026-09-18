@@ -78,6 +78,19 @@ def _enforce_reception_window(role: str) -> None:
     return
 
 
+def _enforce_delivery_zone(role: str, resolution, requested_dong: str, dong_override: bool) -> None:
+    """서비스 지역 외 주소는 관리자 이상이 명시적으로 승인한 경우만 허용한다."""
+    resolved_dong = resolution.service_dong or resolution.legal_emd or requested_dong
+    is_out_of_zone = bool(resolved_dong and resolved_dong not in VALID_DONGS)
+    if dong_override and role not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="서비스 지역 외 강제등록은 관리자만 가능합니다.")
+    if is_out_of_zone and not dong_override:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{resolved_dong}은(는) 서비스 지역 외입니다. 관리자 강제등록 승인이 필요합니다.",
+        )
+
+
 def _today_start() -> datetime:
     return datetime.combine(today_kst(), datetime.min.time())
 
@@ -394,6 +407,7 @@ async def create_single_order(
     """ManualTab/QR/Excel 단건 자동저장 — 행 완성 즉시 호출"""
     _enforce_reception_window(current_user.role)
     address_resolution = await resolve_address(data.delivery_address, db)
+    _enforce_delivery_zone(current_user.role, address_resolution, data.dong, data.dong_override)
 
     # 사용자가 명시적으로 선택한 dong이 유효하면 최우선 사용 (address_resolution이 다른 동을 반환해도 무시)
     if data.dong in VALID_DONGS:
@@ -405,22 +419,33 @@ async def create_single_order(
     lat = data.lat or address_resolution.lat
     lng = data.lng or address_resolution.lng
 
-    # ── 멱등 처리: 같은 행(client_row_id)이 이미 미배차(pending)로 저장돼 있으면
-    #    새 주문을 만들지 말고 그 주문을 갱신한다 → 오타/영문 수정 시 중복 등록 방지
+    # ── 멱등 처리: 같은 행(client_row_id)이 있으면 새 주문을 만들지 않는다.
+    #    미배차(pending)는 갱신하고, 이미 배차된 주문은 원본을 그대로 반환한다.
     if data.client_row_id:
+        # 같은 접수자/행 키 요청을 트랜잭션 단위로 직렬화한다. SELECT→INSERT 사이
+        # 동시 요청도 두 주문을 만들 수 없고, DB 유일 인덱스가 마지막 방어선이 된다.
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"manual-order:{current_user.id}:{data.client_row_id}"},
+        )
         existing = (
             await db.execute(
                 select(Order)
                 .where(
                     Order.client_row_id == data.client_row_id,
                     Order.receiver_id == current_user.id,
-                    Order.status == OrderStatus.pending.value,
                 )
                 .order_by(Order.id.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()
         if existing:
+            if existing.status != OrderStatus.pending.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail="이미 배차가 시작된 주문입니다. 주문 관리 화면에서 수정해 주세요.",
+                )
+
             from app.core.security import encrypt_field, hash_phone
             from app.services.customer_service import upsert_customer
 
@@ -433,9 +458,9 @@ async def create_single_order(
             existing.request = data.request
             existing.dong_override = data.dong_override
             existing.dong = effective_dong
+            apply_resolution_to_order(existing, address_resolution, fallback_dong=effective_dong)
             if data.detail_address is not None:
                 existing.detail_address = data.detail_address or None
-            apply_resolution_to_order(existing, address_resolution, fallback_dong=effective_dong)
             if lat and lng:
                 existing.lat = lat
                 existing.lng = lng
@@ -493,7 +518,14 @@ async def create_order(
     elif current_user.role not in {"receiver", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="주문 접수 권한이 없습니다.")
 
-    order = await order_service.create_order(db, data, current_user.id)
+    address_resolution = await resolve_address(data.delivery_address, db)
+    _enforce_delivery_zone(current_user.role, address_resolution, data.dong, data.dong_override)
+    order = await order_service.create_order(
+        db,
+        data,
+        current_user.id,
+        _pre_resolved=address_resolution,
+    )
     return order_service.decrypt_order(order)
 
 
@@ -2040,6 +2072,7 @@ async def batch_create_orders(
             address_resolution = await resolve_address(address, db)
             dong = address_resolution.service_dong or row.get("dong", "경안동")
             dong_override = bool(row.get("dong_override", False))
+            _enforce_delivery_zone(current_user.role, address_resolution, dong, dong_override)
 
             order_data = OrderCreate(
                 customer_name=row.get("customer_name", ""),

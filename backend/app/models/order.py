@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,6 +19,15 @@ class OrderStatus(str, PyEnum):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        Index(
+            "uq_orders_receiver_client_row_id",
+            "receiver_id",
+            "client_row_id",
+            unique=True,
+            postgresql_where=text("client_row_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     order_no: Mapped[str] = mapped_column(String(20), unique=True, index=True)
@@ -76,7 +85,7 @@ class Order(Base):
     address_reviewed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', index=True)
     # 직접입력 행 멱등키 — 같은 행을 다시 저장(오타/영문 수정)해도 중복 생성 대신 갱신
-    client_row_id: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
+    client_row_id: Mapped[str] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_up_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

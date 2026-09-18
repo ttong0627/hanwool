@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -103,6 +105,57 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _safe_request_id(value: str | None) -> str:
+    if value and len(value) <= 64 and all(ch.isalnum() or ch in "-_." for ch in value):
+        return value
+    return uuid.uuid4().hex[:12]
+
+
+@app.middleware("http")
+async def trace_order_writes(request: Request, call_next):
+    """주문 쓰기 요청의 도달 여부와 결과를 개인정보 없이 추적한다."""
+    request_id = _safe_request_id(request.headers.get("X-Request-ID"))
+    started = time.perf_counter()
+    is_order_write = (
+        request.method in {"POST", "PUT", "DELETE"}
+        and request.url.path.startswith("/api/v1/orders")
+    )
+    if is_order_write:
+        logger.info(
+            "order_write_received request_id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        if is_order_write:
+            logger.error(
+                "order_write_failed request_id=%s method=%s path=%s status=500 duration_ms=%d error_type=%s",
+                request_id,
+                request.method,
+                request.url.path,
+                round((time.perf_counter() - started) * 1000),
+                type(exc).__name__,
+            )
+        raise
+
+    response.headers["X-Request-ID"] = request_id
+    if is_order_write:
+        event = "order_write_failed" if response.status_code >= 400 else "order_write_completed"
+        logger.info(
+            "%s request_id=%s method=%s path=%s status=%d duration_ms=%d",
+            event,
+            request_id,
+            request.method,
+            request.url.path,
+            response.status_code,
+            round((time.perf_counter() - started) * 1000),
+        )
+    return response
 
 app.add_middleware(
     CORSMiddleware,

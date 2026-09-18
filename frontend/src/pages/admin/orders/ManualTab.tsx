@@ -29,12 +29,12 @@ function AddrIcon({ status }: { status: AddrStatus }) {
 }
 
 function RowStatusDot({ row, onRetry }: { row: StagingRow; onRetry?: () => void }) {
-  if (row.savedOrderId) return <span title="저장 완료" className="text-green-500 text-xs">✓</span>
   if (row.submitStatus === 'pending') return <Loader2 className="w-3 h-3 text-orange-400 animate-spin" />
   if (row.submitStatus === 'error') return (
     <button title={`오류: ${row.submitError}\n클릭하면 재시도`} onClick={onRetry}
       className="text-red-400 text-xs hover:text-red-600 font-bold cursor-pointer leading-none">!</button>
   )
+  if (row.savedOrderId) return <span title="저장 완료" className="text-green-500 text-xs">✓</span>
   return <span className="text-gray-300 text-xs">●</span>
 }
 
@@ -49,6 +49,9 @@ function rowValidationError(row: StagingRow): string | null {
   if (!row.dong.trim()) return '배송동을 확인하세요.'
   if (row.addrStatus === 'idle') return '주소 확인이 필요합니다.'
   if (row.addrStatus === 'validating') return '주소 확인이 끝날 때까지 기다려 주세요.'
+  if (row.dongStatus === 'out-of-zone' && !row.dongOverride) {
+    return '서비스 지역 외 주소입니다. 관리자가 강제등록을 승인해야 합니다.'
+  }
   if (!Number.isInteger(row.quantity) || row.quantity < 1 || row.quantity > 999) {
     return '수량은 1~999 사이의 숫자로 입력하세요.'
   }
@@ -70,6 +73,22 @@ function apiErrorMessage(err: unknown): string {
     if (messages.length) return messages.join(', ')
   }
   return '저장에 실패했습니다. 입력값을 확인한 뒤 다시 저장해 주세요.'
+}
+
+function rowWriteSignature(row: StagingRow): string {
+  return JSON.stringify([
+    row.customer_name,
+    row.customer_phone,
+    row.addrRefined ?? row.delivery_address,
+    row.detail_address,
+    row.dong,
+    row.items_desc,
+    row.quantity,
+    row.request,
+    row.lat,
+    row.lng,
+    Boolean(row.dongOverride),
+  ])
 }
 
 // 컬럼별 IME 메타
@@ -159,8 +178,8 @@ export function ManualTab() {
   const updateCell = useCallback((rowIdx: number, key: ColKey, value: string | number) => {
     setRows(prev => prev.map((r, i) => i === rowIdx ? {
       ...r, [key]: value,
-      // 저장 실패 상태에서 편집하면 재시도 가능하도록 초기화
-      ...(r.submitStatus === 'error' && !r.savedOrderId ? { submitStatus: undefined, submitError: undefined } : {}),
+      // 저장 완료 행을 수정하면 동일 client_row_id로 다시 저장해 기존 주문을 갱신한다.
+      savedOrderId: undefined, submitStatus: undefined, submitError: undefined,
     } : r))
   }, [])
 
@@ -201,13 +220,16 @@ export function ManualTab() {
         request: row.request || undefined,
         lat: row.lat,
         lng: row.lng,
-        dong_override: true,
+        dong_override: Boolean(row.dongOverride),
         // 행 멱등키: 같은 행을 다시 저장(오타/영문 수정)해도 중복 생성 대신 기존 주문 갱신
         client_row_id: row._id,
-      })
+      }, { timeout: 15_000 })
       const savedId: number = res.data.id
       setRows(prev => prev.map((item) =>
-        item._id === rowId ? { ...item, savedOrderId: savedId, item_code: res.data.item_code ?? item.item_code, submitStatus: 'success', submitError: undefined } : item
+        item._id !== rowId ? item :
+          rowWriteSignature(item) !== rowWriteSignature(row)
+            ? { ...item, savedOrderId: undefined, submitStatus: undefined, submitError: undefined }
+            : { ...item, savedOrderId: savedId, item_code: res.data.item_code ?? item.item_code, submitStatus: 'success', submitError: undefined }
       ))
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['customers'] })
@@ -256,17 +278,18 @@ export function ManualTab() {
         ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
         addrStatus: 'idle',
         dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
+        dongOverride: false,
         dong: detected ?? r.dong, // 기존 dong 값 유지 (cleared → auto-save 실패 방지)
       } : r))
       return
     }
     setRows(prev => prev.map((r, i) => i === rowIdx ? {
       ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
-      addrStatus: 'validating', ...(detected ? { dong: detected } : {}),
+      addrStatus: 'validating', dongOverride: false, ...(detected ? { dong: detected } : {}),
     } : r))
     addrTimers[rowId] = setTimeout(async () => {
       try {
-        const res = await api.post('/addresses/resolve', { address: value })
+        const res = await api.post('/addresses/resolve', { address: value }, { timeout: 15_000 })
         const {
           lat,
           lng,
@@ -299,7 +322,7 @@ export function ManualTab() {
           matchStatus: match_status,
           matchScore: match_score,
           coordSource: coord_source,
-          dongStatus, dong: refinedDong ?? anyDong ?? r.dong, savedOrderId: undefined, submitStatus: undefined,
+          dongStatus, dongOverride: false, dong: refinedDong ?? anyDong ?? r.dong, savedOrderId: undefined, submitStatus: undefined,
         } : r))
       } catch {
         const fallbackDong = detectDong(value)
@@ -338,7 +361,7 @@ export function ManualTab() {
       await Promise.all(chunk.map(async ({ row, idx }) => {
         const value = row.delivery_address
         try {
-          const res = await api.post('/addresses/resolve', { address: value })
+          const res = await api.post('/addresses/resolve', { address: value }, { timeout: 15_000 })
           const { lat, lng, standard_road_address, legal_emd, service_dong, match_status, match_score, coord_source } = res.data
           const displayAddress = standard_road_address ?? value
           const detectedFromAddr = detectDong(displayAddress) ?? detectDong(value)
@@ -360,7 +383,7 @@ export function ManualTab() {
             matchStatus: match_status,
             matchScore: match_score,
             coordSource: coord_source,
-            dongStatus,
+            dongStatus, dongOverride: false,
             dong: refinedDong ?? anyDong ?? r.dong,
             savedOrderId: undefined,
             submitStatus: undefined,
@@ -473,7 +496,7 @@ export function ManualTab() {
           const detected = detectDong(normalized)
           const dongStatus: DongStatus = detected ? 'valid' : 'out-of-zone'
           newRows[rowIdx] = {
-            ...newRows[rowIdx], delivery_address: normalized, dongStatus,
+            ...newRows[rowIdx], delivery_address: normalized, dongStatus, dongOverride: false,
             savedOrderId: undefined, submitStatus: undefined,
             ...(detected ? { dong: detected } : {}),
           }
@@ -509,22 +532,6 @@ export function ManualTab() {
   }
 
   const addBatch = () => setRows(prev => [...prev, ...Array.from({ length: 5 }, () => EMPTY_ROW())])
-
-  // 저장 완료 행의 선택 필드(detail_address/items_desc/request) 변경 시 부분 업데이트
-  const triggerPartialUpdate = (rowIdx: number, key: 'detail_address' | 'items_desc' | 'request' | 'quantity') => {
-    const row = rowsRef.current[rowIdx]
-    if (!row?.savedOrderId) return
-    const timerId = `partial_${row._id}_${key}`
-    clearTimeout(saveTimers[timerId])
-    saveTimers[timerId] = setTimeout(async () => {
-      const cur = rowsRef.current[rowIdx]
-      if (!cur?.savedOrderId) return
-      try {
-        await api.put(`/orders/${cur.savedOrderId}`, { [key]: cur[key] || undefined })
-        qc.invalidateQueries({ queryKey: ['orders'] })
-      } catch { /* silent */ }
-    }, 900)
-  }
 
   // IME 경고 토스트 — 화면 우상단 고정
   const ImeWarnToast = koreanWarn && (
@@ -746,6 +753,7 @@ export function ManualTab() {
                           <div className="flex items-center gap-0.5 pr-1">
                             <input
                               ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                              disabled={row.submitStatus === 'pending'}
                               className={cellCls + ' flex-1'}
                               value={row.delivery_address}
                               lang="ko"
@@ -783,6 +791,7 @@ export function ManualTab() {
                         ) : isDetail ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            disabled={row.submitStatus === 'pending'}
                             lang="ko"
                             autoComplete="off"
                             className={cellCls}
@@ -794,7 +803,6 @@ export function ManualTab() {
                               const v = koValue(e.target.value, cellKey)
                               checkKoreanIME(v, rowIdx, colIdx, 'detail_address')
                               updateCell(rowIdx, 'detail_address', v)
-                              triggerPartialUpdate(rowIdx, 'detail_address')
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -807,13 +815,25 @@ export function ManualTab() {
                             ) : row.addrStatus === 'validating' ? (
                               <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />
                             ) : row.dongStatus === 'out-of-zone' ? (
-                              <span
-                                className="text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded flex items-center gap-0.5 w-full justify-center"
-                                title="배송 대상 18개 동 외 — 저장은 허용됩니다"
-                              >
-                                <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
-                                {row.dong || '지역 외'}
-                              </span>
+                              row.dongOverride ? (
+                                <span className="text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-1 py-0.5 rounded text-center">
+                                  강제승인<br/>{row.dong || '지역 외'}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!isAdmin || row.submitStatus === 'pending'}
+                                  onClick={() => setRows(prev => prev.map((item) =>
+                                    item._id === row._id
+                                      ? { ...item, dongOverride: true, savedOrderId: undefined, submitStatus: undefined, submitError: undefined }
+                                      : item
+                                  ))}
+                                  className="text-[9px] font-bold bg-orange-100 text-orange-700 border border-orange-300 px-1 py-0.5 rounded w-full"
+                                  title="서비스 지역 외 주소를 관리자 권한으로 강제등록"
+                                >
+                                  강제등록<br/>{row.dong || '지역 외'}
+                                </button>
+                              )
                             ) : (row.dong && row.dongStatus === 'valid') ? (
                               <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 {row.dong}
@@ -825,6 +845,7 @@ export function ManualTab() {
                         ) : isQty ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            disabled={row.submitStatus === 'pending'}
                             type="number"
                             min={1}
                             inputMode="numeric"
@@ -835,7 +856,6 @@ export function ManualTab() {
                             onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
                             onChange={(e) => {
                               updateCell(rowIdx, 'quantity', Number(e.target.value))
-                              triggerPartialUpdate(rowIdx, 'quantity')
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -843,6 +863,7 @@ export function ManualTab() {
                         ) : isPhone ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            disabled={row.submitStatus === 'pending'}
                             type="tel"
                             inputMode="tel"
                             lang="en"
@@ -869,6 +890,7 @@ export function ManualTab() {
                         ) : (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
+                            disabled={row.submitStatus === 'pending'}
                             lang={meta?.lang ?? 'ko'}
                             autoComplete="off"
                             className={cellCls}
@@ -880,9 +902,6 @@ export function ManualTab() {
                               const v = isKoField ? koValue(e.target.value, cellKey) : e.target.value
                               checkKoreanIME(v, rowIdx, colIdx, key)
                               updateCell(rowIdx, key, v)
-                              if (key === 'items_desc' || key === 'request') {
-                                triggerPartialUpdate(rowIdx, key as 'items_desc' | 'request')
-                              }
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -909,8 +928,9 @@ export function ManualTab() {
                     <button
                       type="button"
                       tabIndex={-1}
+                      disabled={row.submitStatus === 'pending'}
                       onClick={() => deleteRow(rowIdx)}
-                      className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                      className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

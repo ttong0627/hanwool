@@ -500,9 +500,9 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
     },
   })
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = useKstToday()
   const { data: todayData } = useQuery({
-    queryKey: ['orders-today-flagged'],
+    queryKey: ['orders-today-flagged', today],
     queryFn: () => api.get('/orders', {
       params: { date_from: today, date_to: today, page_size: 100 }
     }).then((r) => r.data),
@@ -733,14 +733,29 @@ function StagingPanel({ onFixed }: { onFixed: () => void }) {
 }
 
 /* ── 주문 목록 탭 ──────────────────────────────────────────────────────────── */
-function todayLocalStr() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+function todayKstStr(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function useKstToday() {
+  const [today, setToday] = useState(() => todayKstStr())
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = todayKstStr()
+      setToday((current) => current === next ? current : next)
+    }, 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return today
 }
 
 function OrderListTab() {
   const qc = useQueryClient()
-  const today = todayLocalStr()
+  const today = useKstToday()
   const [dong, setDong] = useState('')
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
@@ -752,6 +767,17 @@ function OrderListTab() {
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null)
   const [historyTarget, setHistoryTarget] = useState<Order | null>(null)
+  const previousTodayRef = useRef(today)
+
+  useEffect(() => {
+    const previousToday = previousTodayRef.current
+    if (dateFrom === previousToday && dateTo === previousToday) {
+      setDateFrom(today)
+      setDateTo(today)
+      setPage(1)
+    }
+    previousTodayRef.current = today
+  }, [today]) // 자정 롤오버 시 기본 '오늘' 필터만 새 날짜로 이동
 
   const { data, isLoading } = useQuery({
     queryKey: ['orders', { dong, status, page, dateFrom, dateTo }],
@@ -819,9 +845,8 @@ function OrderListTab() {
   const hasFilter = !!(dong || status || search || dateFrom !== today || dateTo !== today)
 
   const setRange = (days: number) => {
-    const from = new Date()
-    from.setDate(from.getDate() - days)
-    const fromStr = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`
+    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    const fromStr = todayKstStr(from)
     setDateFrom(fromStr); setDateTo(today); setPage(1)
   }
 
