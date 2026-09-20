@@ -3,12 +3,13 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Truck, Users, BarChart3, LogOut,
   Shield, QrCode, UserCog, MapPin, Route, UserCircle, FileCheck2,
-  PanelLeftClose, PanelLeftOpen, PackageCheck, Settings, AlertCircle,
+  PanelLeftClose, PanelLeftOpen, PackageCheck, Settings, AlertCircle, RefreshCw,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { HanwoolLogo } from './HanwoolLogo'
+import { useAppUpdate } from '@/lib/useAppUpdate'
 
 const adminNavs = [
   { to: '/admin',                    icon: LayoutDashboard, label: '대시보드' },
@@ -99,6 +100,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => { alive = false; clearInterval(timer) }
   }, [user?.role])
 
+  const updateAvailable = useAppUpdate()
+
   return (
     <div
       className="flex h-screen"
@@ -106,6 +109,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
         background: 'linear-gradient(180deg, #f8fafc 0%, #f4f6fa 46%, #edf1f6 100%)',
       }}
     >
+      {/* 새 버전 알림 — 화면을 켜 둔 채 쓰면 배포돼도 옛 화면이 남는다.
+          입력 중인 내용이 날아가지 않도록 새로고침은 직접 누르게 한다. */}
+      {updateAvailable && (
+        <div className="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-brand-600 text-white px-4 py-3 rounded-xl shadow-2xl max-w-sm">
+          <RefreshCw className="w-5 h-5 shrink-0" />
+          <div className="leading-tight">
+            <p className="font-bold text-sm">새 버전이 배포되었습니다</p>
+            <p className="text-xs opacity-90 mt-0.5">입력 중인 내용을 저장한 뒤 눌러 주세요.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="ml-1 shrink-0 bg-white text-brand-700 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-brand-50"
+          >
+            새로고침
+          </button>
+        </div>
+      )}
       <aside
         className={cn(
           'flex flex-col shrink-0 transition-[width] duration-200',

@@ -3,7 +3,7 @@
  * - 정적 자산: stale-while-revalidate
  * - API/WS/사진/다운로드/헬스: SW가 가로채지 않음(항상 네트워크 — 인증·실시간 보호)
  */
-const CACHE_NAME = 'hanwool-v1'
+const CACHE_NAME = 'hanwool-v2'
 const CORE_ASSETS = [
   '/',
   '/index.html',
@@ -39,6 +39,10 @@ self.addEventListener('fetch', (event) => {
   // 동적/인증/실시간 경로는 SW가 손대지 않는다 (항상 네트워크)
   const passthrough = ['/api/', '/ws', '/photos/', '/downloads/', '/health']
   if (passthrough.some((p) => url.pathname.startsWith(p))) return
+
+  // 쿼리가 붙은 요청(새 버전 확인 등)은 가로채지 않는다.
+  // 캐시를 거치면 배포 여부를 알 수 없고, 매번 다른 URL이라 캐시만 쌓인다.
+  if (url.search) return
 
   // HTML 문서: network-first
   if (req.mode === 'navigate' || req.destination === 'document') {
