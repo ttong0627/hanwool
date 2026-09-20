@@ -106,6 +106,11 @@ const CELL_META: Partial<Record<ColKey, { lang: 'ko' | 'en'; inputMode?: HTMLInp
 export function ManualTab() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const roleLabel =
+    user?.role === 'super_admin' ? '최고관리자'
+    : user?.role === 'admin' ? '관리자'
+    : user?.role === 'receiver' ? '접수담당'
+    : '권한 없음'
   const qc = useQueryClient()
 
   const [rows, setRows] = useState<StagingRow[]>(() => [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])
@@ -114,6 +119,9 @@ export function ManualTab() {
   const savingRowIdsRef = useRef(new Set<string>())
   const cellRefs = useRef<CellRef[][]>([])
   const activeCell = useRef<{ row: number; col: number }>({ row: 0, col: 0 })
+  // 지금 손대고 있는 행 — 이 행은 입력이 끝날 때까지 자동저장하지 않는다.
+  const [editingRowId, setEditingRowId] = useState<string | null>(null)
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>()
 
   // ── IME 경고 시스템 ────────────────────────────────────────────────────────
   const [koreanWarn, setKoreanWarn] = useState(false)
@@ -147,13 +155,29 @@ export function ManualTab() {
     })
   }, [])
 
-  /** 한글 칸의 입력값을 한글로 보정한다. IME 조합 중이거나 영문이 없으면 원본 그대로. */
-  const koValue = useCallback((raw: string, cellKey: string) => {
-    if (!autoHangul) return raw
-    if (composingRef.current[cellKey]) return raw
-    if (!hasLatinLetter(raw)) return raw
-    return latinToHangul(raw)
-  }, [autoHangul])
+  // ── 칸 단위 영문 고정 ──────────────────────────────────────────────────────
+  // 한글이 기본이지만 담당자가 영문을 택한 칸(한/영 키·되돌리기)은 그대로 둔다.
+  // 키는 행 _id 기반 — 행을 지워 인덱스가 밀려도 따라가지 않는다.
+  const [enCells, setEnCells] = useState<Record<string, true>>({})
+  // 방금 한글로 바꾼 칸의 원문 — Esc 또는 되돌리기 배지로 복구한다.
+  const [revertInfo, setRevertInfo] = useState<{ cellId: string; prev: string } | null>(null)
+  const revertTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  /** 되돌리기 안내를 띄운다. 6초 뒤 스스로 사라져 화면을 가리지 않는다. */
+  const offerRevert = useCallback((cellId: string, prev: string) => {
+    setRevertInfo({ cellId, prev })
+    clearTimeout(revertTimer.current)
+    revertTimer.current = setTimeout(() => setRevertInfo(null), 6000)
+  }, [])
+
+  const cellIdOf = useCallback((rowIdx: number, key: ColKey) => {
+    const id = rowsRef.current[rowIdx]?._id ?? String(rowIdx)
+    return `${id}:${key}`
+  }, [])
+
+  const markEnglishCell = useCallback((cellId: string) => {
+    setEnCells(prev => (prev[cellId] ? prev : { ...prev, [cellId]: true }))
+  }, [])
 
   const checkKoreanIME = useCallback((value: string, rowIdx: number, colIdx: number, key: ColKey) => {
     if (autoHangul) return // 자동 변환이 켜져 있으면 경고할 일이 없다
@@ -249,91 +273,187 @@ export function ManualTab() {
     }
   }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
 
-  const saveRowNow = useCallback((rowId: string) => {
-    clearTimeout(saveTimers[rowId])
-    void autoSaveRow(rowId, true)
-  }, [autoSaveRow])
-
   useEffect(() => {
     rows.forEach((row) => {
       if (row.savedOrderId) return
+      // 손대고 있는 행은 저장하지 않는다 — 입력 도중에 저장이 끼어들어 끊기는 것을 막는다.
+      if (row._id === editingRowId) { clearTimeout(saveTimers[row._id]); return }
       const isReady =
         row.customer_name && row.customer_phone && row.delivery_address && row.dong &&
         (row.addrStatus === 'valid' || row.addrStatus === 'invalid')
       if (!isReady) return
       if (row.submitStatus === 'pending' || row.submitStatus === 'success' || row.submitStatus === 'error') return
       clearTimeout(saveTimers[row._id])
-      saveTimers[row._id] = setTimeout(() => void autoSaveRow(row._id), 1200)
+      saveTimers[row._id] = setTimeout(() => void autoSaveRow(row._id), 600)
     })
-  }, [rows]) // eslint-disable-line
+  }, [rows, editingRowId]) // eslint-disable-line
 
   // ── 주소 변경 ─────────────────────────────────────────────────────────────
+  // 타이핑 중에는 값을 손대지 않는다. 정규화(앞머리 제거·trim)와 주소 확인은
+  // 칸에서 손을 뗄 때(blur/Enter/Tab)만 한다 — 입력 중 캐럿이 끝으로 튀거나
+  // 확인 요청이 끼어들어 입력이 끊기는 것을 막는다.
   const handleAddressChange = useCallback((rowIdx: number, rawValue: string) => {
-    const value = normalizeAddress(rawValue)
-    const detected = detectDong(value)
     const rowId = rowsRef.current[rowIdx]?._id ?? String(rowIdx)
     clearTimeout(addrTimers[rowId])
+    const detected = detectDong(rawValue)
+    setRows(prev => prev.map((r, i) => i === rowIdx ? {
+      ...r,
+      delivery_address: rawValue,
+      savedOrderId: undefined, submitStatus: undefined, submitError: undefined,
+      addrStatus: 'idle',
+      dongOverride: false,
+      dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
+      dong: detected ?? r.dong,
+    } : r))
+  }, [])
+
+  /** 한 행의 주소를 서버에 확인한다. 칸에서 손을 뗄 때만 호출된다. */
+  const resolveAddressRow = useCallback(async (rowIdx: number, overrideAddress?: string) => {
+    const current = rowsRef.current[rowIdx]
+    if (!current) return
+    const value = normalizeAddress(overrideAddress ?? current.delivery_address)
+    const rowId = current._id
+    clearTimeout(addrTimers[rowId])
+
+    if (value !== current.delivery_address) {
+      setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, delivery_address: value } : r))
+    }
+    const changed = overrideAddress !== undefined && overrideAddress !== current.delivery_address
     if (!value || value.length < 5) {
+      const detected = detectDong(value)
       setRows(prev => prev.map((r, i) => i === rowIdx ? {
-        ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
-        addrStatus: 'idle',
+        ...r, addrStatus: 'idle', dong: detected ?? r.dong,
         dongStatus: detected ? (VALID_DONGS.has(detected) ? 'valid' : 'out-of-zone') : undefined,
-        dongOverride: false,
-        dong: detected ?? r.dong, // 기존 dong 값 유지 (cleared → auto-save 실패 방지)
       } : r))
       return
     }
-    setRows(prev => prev.map((r, i) => i === rowIdx ? {
-      ...r, delivery_address: value, savedOrderId: undefined, submitStatus: undefined,
-      addrStatus: 'validating', dongOverride: false, ...(detected ? { dong: detected } : {}),
-    } : r))
-    addrTimers[rowId] = setTimeout(async () => {
-      try {
-        const res = await api.post('/addresses/resolve', { address: value }, { timeout: 15_000 })
-        const {
-          lat,
-          lng,
-          standard_road_address,
-          legal_emd,
-          service_dong,
-          match_status,
-          match_score,
-          coord_source,
-        } = res.data
-        const displayAddress = standard_road_address ?? value
-        const detectedFromAddr = detectDong(displayAddress) ?? detectDong(value)
-        const refinedDong = (service_dong && VALID_DONGS.has(service_dong))
-          ? service_dong
-          : (legal_emd && VALID_DONGS.has(legal_emd))
-            ? legal_emd
+    if (!changed && current.addrStatus === 'valid' && current.addrRefined) return // 이미 확인된 주소는 재조회하지 않는다
+
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, addrStatus: 'validating' } : r))
+    try {
+      const res = await api.post('/addresses/resolve', { address: value }, { timeout: 15_000 })
+      const {
+        lat, lng, standard_road_address, legal_emd, service_dong,
+        match_status, match_score, coord_source,
+      } = res.data
+      const displayAddress = standard_road_address ?? value
+      const detectedFromAddr = detectDong(displayAddress) ?? detectDong(value)
+      const refinedDong = (service_dong && VALID_DONGS.has(service_dong))
+        ? service_dong
+        : (legal_emd && VALID_DONGS.has(legal_emd))
+          ? legal_emd
           : (detectedFromAddr && VALID_DONGS.has(detectedFromAddr)) ? detectedFromAddr : null
-        const anyDong = service_dong ?? legal_emd ?? (displayAddress ?? value).match(/([가-힣]+동)/)?.[1] ?? null
-        const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
-        const addrStatus: AddrStatus = match_status === 'not_found' ? 'invalid' : 'valid'
-        setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r,
-          addrStatus,
-          lat,
-          lng,
-          addrRefined: displayAddress,
-          standardRoadAddress: standard_road_address,
-          legalEmd: legal_emd,
-          serviceDong: service_dong,
-          matchStatus: match_status,
-          matchScore: match_score,
-          coordSource: coord_source,
-          dongStatus, dongOverride: false, dong: refinedDong ?? anyDong ?? r.dong, savedOrderId: undefined, submitStatus: undefined,
-        } : r))
-      } catch {
-        const fallbackDong = detectDong(value)
-        const fallbackDongStatus: DongStatus | undefined = fallbackDong
-          ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone') : undefined
-        setRows(prev => prev.map((r, i) => i === rowIdx ? {
-          ...r, addrStatus: 'invalid' as AddrStatus, dong: fallbackDong ?? r.dong, dongStatus: fallbackDongStatus,
-        } : r))
+      const anyDong = service_dong ?? legal_emd ?? (displayAddress ?? value).match(/([가-힣]+동)/)?.[1] ?? null
+      const dongStatus: DongStatus = refinedDong ? 'valid' : 'out-of-zone'
+      const addrStatus: AddrStatus = match_status === 'not_found' ? 'invalid' : 'valid'
+      setRows(prev => prev.map((r, i) => i === rowIdx ? {
+        ...r,
+        addrStatus, lat, lng,
+        addrRefined: displayAddress,
+        standardRoadAddress: standard_road_address,
+        legalEmd: legal_emd,
+        serviceDong: service_dong,
+        matchStatus: match_status,
+        matchScore: match_score,
+        coordSource: coord_source,
+        dongStatus, dongOverride: false,
+        dong: refinedDong ?? anyDong ?? r.dong,
+        savedOrderId: undefined, submitStatus: undefined,
+      } : r))
+    } catch {
+      const fallbackDong = detectDong(value)
+      const fallbackDongStatus: DongStatus | undefined = fallbackDong
+        ? (VALID_DONGS.has(fallbackDong) ? 'valid' : 'out-of-zone') : undefined
+      setRows(prev => prev.map((r, i) => i === rowIdx ? {
+        ...r, addrStatus: 'invalid' as AddrStatus,
+        dong: fallbackDong ?? r.dong, dongStatus: fallbackDongStatus,
+      } : r))
+    }
+  }, [])
+
+  /**
+   * 칸에서 손을 뗄 때 한 번만 보정한다.
+   * 1) 한글 칸에 영문이 남아 있으면 두벌식으로 되돌린다(영문 고정 칸은 제외)
+   * 2) 주소 칸이면 정규화 후 서버 확인을 실행한다
+   * 타이핑 도중에는 아무것도 하지 않으므로 캐럿이 끝으로 튀지 않는다.
+   */
+  const commitCell = useCallback((rowIdx: number, key: ColKey) => {
+    const row = rowsRef.current[rowIdx]
+    if (!row) return
+    const cellId = `${row._id}:${key}`
+    const raw = String(row[key] ?? '')
+    let next = raw
+
+    if (CELL_META[key]?.lang === 'ko' && autoHangul && !enCells[cellId] && hasLatinLetter(raw)) {
+      const converted = latinToHangul(raw)
+      if (converted !== raw) {
+        next = converted
+        offerRevert(cellId, raw)
       }
-    }, 600)
-  }, []) // rowsRef.current로 읽으므로 rows 의존성 불필요
+    }
+
+    if (key === 'customer_phone') {
+      const formatted = formatPhone(raw)
+      if (formatted !== raw) updateCell(rowIdx, key, formatted)
+      return
+    }
+
+    if (key === 'delivery_address') {
+      if (next !== raw) handleAddressChange(rowIdx, next)
+      void resolveAddressRow(rowIdx, next)
+      checkKoreanIME(next, rowIdx, COL_KEYS.indexOf(key), key)
+      return
+    }
+    if (next !== raw) updateCell(rowIdx, key, next)
+    checkKoreanIME(next, rowIdx, COL_KEYS.indexOf(key), key)
+  }, [autoHangul, enCells, handleAddressChange, resolveAddressRow, updateCell, checkKoreanIME, offerRevert])
+
+  /** 방금 한글로 바뀐 칸을 원래 영문으로 되돌리고, 그 칸을 영문 고정으로 표시한다. */
+  const revertCell = useCallback((rowIdx: number, key: ColKey): boolean => {
+    const row = rowsRef.current[rowIdx]
+    if (!row) return false
+    const cellId = `${row._id}:${key}`
+    if (!revertInfo || revertInfo.cellId !== cellId) return false
+    markEnglishCell(cellId)
+    if (key === 'delivery_address') handleAddressChange(rowIdx, revertInfo.prev)
+    else updateCell(rowIdx, key, revertInfo.prev)
+    clearTimeout(revertTimer.current)
+    setRevertInfo(null)
+    return true
+  }, [revertInfo, markEnglishCell, handleAddressChange, updateCell])
+
+  /**
+   * 저장 버튼 — 주소 확인이 아직이면 먼저 확인하고 저장한다.
+   * (확인을 칸 이탈 시점으로 미뤘기 때문에, 버튼을 바로 눌러도 막히지 않아야 한다.)
+   */
+  const saveRowNow = useCallback(async (rowId: string) => {
+    clearTimeout(saveTimers[rowId])
+    const rowIdx = rowsRef.current.findIndex((item) => item._id === rowId)
+    if (rowIdx >= 0) {
+      const row = rowsRef.current[rowIdx]
+      if (row.delivery_address && row.addrStatus !== 'valid' && row.addrStatus !== 'invalid') {
+        await resolveAddressRow(rowIdx)
+        // setRows 반영(리렌더) 후에 rowsRef가 최신이 된다. 한 틱 양보한 뒤 저장한다.
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
+    await autoSaveRow(rowId, true)
+  }, [autoSaveRow, resolveAddressRow])
+
+  /** 칸 진입 — 이 행을 "편집 중"으로 잡아 자동저장을 보류시킨다. */
+  const onCellFocus = useCallback((rowIdx: number, colIdx: number) => {
+    clearTimeout(leaveTimer.current)
+    activeCell.current = { row: rowIdx, col: colIdx }
+    const id = rowsRef.current[rowIdx]?._id ?? null
+    setEditingRowId(id)
+  }, [])
+
+  /** 칸 이탈 — 여기서만 값을 보정하고, 잠시 뒤 편집 표시를 푼다(같은 행 안 이동은 유지). */
+  const onCellBlur = useCallback((rowIdx: number, key: ColKey) => {
+    commitCell(rowIdx, key)
+    clearTimeout(leaveTimer.current)
+    leaveTimer.current = setTimeout(() => setEditingRowId(null), 200)
+  }, [commitCell])
 
   // ── 전체 주소 일괄 검증 ────────────────────────────────────────────────────
   const [validatingAll, setValidatingAll] = useState(false)
@@ -416,7 +536,26 @@ export function ManualTab() {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, rowIdx: number, colIdx: number) => {
       const maxRow = rowsRef.current.length - 1
+      const colKey = COL_KEYS[colIdx]
+
+      // 한/영 키 — 브라우저가 IME를 대신 켜 줄 수 없으므로, 이 칸의 영문 고정을 토글한다.
+      if (e.key === 'HangulMode' || e.code === 'Lang1' || e.code === 'Lang2') {
+        const cellId = cellIdOf(rowIdx, colKey)
+        setEnCells(prev => {
+          const next = { ...prev }
+          if (next[cellId]) delete next[cellId]
+          else next[cellId] = true
+          return next
+        })
+        return
+      }
+
       switch (e.key) {
+        case 'Escape': {
+          // 방금 한글로 바뀐 칸이면 원래 영문으로 되돌리고, 그 칸은 영문 고정이 된다.
+          if (revertCell(rowIdx, colKey)) e.preventDefault()
+          break
+        }
         case 'Enter': {
           e.preventDefault()
           if (colIdx === LAST_COL) {
@@ -468,7 +607,7 @@ export function ManualTab() {
           break
       }
     },
-    [addRow, focusCell, deleteRow]
+    [addRow, focusCell, deleteRow, revertCell, cellIdOf]
   )
 
   const applyTsvPaste = useCallback((text: string, startRow: number, startCol: number) => {
@@ -587,9 +726,21 @@ export function ManualTab() {
 
       {/* 툴바 */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
           <Save className="w-3.5 h-3.5 text-green-500" />
-          <span>필수 항목 입력 + 주소 확인 시 자동 저장 (지역 외도 저장 허용) | Ctrl+V 붙여넣기</span>
+          <span>칸을 벗어나면 주소 확인 · 행을 벗어나면 자동 저장 (입력 중에는 끼어들지 않습니다) | Ctrl+V 붙여넣기</span>
+          <span
+            title={isAdmin
+              ? '접수 권한이 있고, 서비스 지역 외 주소도 강제등록으로 승인할 수 있습니다.'
+              : '접수 권한이 있습니다. 다만 서비스 지역 외 주소는 관리자가 강제등록을 승인해야 저장됩니다.'}
+            className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border
+              ${isAdmin
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                : 'bg-slate-50 border-slate-300 text-slate-600'}`}
+          >
+            <ShieldCheck className="w-3 h-3" />
+            {roleLabel} · 접수 가능 · 지역 외 {isAdmin ? '강제등록 가능' : '관리자 승인 필요'}
+          </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* 영타 자동 한글 변환 토글 — 파란 열(한글 칸)에만 적용 */}
@@ -597,8 +748,8 @@ export function ManualTab() {
             type="button"
             onClick={toggleAutoHangul}
             title={autoHangul
-              ? '파란 열(한글 칸)에 영문이 들어오면 자동으로 한글로 바꿉니다. 한/영 키를 눌러도 됩니다.\n영문 이름 등을 그대로 입력하려면 눌러서 끄세요.'
-              : '자동 변환이 꺼져 있습니다. 한/영 키로 직접 전환해야 합니다.'}
+              ? '파란 열(한글 칸)은 칸에서 손을 뗄 때만 영문을 한글로 바꿔 줍니다.\n영문 그대로 두려면 그 칸에서 Esc — 그 칸은 이후 영문으로 고정됩니다.\n한/영 키로도 칸별 영문 고정을 켜고 끌 수 있습니다.'
+              : '자동 변환이 꺼져 있습니다. 입력한 그대로 저장됩니다.'}
             className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border transition-colors shrink-0
               ${autoHangul
                 ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
@@ -728,6 +879,9 @@ export function ManualTab() {
                     `
 
                     const cellKey = `${rowIdx}-${colIdx}`
+                    const cellId = `${row._id}:${key}`
+                    const isEnLocked = isKoField && Boolean(enCells[cellId])
+                    const showRevert = revertInfo?.cellId === cellId
 
                     return (
                       <td
@@ -737,9 +891,26 @@ export function ManualTab() {
                       >
                         {/* 포커스 배지 — CSS group-focus-within 으로 플리커 없이 표시 */}
                         {meta && (
-                          <span className={`absolute top-0 right-0 z-20 text-[8px] font-black px-1.5 py-px rounded-bl leading-none pointer-events-none select-none border invisible group-focus-within:visible ${meta.hintColor} ${meta.hintBg}`}>
-                            {meta.hint}
+                          <span className={`absolute top-0 right-0 z-20 text-[8px] font-black px-1.5 py-px rounded-bl leading-none pointer-events-none select-none border invisible group-focus-within:visible ${
+                            isEnLocked
+                              ? 'text-amber-700 bg-amber-100 border-amber-300'
+                              : `${meta.hintColor} ${meta.hintBg}`}`}>
+                            {isEnLocked ? '영문' : meta.hint}
                           </span>
+                        )}
+
+                        {/* 한글로 바뀐 직후 — 되돌리면 이 칸은 영문으로 고정된다 */}
+                        {showRevert && (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onMouseDown={(e) => { e.preventDefault(); revertCell(rowIdx, key) }}
+                            title="한글 변환을 취소하고 원래 영문으로 되돌립니다. 이 칸은 이후 영문으로 고정됩니다. (Esc)"
+                            className="absolute -top-7 left-0 z-50 flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-lg whitespace-nowrap"
+                          >
+                            <Keyboard className="w-3 h-3" />
+                            영문 유지 (Esc)
+                          </button>
                         )}
                         {/* IME 경고 툴팁 */}
                         {isWarn && (
@@ -753,19 +924,15 @@ export function ManualTab() {
                           <div className="flex items-center gap-0.5 pr-1">
                             <input
                               ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                              disabled={row.submitStatus === 'pending'}
                               className={cellCls + ' flex-1'}
                               value={row.delivery_address}
                               lang="ko"
                               autoComplete="off"
                               onCompositionStart={() => { composingRef.current[cellKey] = true }}
                               onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                              onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                              onChange={(e) => {
-                                const v = koValue(e.target.value, cellKey)
-                                checkKoreanIME(v, rowIdx, colIdx, 'delivery_address')
-                                handleAddressChange(rowIdx, v)
-                              }}
+                              onFocus={() => onCellFocus(rowIdx, colIdx)}
+                              onBlur={() => onCellBlur(rowIdx, 'delivery_address')}
+                              onChange={(e) => handleAddressChange(rowIdx, e.target.value)}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                               placeholder="주소 입력"
@@ -791,19 +958,15 @@ export function ManualTab() {
                         ) : isDetail ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            disabled={row.submitStatus === 'pending'}
                             lang="ko"
                             autoComplete="off"
                             className={cellCls}
                             value={row.detail_address}
                             onCompositionStart={() => { composingRef.current[cellKey] = true }}
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => {
-                              const v = koValue(e.target.value, cellKey)
-                              checkKoreanIME(v, rowIdx, colIdx, 'detail_address')
-                              updateCell(rowIdx, 'detail_address', v)
-                            }}
+                            onFocus={() => onCellFocus(rowIdx, colIdx)}
+                            onBlur={() => onCellBlur(rowIdx, 'detail_address')}
+                            onChange={(e) => updateCell(rowIdx, 'detail_address', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                             placeholder="동·호·층"
@@ -845,7 +1008,6 @@ export function ManualTab() {
                         ) : isQty ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            disabled={row.submitStatus === 'pending'}
                             type="number"
                             min={1}
                             inputMode="numeric"
@@ -853,7 +1015,8 @@ export function ManualTab() {
                             autoComplete="off"
                             className={cellCls + ' text-center'}
                             value={row.quantity}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
+                            onFocus={() => onCellFocus(rowIdx, colIdx)}
+                            onBlur={() => onCellBlur(rowIdx, 'quantity')}
                             onChange={(e) => {
                               updateCell(rowIdx, 'quantity', Number(e.target.value))
                             }}
@@ -863,15 +1026,21 @@ export function ManualTab() {
                         ) : isPhone ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            disabled={row.submitStatus === 'pending'}
                             type="tel"
                             inputMode="tel"
                             lang="en"
                             autoComplete="off"
                             className={cellCls}
                             value={row.customer_phone}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => updateCell(rowIdx, 'customer_phone', formatPhone(e.target.value))}
+                            onFocus={() => onCellFocus(rowIdx, colIdx)}
+                            onBlur={() => onCellBlur(rowIdx, 'customer_phone')}
+                            onChange={(e) => {
+                              // 캐럿이 맨 끝일 때만 하이픈을 넣는다. 중간을 고치는 중에는
+                              // 값을 바꾸지 않아야 커서가 끝으로 튀지 않는다(마무리는 blur에서).
+                              const el = e.target
+                              const atEnd = el.selectionStart === null || el.selectionStart === el.value.length
+                              updateCell(rowIdx, 'customer_phone', atEnd ? formatPhone(el.value) : el.value)
+                            }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
@@ -885,24 +1054,20 @@ export function ManualTab() {
                             className={cellCls + ' text-center font-mono text-gray-500 bg-gray-50 cursor-default'}
                             value={row.savedOrderId && row.item_code ? row.item_code : '자동'}
                             title="물품 코드는 저장 시 서버가 전역 일련번호(GA1-####)로 자동 부여합니다"
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx }; focusCell(rowIdx, nextCol(colIdx, 1)) }}
+                            onFocus={() => { onCellFocus(rowIdx, colIdx); focusCell(rowIdx, nextCol(colIdx, 1)) }}
                           />
                         ) : (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            disabled={row.submitStatus === 'pending'}
                             lang={meta?.lang ?? 'ko'}
                             autoComplete="off"
                             className={cellCls}
                             value={String(row[key] ?? '')}
                             onCompositionStart={() => { composingRef.current[cellKey] = true }}
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
-                            onFocus={() => { activeCell.current = { row: rowIdx, col: colIdx } }}
-                            onChange={(e) => {
-                              const v = isKoField ? koValue(e.target.value, cellKey) : e.target.value
-                              checkKoreanIME(v, rowIdx, colIdx, key)
-                              updateCell(rowIdx, key, v)
-                            }}
+                            onFocus={() => onCellFocus(rowIdx, colIdx)}
+                            onBlur={() => onCellBlur(rowIdx, key)}
+                            onChange={(e) => updateCell(rowIdx, key, e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
@@ -914,7 +1079,7 @@ export function ManualTab() {
                   <td className="text-center py-0.5">
                     <button
                       type="button"
-                      onClick={() => saveRowNow(row._id)}
+                      onClick={() => { void saveRowNow(row._id) }}
                       disabled={Boolean(row.savedOrderId) || row.submitStatus === 'pending'}
                       title={row.savedOrderId ? '저장 완료' : '이 행 저장'}
                       className="p-1 text-brand-600 hover:text-brand-800 disabled:text-green-500 disabled:cursor-default transition-colors"
@@ -965,7 +1130,11 @@ export function ManualTab() {
               감지된 동: {[...new Set(rows.filter((r) => r.dongStatus === 'out-of-zone' && !r.dongOverride).map((r) => r.dong).filter(Boolean))].join(', ')}
               &nbsp;— 배송 가능 지역: {DONG_LIST.join('·')}
             </p>
-            {isAdmin && <p className="text-xs mt-1 text-amber-700 font-medium">배송동 열의 "강제등록"을 눌러 허용할 수 있습니다.</p>}
+            <p className="text-xs mt-1 font-medium text-amber-700">
+              {isAdmin
+                ? '배송동 열의 "강제등록"을 눌러 허용할 수 있습니다.'
+                : `${roleLabel} 권한으로는 지역 외 주소를 저장할 수 없습니다. 관리자에게 강제등록 승인을 요청하세요.`}
+            </p>
           </div>
         </div>
       )}
