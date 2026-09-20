@@ -1,5 +1,5 @@
 # 📋 PROJECT STATUS — hanwool (경안시장 집배송)
-> 자동 생성: /확인 스킬 · 갱신 2026-09-20 12:38 KST
+> 자동 생성: /확인 스킬 · 갱신 2026-09-20 13:05 KST
 
 ## 식별
 - GitHub: **ttong0627/hanwool** (계정 세트: ttong0627) · 브랜치 `master`
@@ -34,7 +34,7 @@
 - 스왑: **2GB `/swapfile` 상시 활성** (2026-08-08 추가, `/etc/fstab` 등록, `vm.swappiness=20`). 빌드 OOM 방어선 — 끄지 말 것.
 - ⚠️ **배포·SSH 전 gcloud 계정 지정 필수**: 현재 active `ttong627@gmail.com`은 hanwool-delivery-2026 **권한 없음**. `--account=ttong0627@gmail.com` 또는 `gcloud config set account ttong0627@gmail.com`
 - DNS: `ga.wssc.kr`는 **Cloudflare(wssc.kr 존, ttong627@gmail.com 계정)** 관리. 2026-08-14 후이즈→Cloudflare 이전 때 `ga` 레코드가 누락돼 8/18 장날에 NXDOMAIN 사고 → 8/18 12:35 A 레코드(34.64.146.168) 재등록으로 복구. **도메인 접속 불가 시 Cloudflare DNS 레코드부터 확인.**
-- **운영 실측(2026-09-20 12:38, SSH 조회)**: VM HEAD `6fa72c2` · Alembic `a2b3c4d5e678 (head)` · backend 47시간·frontend 18분 가동 · db·redis·backup_db 6주 healthy → **로컬 = 원격 = 운영 완전 일치**
+- **운영 실측(2026-09-20 13:05, SSH 조회)**: VM HEAD `f9cc756` · Alembic `a2b3c4d5e678 (head)` · backend 47시간·frontend 18분 가동 · db·redis·backup_db 6주 healthy → **로컬 = 원격 = 운영 완전 일치**
 - 커밋·푸시: gh active 계정 `ttong0627` = repo owner → **일치(전환 불필요)**
 
 ## 앱 구성
@@ -47,7 +47,7 @@
 | 운영 스크립트 | `scripts/` | DB 백업 루프, GCS 오프사이트 동기화, 복구 | Bash |
 
 ## 마지막 작업
-- `6fa72c2` 2026-09-20 12:18 `fix(hangul): 'B동'을 'ㅠ동'으로 바꾸던 자동 변환 차단`
+- `f9cc756` 2026-09-20 13:00 `fix(orders): 칸을 옮길 때마다 한/영 키를 누르지 않게`
 - 요약: **직접 입력(신규 주문 접수) 화면 입력성 전면 개선** — 담당자가 "입력 중 자꾸 끊기고 커서가 끝으로 튄다"고 보고한 문제를 원인별로 해결
 
 | 커밋 | 내용 |
@@ -55,6 +55,7 @@
 | `f3ff8c6` | 한글 변환·주소 정규화·주소 확인을 **타이핑 중 → 칸 이탈(blur) 시점**으로 이동(캐럿 튐 제거) · 저장 중 입력칸 `disabled` 제거 · **편집 중인 행은 자동저장 보류**(행을 벗어난 뒤 저장) · 칸 단위 영문 고정(Esc/「영문 유지」/한영키) · 역할·권한 배지 |
 | `fca5008` | **새 버전 배포 알림**(`lib/useAppUpdate.ts`) — 화면을 켜 둔 채 쓰면 배포해도 옛 코드가 남는 문제. 우하단 안내만 띄우고 **자동 새로고침은 하지 않는다**. `sw.js`: 쿼리 붙은 요청 미가로채기 + 캐시 세대 v2 |
 | `5006724` | **레이아웃 흔들림 제거** — 주소 칸 상태 배지 자리 54px 선확보(확인 결과 도착 시 입력창이 좁아지며 글자가 밀리던 것), 툴바 버튼 최소 폭 고정, 행 배경 전환 500ms, 경고 토스트 bounce 제거 |
+| `f9cc756` | **한/영 키를 누를 일 자체를 없앰** — 전화·수량 칸의 `type="number"/"tel"`이 크롬에서 IME를 꺼 버려 다음 한글 칸마다 한/영을 눌러야 했다. `type="text"`+`inputMode`로 바꿔 IME 유지. 더해 한글 칸은 **치는 즉시** 한글로 보여 준다(칸별 영타 모드 1회 판단 + 커서가 끝일 때만) |
 | `6fa72c2` | 자동 한글 변환 가드 `shouldConvertToHangul()` — **한글이 섞여 있거나 대문자가 있으면 변환하지 않는다**(`B동 202호` → `ㅠ동 202호` 사고 차단). 검증: 실모듈 esbuild+node 9건 전부 통과 |
 
 ⚠️ 직접 입력 화면을 고칠 때 **「입력 중 자동 처리」를 다시 넣지 말 것**. 보정이 필요하면 `commitCell()`(칸 이탈)에 넣는다. 입력칸 `disabled`도 되살리지 않는다.
@@ -80,9 +81,9 @@
 - 테스트: `backend/tests/` 4종 — `test_market_day.py`(신규) · `test_order_permissions.py`(신규) · `test_dispatch_service.py` · `test_route_service.py`
 
 ## 동기화
-- 상태: **로컬 = 원격 = 운영 VM 모두 `6fa72c2`** (ahead 0 / behind 0 / 미커밋 0건)
-- 마지막 fetch: 2026-09-20 12:38 KST
-- 배포: frontend 단독 순차 빌드(`docker compose build frontend` → `up -d frontend`) 4회 수행, 전부 `DEPLOY_DONE`
+- 상태: **로컬 = 원격 = 운영 VM 모두 `f9cc756`** (ahead 0 / behind 0 / 미커밋 0건)
+- 마지막 fetch: 2026-09-20 13:05 KST
+- 배포: frontend 단독 순차 빌드(`docker compose build frontend` → `up -d frontend`) 5회 수행, 전부 `DEPLOY_DONE`
 
 ## 리스크
 - 🟢 **09-18 커밋 운영 반영 확인 완료 (2026-09-20 10:52 SSH 실측)** — VM `/opt/hanwool` HEAD = `33e5bc0`(로컬과 동일), `alembic current` = **`a2b3c4d5e678 (head)`**, 컨테이너 backend(healthy)·frontend 46시간 가동, db·redis·backup_db 6주 healthy
