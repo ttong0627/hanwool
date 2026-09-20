@@ -1,54 +1,82 @@
 # 📋 PROJECT STATUS — hanwool (경안시장 집배송)
-> 자동 갱신: 2026-09-18 KST
+> 자동 생성: /확인 스킬 · 갱신 2026-09-20 10:48 KST
 
 ## 식별
-- GitHub: `ttong0627/hanwool` · 브랜치 `master`
-- GCP: `hanwool-delivery-2026`
-- 운영: https://ga.wssc.kr · GCE `hanwool-server` / `asia-northeast3-a`
-- 로컬: `I:\ttong_project\hanwool`
+- GitHub: **ttong0627/hanwool** (계정 세트: ttong0627) · 브랜치 `master`
+- GCP 프로젝트: **hanwool-delivery-2026** (VM `hanwool-server` / `asia-northeast3-a` / 외부IP `34.64.146.168`)
+- 로컬 경로: `I:\ttong_project\hanwool` (**유일한 로컬 클론** — 8/18 기록의 `d:\TTong_newproject\hanwool`는 **현재 존재하지 않음**, 2026-09-20 실측)
 
-## 현재 작업
-- 배송 운영일을 장날 제한에서 365일 매일로 변경
-- 주문 접수 시간 제한을 제거하여 24시간 접수 허용
-- 기존 `market_date`, `is_market_day`, `market-status` 구조는 호환성을 위해 유지
-- 로그인한 기사 계정이 관리자 배정 없이 미배정 주문을 최대 40건까지 직접 가져와 배송 시작 가능
-- 기사 직접 배정도 `dispatch_runs`, `dispatch_run_items`, 주문 이력에 기록
-- 기존 관리자 추천·수동 배정 기능 유지
-- 동시 기사 요청은 PostgreSQL advisory lock과 row lock으로 중복 배정 방지
+## ⭐ 운영 정책 변경 (2026-09-17, 커밋 `55d22b0`) — 이전 인식 전면 폐기
+- **장날(3·8·13·18·23·28) 제한 폐지 → 365일 매일 배송**
+- **접수 시간 제한 폐지 → 24시간 상시 접수**
+- `market_date`·`is_market_day()`·`market-status`는 **이름만 호환 유지**, 실제 의미는 "배송 접수일"이며 `is_market_day()`/`is_reception_open()`은 **항상 True** (`backend/app/utils/market_day.py`)
+- **기사 자율 배정 신설**: 로그인한 기사 계정이 관리자 배정 없이 미배정 주문을 **최대 40건**까지 직접 가져와 배송 시작. `dispatch_runs`/`dispatch_run_items`·주문 이력에 기록. 동시 요청은 PostgreSQL advisory lock + row lock으로 중복 방지
+- 기존 관리자 수동·추천 배차 기능은 그대로 유지
+- 권한: 기사 직접 가져오기는 **활성 기사 계정 또는 기사 업무 부여 관리자만**. 고객 계정에 타 고객 배송정보 접근 권한 부여 금지
+
+## 배포 환경
+- 접속 URL: https://ga.wssc.kr · API `https://ga.wssc.kr/api/v1` · Health `https://ga.wssc.kr/health`
+- **헬스체크(2026-09-20 10:47): `/health` 200 (1.45s), `/` 200, `/api/v1/admin/market-status` 403(인증필요=라우트 정상) → 운영 정상**
+- 호스팅: GCE VM e2-small + Docker Compose (nginx + backend + postgres + redis + 백업컨테이너)
+- 빌드: `frontend` → `npm run build` / `desktop` → `npm run build:win` / `mobile` → `mobile/scripts/build-release.ps1`(로컬 Gradle APK, 서명 검증 포함)
+- 배포: ⚠️ **`docker compose up -d --build`(전체 동시 빌드) 절대 금지 — 2026-08-08 이 명령으로 VM이 멈췄다.**
+  e2-small은 메모리 2GB. Postgres·Redis·backend가 떠 있는 상태에서 `frontend/Dockerfile`의 `npm ci` + vite 빌드까지 동시에 돌리면 OOM으로 SSH까지 죽는다.
+  **반드시 한 서비스씩 순차 빌드:**
+  ```bash
+  git add . && git commit -m "..." && git push origin master
+  gcloud compute ssh hanwool-server --project=hanwool-delivery-2026 --zone=asia-northeast3-a \
+    --account=ttong0627@gmail.com \
+    --command="cd /opt/hanwool && sudo git pull && \
+      sudo docker compose build backend  && sudo docker compose up -d backend && \
+      sudo docker compose build frontend && sudo docker compose up -d frontend"
+  ```
+  긴 빌드는 SSH가 끊겨도 이어지도록 `setsid nohup ... > /tmp/deploy.log 2>&1 &`로 띄우고 로그를 폴링한다.
+- 스왑: **2GB `/swapfile` 상시 활성** (2026-08-08 추가, `/etc/fstab` 등록, `vm.swappiness=20`). 빌드 OOM 방어선 — 끄지 말 것.
+- ⚠️ **배포·SSH 전 gcloud 계정 지정 필수**: 현재 active `ttong627@gmail.com`은 hanwool-delivery-2026 **권한 없음**. `--account=ttong0627@gmail.com` 또는 `gcloud config set account ttong0627@gmail.com`
+- DNS: `ga.wssc.kr`는 **Cloudflare(wssc.kr 존, ttong627@gmail.com 계정)** 관리. 2026-08-14 후이즈→Cloudflare 이전 때 `ga` 레코드가 누락돼 8/18 장날에 NXDOMAIN 사고 → 8/18 12:35 A 레코드(34.64.146.168) 재등록으로 복구. **도메인 접속 불가 시 Cloudflare DNS 레코드부터 확인.**
+- **운영 실측(2026-09-20 10:52, SSH 조회)**: VM HEAD `33e5bc0` · Alembic `a2b3c4d5e678 (head)` · backend/frontend 46시간 가동 · db·redis·backup_db 6주 healthy → **로컬 = 운영 완전 일치**
+- 커밋·푸시: gh active 계정 `ttong0627` = repo owner → **일치(전환 불필요)**
 
 ## 앱 구성
-| 앱 | 경로 | 역할 |
-|---|---|---|
-| backend | `backend/` | FastAPI · 주소검증 · 배차 · 배송 |
-| frontend | `frontend/` | 관리자·접수 웹 |
-| mobile | `mobile/` | 기사·접수·고객 앱 |
-| desktop | `desktop/` | Electron PC 앱 |
+| 앱/패키지 | 경로 | 역할 | 스택 |
+|---|---|---|---|
+| backend | `backend/` | API 서버, 주소검증, 배차·순번, 감사로그 | Python 3.11 · FastAPI · SQLAlchemy · Alembic · PostgreSQL · Redis |
+| hanwool-frontend | `frontend/` | 관리자·접수 웹 | React · Vite · TypeScript · Tailwind |
+| hanwool-mobile v1.0.50 (versionCode 31) | `mobile/` | 기사·접수·고객 앱 | React Native · Expo |
+| hanwool-desktop | `desktop/` | PC앱 | Electron |
+| 운영 스크립트 | `scripts/` | DB 백업 루프, GCS 오프사이트 동기화, 복구 | Bash |
 
-## 검증
-- 24시간 정책 테스트 4건 통과
-- Python compileall 및 변경 모듈 문법 검사 통과
-- frontend `npm run build` 통과
-- mobile `npx tsc --noEmit` 통과
-- `git diff --check` 통과
-- 커밋 `55d22b0` GitHub `master` 푸시 완료
-- backend·frontend 순차 빌드 및 재기동 완료
-- 컨테이너 backend healthy · Alembic `z1a2b3c4d567 (head)` 확인
-- https://ga.wssc.kr/health → HTTP 200 확인
-- 모바일 APK 1.0.50 (versionCode 31) ARM release 빌드 완료 · SHA-256 1171FF9AD49056D187B9D81DFF7E57652A4CBBE4ABB1C7962E526C214A7D2F53
-- 기존 설치본과 동일한 Android 인증서 SHA-256 `FAC61745DC0903786FB9EDE62A962B399F7348F0BB6F899B8332667591033B9C` 검증 완료
-- `mobile/scripts/build-release.ps1`가 릴리스 빌드 후 패키지·버전·서명 인증서를 검증
+## 마지막 작업
+- `33e5bc0` 2026-09-18 14:35 `fix: preserve Android update signing key`
+- **경과: 2일** (이번 /확인에서 `538eef0` → `33e5bc0` **9커밋 FF 최신화**)
+- 요약: **매일배송 전환 + 주문 등록 강화** — ①장날·시간 제한 폐지(365일 24시간) ②기사 자율 배정(40건 상한, advisory lock) ③수동 주문 저장을 명시적 동작으로 변경 ④주문 쓰기 감사로그 ⑤`client_row_id` UNIQUE 마이그레이션(`a2b3c4d5e678`) ⑥receiver 주문 폼 접근 복구 ⑦모바일 1.0.50 + Android 서명키 보존 스크립트
 
-## 규칙 문서
-- `AGENTS.md`
-- `CLAUDE.md`
-- `docs/ADDRESS_STRATEGY.md`
-- `docs/ADDRESS_TESTING_GUIDE.md`
-- `docs/DISPATCH_SEQUENCE_RULES.md`
+## 규칙 문서 (SSOT — 메뉴·기능 처리 방식의 기록, 작업 전 필독)
+| 문서 | 내용 |
+|---|---|
+| `AGENTS.md` | 공통 작업 규칙 · **배송 운영 규칙(365일 24시간·기사 자율배정 40건)** · 배송동 18개 · 배차 판단 |
+| `CLAUDE.md` | **배송 운영일/접수 정책(매일 24시간)** · 역할 5단계 · 메뉴 정의 · 드림팀 분업 |
+| `docs/ADDRESS_STRATEGY.md` | **주소 최우선 기준** — 행안부 매칭, 배송동 판정, 지도, 순번 |
+| `docs/DISPATCH_SEQUENCE_RULES.md` | 기사 배정 규칙 + 배송 순번 규칙 (운영 코드 기준) |
+| `docs/ADDRESS_TESTING_GUIDE.md` | 주소 검증 테스트 절차(운영 DB 실주소 추출) |
+| `docs/DB_BACKUP_RESTORE.md` | 2시간 주기 자동 백업 구조·복구 절차 |
+| `docs/JIBUN_FULL_LOAD_GUIDE.md` | 광주 지번 전체 적재(건물 60,529 기준) |
 
-## 백업
-- 동기화 전 로컬 파일 백업: `C:\tmp\hanwool-pre-daily-delivery-20260917-1148`
+⚠️ 자동메모리와 충돌 시 **문서(SSOT)·코드 우선**. 「장날 3·8·13·18·23·28」·「11~15시 접수」는 **폐기된 규칙**이다.
 
-## 주의
-- 기사 직접 가져오기는 활성 기사 계정 또는 기사 업무가 부여된 관리자만 가능하다.
-- 고객 계정에는 다른 고객의 배송정보 접근 권한을 부여하지 않는다.
-- 기사 1명당 직접 가져오기 상한은 40건이다. 남은 주문은 다른 기사가 가져가거나 관리자가 배정한다.
+## 작업환경
+- node v24.15.0 / npm 11.12.1 / Python 3.11.9
+- 도구: gh ✅ · gcloud ✅ · firebase ✅ · docker CLI ✅ (**데몬 미실행**)
+- 의존성: frontend/mobile/desktop **node_modules 설치됨**, `backend/.venv` 존재 → **추가 설치 불필요**
+- 시크릿(존재여부만): `.env` ✅ · `backend/.env` ✅ · `backend/.env.example` ✅ · `docker-compose.override.yml` ✅(로컬전용)
+- 테스트: `backend/tests/` 4종 — `test_market_day.py`(신규) · `test_order_permissions.py`(신규) · `test_dispatch_service.py` · `test_route_service.py`
+
+## 동기화
+- 상태: **FF 최신화 완료** (behind 9 → 0, ahead 0, 미커밋 0건) · `538eef0` → `33e5bc0`
+- 마지막 fetch: 2026-09-20 10:47 KST
+
+## 리스크
+- 🟢 **09-18 커밋 운영 반영 확인 완료 (2026-09-20 10:52 SSH 실측)** — VM `/opt/hanwool` HEAD = `33e5bc0`(로컬과 동일), `alembic current` = **`a2b3c4d5e678 (head)`**, 컨테이너 backend(healthy)·frontend 46시간 가동, db·redis·backup_db 6주 healthy
+- 🟡 **gcloud active 계정·프로젝트 불일치** — active `ttong627@gmail.com` / project `ttong-hub`. hanwool 작업 시 `--account=ttong0627@gmail.com` 필수 (두 계정 모두 로그인됨)
+- 🟡 **Docker Desktop 데몬 미실행** — 로컬 `docker compose` 사용 시 먼저 실행
+- 🟢 운영 서버 정상(200) · git 최신 · 워킹트리 clean · gh 계정 일치 · 의존성 설치 완료 · 유일 클론 확인(I:)
