@@ -674,7 +674,7 @@ export function ManualTab() {
 
   // IME 경고 토스트 — 화면 우상단 고정
   const ImeWarnToast = koreanWarn && (
-    <div className="fixed top-16 right-4 z-[9999] flex items-center gap-3 bg-red-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl animate-bounce">
+    <div className="fixed top-16 right-4 z-[9999] flex items-center gap-3 bg-red-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl">
       <Keyboard className="w-6 h-6 shrink-0" />
       <div>
         <p className="font-bold text-sm leading-tight">영어 입력 감지!</p>
@@ -770,7 +770,7 @@ export function ManualTab() {
                 type="button"
                 onClick={validateAllAddresses}
                 disabled={validatingAll || unvalidated === 0}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0 disabled:opacity-50
+                className={`flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors duration-300 shrink-0 disabled:opacity-50 min-w-[150px]
                   ${unvalidated > 0
                     ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm'
                     : 'border border-gray-200 text-gray-400 bg-white'}`}
@@ -844,7 +844,7 @@ export function ManualTab() {
               return (
                 <tr
                   key={row._id}
-                  className={`border-b border-gray-100 ${
+                  className={`border-b border-gray-100 transition-colors duration-500 ${
                     row.savedOrderId ? 'bg-green-50' :
                     isOutOfZone ? 'bg-orange-50 border-l-2 border-l-orange-300' :
                     row.submitStatus === 'error' ? 'bg-red-50' : 'hover:bg-brand-50/30'
@@ -924,7 +924,7 @@ export function ManualTab() {
                           <div className="flex items-center gap-0.5 pr-1">
                             <input
                               ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                              className={cellCls + ' flex-1'}
+                              className={cellCls + ' flex-1 min-w-0'}
                               value={row.delivery_address}
                               lang="ko"
                               autoComplete="off"
@@ -937,23 +937,27 @@ export function ManualTab() {
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                               placeholder="주소 입력"
                             />
-                            <AddrIcon status={row.addrStatus} />
-                            {row.matchStatus === 'needs_review' && (
-                              <span
-                                className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded"
-                                title="주소는 매칭됐지만 좌표나 부번 확인이 필요합니다."
-                              >
-                                확인
-                              </span>
-                            )}
-                            {row.matchStatus === 'matched' && row.coordSource && (
-                              <span
-                                className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded"
-                                title={`표준주소 매칭 완료 · 좌표출처: ${row.coordSource}`}
-                              >
-                                표준
-                              </span>
-                            )}
+                            {/* 상태 표시 자리 — 폭을 미리 잡아 둔다.
+                                확인 결과가 도착해도 입력창이 좁아지며 글자가 밀리지 않게 하기 위함. */}
+                            <div className="w-[54px] shrink-0 flex items-center justify-end gap-0.5">
+                              <AddrIcon status={row.addrStatus} />
+                              {row.matchStatus === 'needs_review' && (
+                                <span
+                                  className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded"
+                                  title="주소는 매칭됐지만 좌표나 부번 확인이 필요합니다."
+                                >
+                                  확인
+                                </span>
+                              )}
+                              {row.matchStatus === 'matched' && row.coordSource && (
+                                <span
+                                  className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded"
+                                  title={`표준주소 매칭 완료 · 좌표출처: ${row.coordSource}`}
+                                >
+                                  표준
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ) : isDetail ? (
                           <input
