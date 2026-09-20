@@ -170,6 +170,10 @@ export function ManualTab() {
     revertTimer.current = setTimeout(() => setRevertInfo(null), 6000)
   }, [])
 
+  // 칸별 「영타 모드」 — 그 칸에 처음 들어온 글자가 영문 소문자뿐이면 IME가 영문으로
+  // 내려간 상태로 본다. 이후 그 칸은 치는 즉시 한글로 보여 준다(한/영 키를 누를 필요가 없다).
+  const latinModeRef = useRef<Record<string, boolean>>({})
+
   const cellIdOf = useCallback((rowIdx: number, key: ColKey) => {
     const id = rowsRef.current[rowIdx]?._id ?? String(rowIdx)
     return `${id}:${key}`
@@ -206,6 +210,26 @@ export function ManualTab() {
       savedOrderId: undefined, submitStatus: undefined, submitError: undefined,
     } : r))
   }, [])
+
+  /**
+   * 한글 칸 입력 — 영타로 치고 있으면 **치는 즉시** 한글로 보여 준다.
+   * 커서가 맨 끝일 때만 바꾸므로, 중간 글자를 고치는 중에는 건드리지 않는다.
+   * (끝이 아닐 때는 손대지 않고 칸을 벗어날 때 commitCell 이 마무리한다.)
+   */
+  const koInputValue = useCallback((raw: string, cellId: string, cellKey: string, atEnd: boolean) => {
+    if (!autoHangul || enCells[cellId]) return raw
+    if (composingRef.current[cellKey]) return raw // IME 조합 중에는 손대지 않는다
+    if (!atEnd) return raw
+    if (latinModeRef.current[cellId] === undefined) {
+      latinModeRef.current[cellId] = shouldConvertToHangul(raw) // 이 칸의 첫 판단
+    }
+    if (!latinModeRef.current[cellId]) return raw
+    return latinToHangul(raw)
+  }, [autoHangul, enCells])
+
+  /** 입력 이벤트에서 「커서가 맨 끝인가」를 읽는다. */
+  const isCaretAtEnd = (el: HTMLInputElement) =>
+    el.selectionStart === null || el.selectionStart === el.value.length
 
   const deleteRow = useCallback((rowIdx: number) => {
     setRows(prev => prev.filter((_, i) => i !== rowIdx))
@@ -415,6 +439,7 @@ export function ManualTab() {
     const cellId = `${row._id}:${key}`
     if (!revertInfo || revertInfo.cellId !== cellId) return false
     markEnglishCell(cellId)
+    latinModeRef.current[cellId] = false
     if (key === 'delivery_address') handleAddressChange(rowIdx, revertInfo.prev)
     else updateCell(rowIdx, key, revertInfo.prev)
     clearTimeout(revertTimer.current)
@@ -450,6 +475,8 @@ export function ManualTab() {
 
   /** 칸 이탈 — 여기서만 값을 보정하고, 잠시 뒤 편집 표시를 푼다(같은 행 안 이동은 유지). */
   const onCellBlur = useCallback((rowIdx: number, key: ColKey) => {
+    const row = rowsRef.current[rowIdx]
+    if (row) delete latinModeRef.current[`${row._id}:${key}`]
     commitCell(rowIdx, key)
     clearTimeout(leaveTimer.current)
     leaveTimer.current = setTimeout(() => setEditingRowId(null), 200)
@@ -547,6 +574,7 @@ export function ManualTab() {
           else next[cellId] = true
           return next
         })
+        delete latinModeRef.current[cellId]
         return
       }
 
@@ -932,7 +960,7 @@ export function ManualTab() {
                               onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                               onFocus={() => onCellFocus(rowIdx, colIdx)}
                               onBlur={() => onCellBlur(rowIdx, 'delivery_address')}
-                              onChange={(e) => handleAddressChange(rowIdx, e.target.value)}
+                              onChange={(e) => handleAddressChange(rowIdx, koInputValue(e.target.value, cellId, cellKey, isCaretAtEnd(e.target)))}
                               onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                               onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                               placeholder="주소 입력"
@@ -970,7 +998,7 @@ export function ManualTab() {
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                             onFocus={() => onCellFocus(rowIdx, colIdx)}
                             onBlur={() => onCellBlur(rowIdx, 'detail_address')}
-                            onChange={(e) => updateCell(rowIdx, 'detail_address', e.target.value)}
+                            onChange={(e) => updateCell(rowIdx, 'detail_address', koInputValue(e.target.value, cellId, cellKey, isCaretAtEnd(e.target)))}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                             placeholder="동·호·층"
@@ -1012,17 +1040,19 @@ export function ManualTab() {
                         ) : isQty ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            type="number"
-                            min={1}
+                            // type="number"/"tel" 은 크롬이 IME 를 강제로 꺼 버려,
+                            // 다음 한글 칸으로 넘어갈 때마다 한/영 키를 눌러야 했다.
+                            // text + inputMode 로 두면 IME 상태가 유지된다(숫자는 그대로 입력된다).
+                            type="text"
                             inputMode="numeric"
-                            lang="en"
                             autoComplete="off"
                             className={cellCls + ' text-center'}
                             value={row.quantity}
                             onFocus={() => onCellFocus(rowIdx, colIdx)}
                             onBlur={() => onCellBlur(rowIdx, 'quantity')}
                             onChange={(e) => {
-                              updateCell(rowIdx, 'quantity', Number(e.target.value))
+                              const digits = e.target.value.replace(/[^0-9]/g, '')
+                              updateCell(rowIdx, 'quantity', digits === '' ? 0 : parseInt(digits, 10))
                             }}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
@@ -1030,9 +1060,9 @@ export function ManualTab() {
                         ) : isPhone ? (
                           <input
                             ref={(el) => { cellRefs.current[rowIdx][colIdx] = el }}
-                            type="tel"
+                            // type="tel" 도 IME 를 꺼 버린다 — text + inputMode 로 유지한다
+                            type="text"
                             inputMode="tel"
-                            lang="en"
                             autoComplete="off"
                             className={cellCls}
                             value={row.customer_phone}
@@ -1071,7 +1101,7 @@ export function ManualTab() {
                             onCompositionEnd={() => { composingRef.current[cellKey] = false }}
                             onFocus={() => onCellFocus(rowIdx, colIdx)}
                             onBlur={() => onCellBlur(rowIdx, key)}
-                            onChange={(e) => updateCell(rowIdx, key, e.target.value)}
+                            onChange={(e) => updateCell(rowIdx, key, isKoField ? koInputValue(e.target.value, cellId, cellKey, isCaretAtEnd(e.target)) : e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                             onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                           />
