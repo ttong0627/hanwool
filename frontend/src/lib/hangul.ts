@@ -170,11 +170,31 @@ export function hasLatinLetter(text: string): boolean {
 }
 
 /**
+ * 이 값을 한글로 되돌려야 하는가 — 「영타 오입력」으로 보이는 값만 true.
+ *
+ * IME가 영문으로 내려간 채 친 값은 **전부 영문 소문자**다('rlaeoal').
+ * 반대로 담당자가 일부러 쓴 영문은 한글과 섞여 있거나 대문자를 포함한다
+ * ('B동 202호', 'ABC타워'). 후자를 건드리면 'B동'이 'ㅠ동'이 되어 버린다.
+ *
+ *   shouldConvertToHangul('rlaeoal')       → true   (김대미)
+ *   shouldConvertToHangul('B동 202호')     → false  (한글이 섞여 있다)
+ *   shouldConvertToHangul('ABC타워')       → false
+ *   shouldConvertToHangul('101B')          → false  (대문자)
+ *   shouldConvertToHangul('광주대로 142')  → false  (영문이 없다)
+ */
+export function shouldConvertToHangul(text: string): boolean {
+  if (!hasLatinLetter(text)) return false
+  if (/[ㄱ-ㆎ가-힣]/.test(text)) return false // 한글이 이미 있다 = 한글 자판으로 치는 중
+  if (/[A-Z]/.test(text)) return false        // 대문자는 일부러 친 영문으로 본다
+  return true
+}
+
+/**
  * 영문 자판으로 친 글자를 한글로 변환한다.
  * 한글·숫자·기호는 그대로 두므로 이미 올바른 값에는 영향이 없다.
  *
  *   latinToHangul('rlaeoal')      → '김대미'
- *   latinToHangul('rhkdwnepfh 142') → '광주대로 142'
+ *   latinToHangul('rhkdwneofh 142') → '광주대로 142'
  */
 export function latinToHangul(text: string): string {
   if (!text) return text

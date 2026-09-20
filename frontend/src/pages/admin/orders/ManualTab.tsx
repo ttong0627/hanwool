@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import type { StagingRow, ColKey, AddrStatus, DongStatus } from './types'
 import { EMPTY_ROW, DONG_LIST, COL_KEYS, COL_LABELS, COL_WIDTHS } from './types'
 import { formatPhone, detectDong, normalizeAddress } from '@/lib/utils'
-import { latinToHangul, hasLatinLetter } from '@/lib/hangul'
+import { latinToHangul, shouldConvertToHangul } from '@/lib/hangul'
 
 const AUTO_HANGUL_KEY = 'hanwool_auto_hangul'
 
@@ -384,7 +384,7 @@ export function ManualTab() {
     const raw = String(row[key] ?? '')
     let next = raw
 
-    if (CELL_META[key]?.lang === 'ko' && autoHangul && !enCells[cellId] && hasLatinLetter(raw)) {
+    if (CELL_META[key]?.lang === 'ko' && autoHangul && !enCells[cellId] && shouldConvertToHangul(raw)) {
       const converted = latinToHangul(raw)
       if (converted !== raw) {
         next = converted
