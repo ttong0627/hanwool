@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경안시장 신규 이용자 추이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#faf8f5;
+  --surface:#ffffff;
+  --surface-2:#f4f1ec;
+  --border:#e6e1d8;
+  --grid:#ece8e1;
+  --text-1:#1c1a16;
+  --text-2:#57524a;
+  --text-3:#8b857a;
+  --accent:#eb6834;
+  --accent-soft:rgba(235,104,52,.14);
+  --blue:#2a78d6;
+  --blue-soft:rgba(42,120,214,.14);
+  --aqua:#1baf7a;
+  --good:#1baf7a;
+  --radius:14px;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#121211;
+    --surface:#1a1a19;
+    --surface-2:#232321;
+    --border:#33322e;
+    --grid:#2b2a27;
+    --text-1:#ffffff;
+    --text-2:#c3c2b7;
+    --text-3:#8f8d84;
+    --accent:#d95926;
+    --accent-soft:rgba(217,89,38,.2);
+    --blue:#3987e5;
+    --blue-soft:rgba(57,135,229,.2);
+    --aqua:#199e70;
+    --good:#199e70;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#121211;
+  --surface:#1a1a19;
+  --surface-2:#232321;
+  --border:#33322e;
+  --grid:#2b2a27;
+  --text-1:#ffffff;
+  --text-2:#c3c2b7;
+  --text-3:#8f8d84;
+  --accent:#d95926;
+  --accent-soft:rgba(217,89,38,.2);
+  --blue:#3987e5;
+  --blue-soft:rgba(57,135,229,.2);
+  --aqua:#199e70;
+  --good:#199e70;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg);
+  color:var(--text-1);
+  font-family:"IBM Plex Sans KR","Malgun Gothic",system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.6;
+  padding-inline:16px;
+  padding-block:28px 56px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+
+/* ── 헤더 ── */
+.head{display:flex;flex-direction:column;gap:8px}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);font-weight:600;
+}
+h1{
+  margin:0;font-size:clamp(25px,4.6vw,34px);font-weight:700;
+  letter-spacing:-.02em;text-wrap:balance;line-height:1.22;
+}
+.sub{margin:0;color:var(--text-2);font-size:14px;max-width:62ch}
+.meta{
+  display:flex;flex-wrap:wrap;gap:6px 14px;
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--text-3);
+  padding-top:2px;
+}
+.meta b{color:var(--text-2);font-weight:600}
+
+/* ── KPI ── */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media (max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:420px){.kpis{grid-template-columns:1fr}}
+.kpi{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:15px 16px 14px;display:flex;flex-direction:column;gap:3px;
+}
+.kpi.lead{border-color:var(--accent);box-shadow:0 1px 3px rgba(235,104,52,.13)}
+.kpi .label{font-size:12.5px;color:var(--text-2);font-weight:500}
+.kpi .val{
+  font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;
+  font-size:31px;font-weight:600;line-height:1.1;letter-spacing:-.02em;
+}
+.kpi.lead .val{color:var(--accent)}
+.kpi .note{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+
+/* ── 카드 ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px 18px 14px;
+}
+.card h2{
+  margin:0 0 2px;font-size:15.5px;font-weight:600;letter-spacing:-.01em;
+}
+.card .cap{margin:0 0 14px;font-size:12.5px;color:var(--text-3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+
+/* ── 범례 ── */
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 10px;padding:0;list-style:none}
+.legend li{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2)}
+.swatch{width:11px;height:11px;border-radius:3px;flex:none}
+
+/* ── 차트 ── */
+.chartbox{position:relative}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.tick{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--text-3)}
+.vlabel{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;fill:var(--text-2)}
+.hit{fill:transparent;cursor:pointer}
+.tip{
+  position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+  padding:8px 11px;font-size:12.5px;color:var(--text-1);
+  box-shadow:0 6px 18px rgba(0,0,0,.14);white-space:nowrap;z-index:5;
+  transform:translate(-50%,-115%);
+}
+.tip .t-day{font-family:"IBM Plex Mono",monospace;color:var(--text-3);font-size:11px;display:block;margin-bottom:3px}
+.tip .t-row{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.tip b{font-family:"IBM Plex Mono",monospace;font-weight:600}
+
+/* ── 표 ── */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+caption{text-align:left;font-size:12.5px;color:var(--text-3);padding-bottom:10px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border)}
+th:first-child,td:first-child{text-align:left}
+thead th{
+  font-size:11.5px;font-weight:600;color:var(--text-2);
+  border-bottom:1.5px solid var(--border);white-space:nowrap;
+}
+tbody td{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;color:var(--text-1)}
+tbody td:first-child{font-family:"IBM Plex Sans KR",sans-serif;color:var(--text-2)}
+tfoot td{
+  font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;
+  font-weight:600;border-bottom:none;padding-top:10px;
+}
+tfoot td:first-child{font-family:"IBM Plex Sans KR",sans-serif}
+.tablewrap{overflow-x:auto}
+
+footer{
+  color:var(--text-3);font-size:12px;border-top:1px solid var(--border);
+  padding-top:14px;display:flex;flex-wrap:wrap;gap:4px 12px;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <span class="eyebrow">경안시장 집배송 · 이용자 집계</span>
+    <h1>9월 16일부터의 신규 이용자</h1>
+    <p class="sub">운영 DB(<code>ga.wssc.kr</code>)를 직접 집계한 수치입니다. 테스트 계정과 삭제된 계정은 제외했고, 개인정보는 조회하지 않고 건수만 셌습니다.</p>
+    <div class="meta">
+      <span>집계 기준 <b>2026-09-21</b></span>
+      <span>구간 <b>09-16 ~ 09-21</b> (6일)</span>
+      <span>기준시 <b>KST</b></span>
+    </div>
+  </header>
+
+  <!-- KPI -->
+  <section class="kpis" aria-label="핵심 수치">
+    <div class="kpi">
+      <span class="label">전체 이용자</span>
+      <span class="val">102</span>
+      <span class="note">등록된 고객 계정 전체</span>
+    </div>
+    <div class="kpi">
+      <span class="label">1번이라도 이용</span>
+      <span class="val">101</span>
+      <span class="note">전체의 99.0% · 미이용 1명</span>
+    </div>
+    <div class="kpi lead">
+      <span class="label">9/16 이후 첫 이용</span>
+      <span class="val">28</span>
+      <span class="note">전체의 27.5% · 6일간</span>
+    </div>
+    <div class="kpi">
+      <span class="label">2번 이상 재이용</span>
+      <span class="val">21</span>
+      <span class="note">이용자의 20.8%</span>
+    </div>
+  </section>
+
+  <!-- 주 차트: 일자별 신규 -->
+  <section class="card">
+    <h2>일자별 신규 이용자</h2>
+    <p class="cap">그날 처음으로 주문한 고객 수입니다. 6일 내내 늘어 마지막 날이 가장 많습니다.</p>
+    <div class="chartbox">
+      <svg id="c1" viewBox="0 0 660 270" role="img" aria-label="일자별 신규 이용자 막대그래프. 9월 16일 2명, 17일 3명, 18일 5명, 19일 5명, 20일 6명, 21일 7명."></svg>
+      <div class="tip" id="tip1"></div>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <!-- 누적 -->
+    <section class="card">
+      <h2>신규 이용자 누적</h2>
+      <p class="cap">9월 16일부터 쌓인 합계 — 6일 만에 28명.</p>
+      <div class="chartbox">
+        <svg id="c2" viewBox="0 0 400 230" role="img" aria-label="신규 이용자 누적 선그래프. 2, 5, 10, 15, 21, 28명으로 증가."></svg>
+        <div class="tip" id="tip2"></div>
+      </div>
+    </section>
+
+    <!-- 이용고객 vs 주문 -->
+    <section class="card">
+      <h2>이용 고객과 주문 건수</h2>
+      <ul class="legend">
+        <li><span class="swatch" style="background:var(--blue)"></span>이용 고객</li>
+        <li><span class="swatch" style="background:var(--aqua)"></span>주문 건수</li>
+      </ul>
+      <div class="chartbox">
+        <svg id="c3" viewBox="0 0 400 214" role="img" aria-label="일자별 이용 고객 수와 주문 건수 비교 막대그래프. 18일과 21일이 각각 12건으로 가장 많습니다."></svg>
+        <div class="tip" id="tip3"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 표 -->
+  <section class="card">
+    <h2>일자별 집계표</h2>
+    <div class="tablewrap">
+      <table>
+        <caption>신규 = 그날 처음 주문한 고객 · 이용 고객 = 그날 주문한 고객(중복 제외)</caption>
+        <thead>
+          <tr>
+            <th scope="col">날짜</th>
+            <th scope="col">신규 이용자</th>
+            <th scope="col">누적 신규</th>
+            <th scope="col">이용 고객</th>
+            <th scope="col">주문 건수</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+        <tfoot>
+          <tr>
+            <td>6일 합계</td>
+            <td>28</td>
+            <td>28</td>
+            <td>—</td>
+            <td>43</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>집계 쿼리: <code>users</code> / <code>orders</code> (is_test 제외, deleted_at IS NULL)</span>
+    <span>전체 기간 누적 주문 147건</span>
+  </footer>
+</div>
+
+<script>
+const DATA = [
+  { day:'09-16', dow:'수', neu:2, cum:2,  act:2,  ord:2  },
+  { day:'09-17', dow:'목', neu:3, cum:5,  act:4,  ord:4  },
+  { day:'09-18', dow:'금', neu:5, cum:10, act:12, ord:12 },
+  { day:'09-19', dow:'토', neu:5, cum:15, act:5,  ord:6  },
+  { day:'09-20', dow:'일', neu:6, cum:21, act:7,  ord:7  },
+  { day:'09-21', dow:'월', neu:7, cum:28, act:12, ord:12 },
+];
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a={}) => { const e = document.createElementNS(NS,n); for(const k in a) e.setAttribute(k,a[k]); return e; };
+/** 바닥에 붙고 위쪽 끝만 4px 둥근 막대 */
+function barPath(x,y,w,h,r=4){
+  const rr = Math.min(r, w/2, h);
+  return `M${x},${y+h} L${x},${y+rr} Q${x},${y} ${x+rr},${y} L${x+w-rr},${y} Q${x+w},${y} ${x+w},${y+rr} L${x+w},${y+h} Z`;
+}
+function tipOn(tip, box, cx, cy, html){
+  tip.innerHTML = html;
+  const r = box.getBoundingClientRect();
+  tip.style.left = (cx / 660 * r.width) + 'px';
+  tip.style.top  = (cy) + 'px';
+  tip.style.opacity = 1;
+}
+
+/* ── 차트 1: 일자별 신규 (단일 계열 = 범례 없음) ── */
+(function(){
+  const svg = document.getElementById('c1'), tip = document.getElementById('tip1');
+  const W=660,H=270, L=40,R=14,T=26,B=42;
+  const pw=W-L-R, ph=H-T-B, max=8;
+  const y = v => T + ph - (v/max)*ph;
+
+  [0,2,4,6,8].forEach(v=>{
+    svg.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1}));
+    const t = el('text',{x:L-9,y:y(v)+4,'text-anchor':'end',class:'tick'}); t.textContent=v;
+    svg.appendChild(t);
+  });
+
+  const step = pw/DATA.length, bw = Math.min(58, step*0.52);
+  DATA.forEach((d,i)=>{
+    const cx = L + step*i + step/2, x = cx - bw/2, h = (d.neu/max)*ph;
+    svg.appendChild(el('path',{d:barPath(x,y(d.neu),bw,h),fill:'var(--accent)'}));
+    const v = el('text',{x:cx,y:y(d.neu)-9,'text-anchor':'middle',class:'vlabel'}); v.textContent=d.neu;
+    svg.appendChild(v);
+    const lab = el('text',{x:cx,y:H-B+20,'text-anchor':'middle',class:'tick'}); lab.textContent=d.day;
+    svg.appendChild(lab);
+    const dw = el('text',{x:cx,y:H-B+34,'text-anchor':'middle',class:'tick'}); dw.textContent=d.dow;
+    svg.appendChild(dw);
+
+    const hit = el('rect',{x:L+step*i,y:T,width:step,height:ph,class:'hit'});
+    hit.addEventListener('mouseenter',()=>tipOn(tip,svg,cx,y(d.neu)-14,
+      `<span class="t-day">${d.day} (${d.dow})</span>
+       <span class="t-row"><span class="swatch" style="background:var(--accent)"></span>신규 <b>${d.neu}명</b></span>
+       <span class="t-row" style="color:var(--text-2)">누적 <b>${d.cum}명</b></span>`));
+    hit.addEventListener('mouseleave',()=>tip.style.opacity=0);
+    svg.appendChild(hit);
+  });
+})();
+
+/* ── 차트 2: 누적 ── */
+(function(){
+  const svg = document.getElementById('c2'), tip = document.getElementById('tip2');
+  const W=400,H=230, L=34,R=14,T=20,B=34;
+  const pw=W-L-R, ph=H-T-B, max=30;
+  const y = v => T + ph - (v/max)*ph;
+  const x = i => L + (pw/(DATA.length-1))*i;
+
+  [0,10,20,30].forEach(v=>{
+    svg.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1}));
+    const t = el('text',{x:L-8,y:y(v)+4,'text-anchor':'end',class:'tick'}); t.textContent=v;
+    svg.appendChild(t);
+  });
+
+  const pts = DATA.map((d,i)=>[x(i),y(d.cum)]);
+  svg.appendChild(el('path',{
+    d:`M${pts[0][0]},${y(0)} ` + pts.map(p=>`L${p[0]},${p[1]}`).join(' ') + ` L${pts[pts.length-1][0]},${y(0)} Z`,
+    fill:'var(--accent-soft)'
+  }));
+  svg.appendChild(el('path',{
+    d:'M'+pts.map(p=>p.join(',')).join(' L'),
+    fill:'none',stroke:'var(--accent)','stroke-width':2,'stroke-linecap':'round','stroke-linejoin':'round'
+  }));
+
+  DATA.forEach((d,i)=>{
+    const last = i===DATA.length-1;
+    svg.appendChild(el('circle',{cx:x(i),cy:y(d.cum),r:last?5:3.5,fill:'var(--accent)',stroke:'var(--surface)','stroke-width':2}));
+    if(i%2===0||last){
+      const t = el('text',{x:x(i),y:H-B+18,'text-anchor':'middle',class:'tick'}); t.textContent=d.day;
+      svg.appendChild(t);
+    }
+    if(last){
+      const v = el('text',{x:x(i),y:y(d.cum)-13,'text-anchor':'end',class:'vlabel'}); v.textContent='28명';
+      svg.appendChild(v);
+    }
+    const hit = el('rect',{x:x(i)-pw/(DATA.length-1)/2,y:T,width:pw/(DATA.length-1),height:ph,class:'hit'});
+    hit.addEventListener('mouseenter',()=>tipOn(tip,svg,x(i)/400*660,y(d.cum)-14,
+      `<span class="t-day">${d.day} (${d.dow})</span>
+       <span class="t-row"><span class="swatch" style="background:var(--accent)"></span>누적 <b>${d.cum}명</b></span>`));
+    hit.addEventListener('mouseleave',()=>tip.style.opacity=0);
+    svg.appendChild(hit);
+  });
+})();
+
+/* ── 차트 3: 이용 고객 vs 주문 ── */
+(function(){
+  const svg = document.getElementById('c3'), tip = document.getElementById('tip3');
+  const W=400,H=214, L=30,R=12,T=18,B=32;
+  const pw=W-L-R, ph=H-T-B, max=12;
+  const y = v => T + ph - (v/max)*ph;
+
+  [0,6,12].forEach(v=>{
+    svg.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1}));
+    const t = el('text',{x:L-7,y:y(v)+4,'text-anchor':'end',class:'tick'}); t.textContent=v;
+    svg.appendChild(t);
+  });
+
+  const step = pw/DATA.length, bw = Math.min(13, step*0.28), gap = 2;
+  DATA.forEach((d,i)=>{
+    const cx = L + step*i + step/2;
+    const x1 = cx - bw - gap/2, x2 = cx + gap/2;
+    svg.appendChild(el('path',{d:barPath(x1,y(d.act),bw,(d.act/max)*ph,3),fill:'var(--blue)'}));
+    svg.appendChild(el('path',{d:barPath(x2,y(d.ord),bw,(d.ord/max)*ph,3),fill:'var(--aqua)'}));
+    const lab = el('text',{x:cx,y:H-B+17,'text-anchor':'middle',class:'tick'}); lab.textContent=d.day.slice(3);
+    svg.appendChild(lab);
+
+    const hit = el('rect',{x:L+step*i,y:T,width:step,height:ph,class:'hit'});
+    hit.addEventListener('mouseenter',()=>tipOn(tip,svg,cx/400*660,y(Math.max(d.act,d.ord))-14,
+      `<span class="t-day">${d.day} (${d.dow})</span>
+       <span class="t-row"><span class="swatch" style="background:var(--blue)"></span>이용 고객 <b>${d.act}명</b></span>
+       <span class="t-row"><span class="swatch" style="background:var(--aqua)"></span>주문 <b>${d.ord}건</b></span>`));
+    hit.addEventListener('mouseleave',()=>tip.style.opacity=0);
+    svg.appendChild(hit);
+  });
+})();
+
+/* ── 표 ── */
+document.getElementById('tbody').innerHTML = DATA.map(d=>
+  `<tr><td>${d.day} (${d.dow})</td><td>${d.neu}</td><td>${d.cum}</td><td>${d.act}</td><td>${d.ord}</td></tr>`
+).join('');
+</script>
+</body>
+</html>
