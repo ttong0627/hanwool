@@ -16,8 +16,13 @@
 
 \if :{?start}
 \else
-\set start `TZ=Asia/Seoul date -d '6 days ago' +%Y-%m-%d`
+\set start ''
 \endif
+
+-- 기본 시작일 = 오늘 포함 최근 7일. DB 안에서 계산하므로 컨테이너 셸에 의존하지 않는다
+-- (postgres 이미지의 busybox date 는 -d '6 days ago' 를 모른다).
+SELECT COALESCE(NULLIF(:'start', '')::date,
+                (now() AT TIME ZONE 'Asia/Seoul')::date - 6)::text AS start \gset
 
 \echo ''
 \echo '=== 요약 (기준일부터) ==='
