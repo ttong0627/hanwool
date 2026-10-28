@@ -289,8 +289,9 @@ def serialize_order_history(history: OrderHistory) -> dict:
 
 # 허용되는 배송 상태 전이 (그 외 전환은 admin/super_admin만 강제 가능)
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    OrderStatus.pending: {OrderStatus.assigned, OrderStatus.cancelled},
-    OrderStatus.assigned: {OrderStatus.picked_up, OrderStatus.in_transit, OrderStatus.pending, OrderStatus.cancelled},
+    # 배정 없이 바로 출발·완료할 수 있다(미배정 주문도 아무 기사가 처리).
+    OrderStatus.pending: {OrderStatus.assigned, OrderStatus.picked_up, OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.cancelled},
+    OrderStatus.assigned: {OrderStatus.picked_up, OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.pending, OrderStatus.cancelled},
     OrderStatus.picked_up: {OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.cancelled},
     OrderStatus.in_transit: {OrderStatus.delivered, OrderStatus.delayed, OrderStatus.cancelled},
     OrderStatus.delayed: {OrderStatus.in_transit, OrderStatus.delivered, OrderStatus.cancelled},
@@ -332,6 +333,10 @@ async def update_order_status(
         order.picked_up_at = datetime.now(timezone.utc)
     elif status == OrderStatus.delivered:
         order.delivered_at = datetime.now(timezone.utc)
+    # 배정 없이 처리한 주문은 처리한 기사를 기록한다 — 누가 배송했는지 남아야 한다.
+    # 완료는 넘긴 기사(실제 배송자)로 덮어쓴다.
+    if driver_id and (not order.driver_id or status == OrderStatus.delivered):
+        order.driver_id = driver_id
     if previous_status != status or previous_driver_id != order.driver_id:
         event_type = "status_changed"
         if status == OrderStatus.assigned:

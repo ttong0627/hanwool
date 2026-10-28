@@ -22,6 +22,7 @@ from app.api.v1.deps import (
     require_admin_or_above,
     require_driver_or_above,
     require_receiver_or_above,
+    require_staff,
     require_super_admin,
 )
 from app.core.database import AsyncSessionLocal, get_db
@@ -550,16 +551,16 @@ async def get_today_orders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    driver_id = current_user.id if is_driver_capable(current_user) else None
-    return await order_service.get_orders_today(db, driver_id)
+    # 배정과 무관하게 접속한 모든 계정이 오늘 주문 전체를 본다.
+    return await order_service.get_orders_today(db, None)
 
 
 @router.get("/today/overview")
 async def get_today_overview(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_receiver_or_above),
+    _: User = Depends(require_staff),
 ):
-    """관리자/접수자용 — 오늘 전체 배송 현황 (배송확인 화면). 기사·완료사진·완료시각 포함."""
+    """오늘 전체 배송 현황 (배송확인 화면). 기사·완료사진·완료시각 포함 — 기사 포함 전 직원 조회."""
     return await order_service.get_orders_today(db, None)
 
 
@@ -1056,7 +1057,7 @@ async def list_orders(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_receiver_or_above),
+    _=Depends(require_staff),
 ):
     q = select(Order)
     if status:
@@ -1379,9 +1380,12 @@ async def update_status(
         raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
 
     if current_user.role == "driver":
-        if existing_order.driver_id != current_user.id:
-            raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 변경할 수 있습니다.")
-        driver_id = current_user.id
+        # 배정과 무관하게 아무 주문이나 처리한다.
+        # 완료는 실제로 배송한 사람이 찍으니 완료자를 기사로 기록한다(감사 추적·완료 내역).
+        if status == OrderStatus.delivered:
+            driver_id = current_user.id
+        else:
+            driver_id = existing_order.driver_id or current_user.id
     elif current_user.role not in {"super_admin", "admin", "receiver"}:
         raise HTTPException(status_code=403, detail="주문 상태 변경 권한이 없습니다.")
     elif driver_id is not None:
@@ -1709,8 +1713,7 @@ async def upload_delivery_photo(
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
 
-    if current_user.role == "driver" and order.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
+    # 배정과 무관하게 아무 주문의 사진이나 올릴 수 있다.
 
     # 배송완료 부가정보(메모·경비실 수령) 저장
     if memo is not None:
@@ -1788,8 +1791,7 @@ async def upload_extra_photo(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    if current_user.role == "driver" and order.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="본인에게 배정된 주문 사진만 업로드할 수 있습니다.")
+    # 배정과 무관하게 아무 주문의 사진이나 올릴 수 있다.
 
     existing = []
     if order.extra_photos:
@@ -1837,8 +1839,7 @@ async def upload_delivery_signature(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    if current_user.role == "driver" and order.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="본인에게 배정된 주문만 서명 등록할 수 있습니다.")
+    # 배정과 무관하게 아무 주문의 서명이나 등록할 수 있다.
 
     raw = (body.image_base64 or "").strip()
     if raw.startswith("data:") and "," in raw:

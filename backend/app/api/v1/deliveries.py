@@ -45,8 +45,8 @@ async def get_optimized_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    driver_id = current_user.id if (current_user.role == "driver" or bool(getattr(current_user, "is_driver", False))) else None
-    orders = await get_orders_today(db, driver_id)
+    # 배정과 무관하게 오늘 주문 전체를 경로로 본다.
+    orders = await get_orders_today(db, None)
 
     # 저장된 lat/lng 직접 사용 — N+1 geocode 루프 제거
     # 좌표 없는 주문은 경안시장 좌표로 폴백 (관리자가 regeocode-unresolved로 처리 가능)
