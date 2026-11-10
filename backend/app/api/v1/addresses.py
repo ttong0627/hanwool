@@ -140,7 +140,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "WHERE r.road_name = :road "
                     "  AND b.building_main_no = :main "
                     f"  {sub_clause}"
-                    "ORDER BY b.building_sub_no LIMIT :lim"
+                    "ORDER BY b.building_sub_no LIMIT :lim"  # noqa: S608 — sub_clause 는 고정 문자열, 값은 모두 바인딩
                 ),
                 params,
             )
@@ -172,7 +172,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "  AND a.building_main_no = :main "
                     f"  {sub_clause}"
                     "  AND a.road_address != '' "
-                    "ORDER BY a.building_sub_no LIMIT :lim"
+                    "ORDER BY a.building_sub_no LIMIT :lim"  # noqa: S608 — sub_clause 는 고정 문자열, 값은 모두 바인딩
                 ),
                 params,
             )

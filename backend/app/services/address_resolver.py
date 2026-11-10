@@ -411,7 +411,7 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
                 "SELECT lat, lng, source FROM address_cache "
                 "WHERE lat IS NOT NULL AND lng IS NOT NULL "
                 f"  AND {cond} "
-                "ORDER BY hit_count DESC, id DESC LIMIT 1"
+                "ORDER BY hit_count DESC, id DESC LIMIT 1"  # noqa: S608 — cond 는 코드 안 고정 문자열, 값은 바인딩
             ),
             params,
         )
@@ -421,7 +421,7 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     await db.execute(
         text(
             "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
-            f"WHERE lat IS NOT NULL AND lng IS NOT NULL AND {cond}"
+            f"WHERE lat IS NOT NULL AND lng IS NOT NULL AND {cond}"  # noqa: S608 — cond 는 고정 문자열
         ),
         params,
     )
