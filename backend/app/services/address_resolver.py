@@ -396,6 +396,26 @@ async def _resolve_from_cache(address: str, db: AsyncSession) -> Optional[Addres
     )
 
 
+_CACHE_SELECT_BY_ROAD = (
+    "SELECT lat, lng, source FROM address_cache "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND road_address = :road "
+    "ORDER BY hit_count DESC, id DESC LIMIT 1"
+)
+_CACHE_SELECT_BY_KEY = (
+    "SELECT lat, lng, source FROM address_cache "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND normalized_query = :key "
+    "ORDER BY hit_count DESC, id DESC LIMIT 1"
+)
+_CACHE_HIT_BY_ROAD = (
+    "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND road_address = :road"
+)
+_CACHE_HIT_BY_KEY = (
+    "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND normalized_query = :key"
+)
+
+
 async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Optional[tuple]:
     """이미 좌표가 저장된 동일 주소가 address_cache에 있으면 (lat, lng, source) 반환.
     buildings(행안부) 매칭은 좌표가 없으므로, 한 번 구한 좌표는 이 캐시로 재사용해 API 호출을 막는다."""
@@ -403,28 +423,14 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     key = normalize_address_key(result.raw_address or "")
     # 표준주소가 있으면 그 주소의 좌표만 재사용한다.
     # 원문 키(normalized_query)로 찾으면 과거 잘못 저장된 다른 번지의 좌표가 딸려온다.
-    cond = "road_address = :road" if road else "normalized_query = :key"
+    # 조건 컬럼별로 고정 SQL 을 따로 두고 값만 바인딩한다(문자열 조립 없음).
     params = {"road": road} if road else {"key": key}
-    row = (
-        await db.execute(
-            text(
-                "SELECT lat, lng, source FROM address_cache "
-                "WHERE lat IS NOT NULL AND lng IS NOT NULL "
-                f"  AND {cond} "
-                "ORDER BY hit_count DESC, id DESC LIMIT 1"  # noqa: S608 — cond 는 코드 안 고정 문자열, 값은 바인딩
-            ),
-            params,
-        )
-    ).first()
+    select_sql = _CACHE_SELECT_BY_ROAD if road else _CACHE_SELECT_BY_KEY
+    update_sql = _CACHE_HIT_BY_ROAD if road else _CACHE_HIT_BY_KEY
+    row = (await db.execute(text(select_sql), params)).first()
     if not row:
         return None
-    await db.execute(
-        text(
-            "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
-            f"WHERE lat IS NOT NULL AND lng IS NOT NULL AND {cond}"  # noqa: S608 — cond 는 고정 문자열
-        ),
-        params,
-    )
+    await db.execute(text(update_sql), params)
     return (row.lat, row.lng, row.source or "cache")
 
 

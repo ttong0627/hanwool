@@ -123,14 +123,13 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
 
     # ── 1a. road_codes JOIN buildings (btree, 최고속) ─────────────────────────
     if parsed:
-        sub_clause = "AND b.building_sub_no = :sub " if parsed["sub"] is not None else ""
+        # 부번은 없으면 NULL 로 바인딩해 조건을 건너뛴다(SQL 문자열 조립 없음)
         params: dict = {
             "road": parsed["road"],
             "main": parsed["main"],
+            "sub":  parsed["sub"],
             "lim":  limit * 2,
         }
-        if parsed["sub"] is not None:
-            params["sub"] = parsed["sub"]
         try:
             rows = await db.execute(
                 text(
@@ -139,8 +138,8 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "JOIN nexus_address.road_codes r ON b.road_code = r.road_code "
                     "WHERE r.road_name = :road "
                     "  AND b.building_main_no = :main "
-                    f"  {sub_clause}"
-                    "ORDER BY b.building_sub_no LIMIT :lim"  # noqa: S608 — sub_clause 는 고정 문자열, 값은 모두 바인딩
+                    "  AND (CAST(:sub AS INTEGER) IS NULL OR b.building_sub_no = :sub) "
+                    "ORDER BY b.building_sub_no LIMIT :lim"
                 ),
                 params,
             )
@@ -154,14 +153,12 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
 
     # ── 1b. road_codes JOIN addresses (보완, 동일 전략) ───────────────────────
     if parsed:
-        sub_clause = "AND a.building_sub_no = :sub " if parsed["sub"] is not None else ""
         params = {
             "road": parsed["road"],
             "main": parsed["main"],
+            "sub":  parsed["sub"],
             "lim":  (limit - len(results)) * 2,
         }
-        if parsed["sub"] is not None:
-            params["sub"] = parsed["sub"]
         try:
             rows = await db.execute(
                 text(
@@ -170,9 +167,9 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "JOIN nexus_address.road_codes r ON a.road_code = r.road_code "
                     "WHERE r.road_name = :road "
                     "  AND a.building_main_no = :main "
-                    f"  {sub_clause}"
+                    "  AND (CAST(:sub AS INTEGER) IS NULL OR a.building_sub_no = :sub) "
                     "  AND a.road_address != '' "
-                    "ORDER BY a.building_sub_no LIMIT :lim"  # noqa: S608 — sub_clause 는 고정 문자열, 값은 모두 바인딩
+                    "ORDER BY a.building_sub_no LIMIT :lim"
                 ),
                 params,
             )

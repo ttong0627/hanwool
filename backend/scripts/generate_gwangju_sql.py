@@ -374,9 +374,9 @@ def write_road_codes(out, road_codes: dict):
             for code, info in batch
         )
         out.write(
-            f"INSERT INTO nexus_address.road_codes (road_code, road_name, sigungu, emd) "
+            f"INSERT INTO nexus_address.road_codes (road_code, road_name, sigungu, emd) "  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
             f"VALUES {vals} "
-            f"ON CONFLICT (road_code) DO UPDATE SET road_name = EXCLUDED.road_name;\n"  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
+            f"ON CONFLICT (road_code) DO UPDATE SET road_name = EXCLUDED.road_name;\n"
         )
 
 
@@ -392,10 +392,10 @@ def write_addresses(out, rows: list):
             for r in batch
         )
         out.write(
-            f"INSERT INTO nexus_address.addresses "
+            f"INSERT INTO nexus_address.addresses "  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
             f"(road_code, road_name, road_address, road_key, full_key, building_name, "
             f"legal_emd, building_main_no, building_sub_no, underground_yn) "
-            f"VALUES {vals};\n"  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
+            f"VALUES {vals};\n"
         )
 
 
@@ -412,14 +412,14 @@ def write_buildings(out, rows: list):
             for r in batch
         )
         out.write(
-            f"INSERT INTO nexus_address.buildings "
+            f"INSERT INTO nexus_address.buildings "  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
             f"(building_mgt_no, road_code, road_name, road_address, road_key, full_key, "
             f"building_name, building_name_key, legal_emd, building_main_no, building_sub_no, "
             f"zip_no, is_apartment) "
             f"VALUES {vals} "
             f"ON CONFLICT (building_mgt_no) DO UPDATE SET "
             f"road_address = EXCLUDED.road_address, road_key = EXCLUDED.road_key, "
-            f"full_key = EXCLUDED.full_key, building_name_key = EXCLUDED.building_name_key;\n"  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
+            f"full_key = EXCLUDED.full_key, building_name_key = EXCLUDED.building_name_key;\n"
         )
 
 
@@ -432,10 +432,10 @@ def write_jibun_addresses(out, rows: list):
             for r in batch
         )
         out.write(
-            f"INSERT INTO nexus_address.jibun_addresses "
+            f"INSERT INTO nexus_address.jibun_addresses "  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
             f"(legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no, road_address) "
             f"VALUES {vals} "
-            f"ON CONFLICT (legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no) DO NOTHING;\n"  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
+            f"ON CONFLICT (legal_emd, jibun_san_yn, jibun_main_no, jibun_sub_no) DO NOTHING;\n"
         )
 
 
@@ -448,9 +448,9 @@ def write_admin_dong_map(out, mapping: dict):
             for admin, legal in batch
         )
         out.write(
-            f"INSERT INTO nexus_address.admin_dong_map (admin_emd, legal_emd) "
+            f"INSERT INTO nexus_address.admin_dong_map (admin_emd, legal_emd) "  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
             f"VALUES {vals} "
-            f"ON CONFLICT (admin_emd) DO UPDATE SET legal_emd = EXCLUDED.legal_emd;\n"  # noqa: S608 — esc() 로 이스케이프한 값만 넣는 SQL 파일 생성기
+            f"ON CONFLICT (admin_emd) DO UPDATE SET legal_emd = EXCLUDED.legal_emd;\n"
         )
 
 
