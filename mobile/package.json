@@ -45,5 +45,8 @@
     "@types/react": "~18.3.12",
     "babel-plugin-module-resolver": "^5.0.2",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }
