@@ -255,12 +255,17 @@ def _nearest_neighbor(
         current_progress = _progress_value(start_order, start["lat"], start["lng"])
 
     while remaining:
-        def _candidate_score(order: dict) -> float:
-            distance = _distance_from_point(current_point, order)
+        # 반복마다 바뀌는 현재 위치·진행도를 기본값 인자로 묶는다
+        def _candidate_score(
+            order: dict,
+            point: dict = current_point,
+            point_progress: float = current_progress,
+        ) -> float:
+            distance = _distance_from_point(point, order)
             if not directional:
                 return distance
             progress = _progress_value(order, start["lat"], start["lng"])
-            backtrack = max(0.0, current_progress - progress)
+            backtrack = max(0.0, point_progress - progress)
             return distance + (backtrack * BACKTRACK_PENALTY_WEIGHT)
 
         nxt = min(remaining, key=_candidate_score)
