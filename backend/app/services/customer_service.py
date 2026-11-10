@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import decrypt_field, encrypt_field, hash_phone, hash_phone_legacy
 from app.models.order import Order, OrderStatus
 from app.models.user import User, UserRole
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_phone(phone: str) -> str:
@@ -102,7 +105,7 @@ def _decrypt_customer(c: User, order_count: int = 0, last_order_at: datetime | N
         try:
             birth_year = int(decrypt_field(c.birth_year_enc))
         except Exception:
-            pass
+            logger.debug("출생연도 복호화 실패 — 빈 값으로 처리", exc_info=True)
 
     age = _calc_age(birth_year)
     return {

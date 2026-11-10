@@ -47,7 +47,7 @@ def upgrade() -> None:
         VALUES
             {values}
         ON CONFLICT (zone_name) DO NOTHING
-        """
+        """  # noqa: S608 — values 는 모듈 상수 NEW_ZONES 에서만 만든다(외부 입력 없음)
     )
     # 기존 4개 동 priority를 배차 코드 동선(경안→탄벌→송정→쌍령)에 맞춰 보정.
     # (초기 시드는 경안1·송정2·쌍령3·탄벌4였으나 dispatch/route 동선과 불일치)
@@ -76,4 +76,4 @@ def downgrade() -> None:
         """
     )
     names = ", ".join(f"'{z}'" for z, _, _ in NEW_ZONES)
-    op.execute(f"DELETE FROM delivery_zones WHERE zone_name IN ({names})")
+    op.execute(f"DELETE FROM delivery_zones WHERE zone_name IN ({names})")  # noqa: S608 — 모듈 상수에서만 만든 이름

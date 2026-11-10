@@ -12,6 +12,7 @@
 """
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -24,6 +25,8 @@ from sqlalchemy import bindparam, text
 from app.core.database import AsyncSessionLocal
 from app.services.address_resolver import SERVICE_DONGS
 from app.services.route_service import get_kakao_coordinates
+
+logger = logging.getLogger(__name__)
 
 
 async def fetch_pending(db, dongs):
@@ -73,7 +76,8 @@ async def main() -> int:
                 if k:
                     return k.get("lat"), k.get("lng")
             except Exception:
-                pass
+                # 실패 건은 아래에서 (None, None) → coord_source='failed' 로 기록된다
+                logger.debug("지오코딩 실패: %s", road, exc_info=True)
             return None, None
 
     done = ok = fail = 0
