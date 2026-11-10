@@ -1733,8 +1733,8 @@ async def upload_delivery_photo(
 
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{raw_ext}"
@@ -1814,8 +1814,8 @@ async def upload_extra_photo(
         raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{raw_ext}"
@@ -1846,16 +1846,16 @@ async def upload_delivery_signature(
         raw = raw.split(",", 1)[1]
     try:
         content = base64.b64decode(raw, validate=True)
-    except Exception:
-        raise HTTPException(status_code=400, detail="서명 이미지 형식이 올바르지 않습니다.")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="서명 이미지 형식이 올바르지 않습니다.") from exc
     if not content:
         raise HTTPException(status_code=400, detail="서명 데이터가 비어 있습니다.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="서명 파일 크기는 5MB를 초과할 수 없습니다.")
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.png"
