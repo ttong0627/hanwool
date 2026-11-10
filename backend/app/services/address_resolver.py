@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.address_resolution_log import AddressResolutionLog
 from app.services.route_service import get_kakao_coordinates
+
+logger = logging.getLogger(__name__)
 
 SERVICE_DONGS = {
     "경안동", "송정동", "쌍령동", "탄벌동",
@@ -615,7 +618,8 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
         try:
             await _apply_kakao_coordinates(result)
         except Exception:
-            pass  # 좌표 실패해도 주문 저장 계속
+            # 좌표 실패해도 주문 저장 계속
+            logger.debug("카카오 좌표 적용 실패", exc_info=True)
         # Kakao가 legal_emd를 새로 채웠으면 배송동/행정동 재계산 (Kakao는 좌표 이후 실행되므로)
         if result.legal_emd and not result.service_dong:
             result.admin_emd = result.admin_emd or await _admin_emd_for_legal(result.legal_emd, db)
@@ -630,7 +634,8 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
     try:
         await _save_cache(result, db)
     except Exception:
-        pass  # 캐시 저장 실패해도 주문 저장 계속
+        # 캐시 저장 실패해도 주문 저장 계속
+        logger.debug("주소 캐시 저장 실패", exc_info=True)
     return result
 
 

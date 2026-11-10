@@ -1195,7 +1195,7 @@ async def confirm_order_address(
                 lat = kakao.get("lat")
                 lng = kakao.get("lng")
         except Exception:
-            pass
+            logger.debug("카카오 좌표 보정 실패 — 기존 좌표 유지", exc_info=True)
     if lat is None or lng is None:
         raise HTTPException(
             status_code=400,
@@ -1986,7 +1986,7 @@ async def _geocode_orders_background(order_ids: list[int]) -> None:
                 apply_resolution_to_order(order, resolution, fallback_dong=order.dong)
                 await log_address_resolution(db, resolution, order_id=order.id)
             except Exception:
-                pass
+                logger.debug("주소 판정 적용 실패 — 주문 저장은 계속", exc_info=True)
         try:
             await db.commit()
         except Exception:

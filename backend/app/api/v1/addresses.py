@@ -17,6 +17,7 @@
 - road_code  : 12자리 행정구역 코드          ex) 416104433419
 - building_main_no / building_sub_no : 건물번호 정수
 """
+import logging
 import re
 from typing import Optional
 
@@ -30,6 +31,8 @@ from app.api.v1.deps import get_current_user, require_receiver_or_above
 from app.core.config import settings
 from app.core.database import get_db
 from app.services.address_resolver import SERVICE_DONGS, resolve_address
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/addresses", tags=["주소"])
 
@@ -144,7 +147,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
             for r in rows.all():
                 add(_make_result(r[0], r[1], r[2]))
         except Exception:
-            pass
+            logger.debug("주소 검색 1a(buildings 도로명 JOIN) 실패 — 다음 전략으로", exc_info=True)
 
     if len(results) >= limit:
         return results[:limit]
@@ -176,7 +179,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
             for r in rows.all():
                 add(_make_result(r[0], r[1], r[2]))
         except Exception:
-            pass
+            logger.debug("주소 검색 1b(addresses 도로명 JOIN) 실패 — 다음 전략으로", exc_info=True)
 
     if len(results) >= limit:
         return results[:limit]
@@ -200,7 +203,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
         for r in rows.all():
             add(_make_result(r[0], r[1], r[2]))
     except Exception:
-        pass
+        logger.debug("주소 검색 2(full_key 트라이그램) 실패 — 다음 전략으로", exc_info=True)
 
     if len(results) >= limit:
         return results[:limit]
@@ -221,7 +224,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
         for r in rows.all():
             add(_make_result(r[0], r[1], r[2]))
     except Exception:
-        pass
+        logger.debug("주소 검색 3(건물명 키) 실패 — 다음 전략으로", exc_info=True)
 
     if len(results) >= limit:
         return results[:limit]
@@ -253,7 +256,7 @@ async def _search_local(query: str, db: AsyncSession, limit: int) -> list[dict]:
                 road  = road_addr or ""
                 add(_make_result(road or jibun, emd, None, jibun if road else None))
         except Exception:
-            pass
+            logger.debug("주소 검색 4(지번 패턴) 실패 — 현재까지 결과 반환", exc_info=True)
 
     return results[:limit]
 
@@ -296,7 +299,7 @@ async def _search_cache(query: str, db: AsyncSession, limit: int) -> list[dict]:
                     "lng":           lng,
                 })
     except Exception:
-        pass
+        logger.debug("address_cache 검색 실패 — 빈 결과로 처리", exc_info=True)
     return results
 
 
@@ -339,7 +342,7 @@ async def _save_to_cache(results: list[dict], db: AsyncSession) -> None:
                 },
             )
         except Exception:
-            pass
+            logger.debug("address_cache 저장 실패 — 해당 건 건너뜀", exc_info=True)
 
 
 async def _search_kakao(query: str, limit: int) -> list[dict]:
@@ -386,7 +389,7 @@ async def _search_kakao(query: str, limit: int) -> list[dict]:
                 if results:
                     break
             except Exception:
-                pass
+                logger.debug("Kakao 주소 검색 실패 — 다음 질의로", exc_info=True)
 
         if not results:
             try:
@@ -418,7 +421,7 @@ async def _search_kakao(query: str, limit: int) -> list[dict]:
                             "lng":           float(d["x"]) if d.get("x") else None,
                         })
             except Exception:
-                pass
+                logger.debug("Kakao 키워드 검색 실패 — 현재까지 결과 반환", exc_info=True)
 
     return results[:limit]
 
