@@ -3,6 +3,7 @@
 - 방향 동선: 경안시장 출발 → 좌우 스윕(부스트로피돈) → 성남 방향 종료
 - Kakao Geocoding / Mobility API 연동
 """
+import logging
 import math
 import re
 from typing import Optional
@@ -10,6 +11,8 @@ from typing import Optional
 import httpx
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # 경안시장 (배송 출발점) — 경기도 광주시 경안동 33-16 (Nominatim 검증 좌표)
 MARKET_LOCATION = {"lat": 37.4090, "lng": 127.2574}
@@ -252,12 +255,17 @@ def _nearest_neighbor(
         current_progress = _progress_value(start_order, start["lat"], start["lng"])
 
     while remaining:
-        def _candidate_score(order: dict) -> float:
-            distance = _distance_from_point(current_point, order)
+        # 반복마다 바뀌는 현재 위치·진행도를 기본값 인자로 묶는다
+        def _candidate_score(
+            order: dict,
+            point: dict = current_point,
+            point_progress: float = current_progress,
+        ) -> float:
+            distance = _distance_from_point(point, order)
             if not directional:
                 return distance
             progress = _progress_value(order, start["lat"], start["lng"])
-            backtrack = max(0.0, current_progress - progress)
+            backtrack = max(0.0, point_progress - progress)
             return distance + (backtrack * BACKTRACK_PENALTY_WEIGHT)
 
         nxt = min(remaining, key=_candidate_score)
@@ -629,7 +637,7 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                             "match_type": "address",
                         }
             except Exception:
-                pass
+                logger.debug("카카오 지오코딩(주소) 실패 — 다음 방법으로", exc_info=True)
 
         # ── 전략 2: 키워드 검색 fallback (도로명 약식 주소 대응) ────────────
         for query in [f"경기도 광주시 {address}", address]:
@@ -661,7 +669,7 @@ async def get_kakao_coordinates(address: str) -> Optional[dict]:
                             "match_type": "keyword",
                         }
             except Exception:
-                pass
+                logger.debug("카카오 지오코딩(키워드) 실패 — 결과 없음 처리", exc_info=True)
 
     return None
 
@@ -689,5 +697,5 @@ async def get_kakao_route_distance(
                 if routes and routes[0].get("result_code") == 0:
                     return routes[0]["summary"]["distance"]
     except Exception:
-        pass
+        logger.debug("카카오 경로 거리 조회 실패 — None 반환", exc_info=True)
     return None

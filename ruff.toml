@@ -1,0 +1,13 @@
+# FastAPI 의존성 주입은 인자 기본값에 Depends/Query 등을 쓰는 것이 표준 방식이라 B008 에서 제외한다
+[lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]

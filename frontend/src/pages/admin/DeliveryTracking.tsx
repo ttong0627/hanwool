@@ -111,6 +111,7 @@ function makePinEl(
   el.setAttribute('role', 'button')
   el.setAttribute('tabindex', '0')
   el.setAttribute('aria-label', `${seq}번 ${label}`)
+  // audit-ok: 사용자 입력인 label·seq 는 escapeHtml 로 거르고, 나머지 보간값(색·크기)은 코드 안 고정 팔레트·숫자뿐
   el.innerHTML = `
     <div style="margin-bottom:5px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;background:${labelBg};color:#fff;font-size:10px;font-weight:700;border-radius:5px;box-shadow:0 2px 6px rgba(0,0,0,.28);">${prefix}${escapeHtml(label)}</div>
     <div style="display:flex;align-items:center;justify-content:center;width:${sz}px;height:${sz}px;border-radius:50%;background:${pinBg};border:${border}px solid #fff;box-shadow:${glow}${outline};">

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.address_resolution_log import AddressResolutionLog
 from app.services.route_service import get_kakao_coordinates
+
+logger = logging.getLogger(__name__)
 
 SERVICE_DONGS = {
     "경안동", "송정동", "쌍령동", "탄벌동",
@@ -393,6 +396,26 @@ async def _resolve_from_cache(address: str, db: AsyncSession) -> Optional[Addres
     )
 
 
+_CACHE_SELECT_BY_ROAD = (
+    "SELECT lat, lng, source FROM address_cache "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND road_address = :road "
+    "ORDER BY hit_count DESC, id DESC LIMIT 1"
+)
+_CACHE_SELECT_BY_KEY = (
+    "SELECT lat, lng, source FROM address_cache "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND normalized_query = :key "
+    "ORDER BY hit_count DESC, id DESC LIMIT 1"
+)
+_CACHE_HIT_BY_ROAD = (
+    "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND road_address = :road"
+)
+_CACHE_HIT_BY_KEY = (
+    "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+    "WHERE lat IS NOT NULL AND lng IS NOT NULL AND normalized_query = :key"
+)
+
+
 async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Optional[tuple]:
     """이미 좌표가 저장된 동일 주소가 address_cache에 있으면 (lat, lng, source) 반환.
     buildings(행안부) 매칭은 좌표가 없으므로, 한 번 구한 좌표는 이 캐시로 재사용해 API 호출을 막는다."""
@@ -400,28 +423,14 @@ async def _coords_from_cache(result: AddressResolution, db: AsyncSession) -> Opt
     key = normalize_address_key(result.raw_address or "")
     # 표준주소가 있으면 그 주소의 좌표만 재사용한다.
     # 원문 키(normalized_query)로 찾으면 과거 잘못 저장된 다른 번지의 좌표가 딸려온다.
-    cond = "road_address = :road" if road else "normalized_query = :key"
+    # 조건 컬럼별로 고정 SQL 을 따로 두고 값만 바인딩한다(문자열 조립 없음).
     params = {"road": road} if road else {"key": key}
-    row = (
-        await db.execute(
-            text(
-                "SELECT lat, lng, source FROM address_cache "
-                "WHERE lat IS NOT NULL AND lng IS NOT NULL "
-                f"  AND {cond} "
-                "ORDER BY hit_count DESC, id DESC LIMIT 1"
-            ),
-            params,
-        )
-    ).first()
+    select_sql = _CACHE_SELECT_BY_ROAD if road else _CACHE_SELECT_BY_KEY
+    update_sql = _CACHE_HIT_BY_ROAD if road else _CACHE_HIT_BY_KEY
+    row = (await db.execute(text(select_sql), params)).first()
     if not row:
         return None
-    await db.execute(
-        text(
-            "UPDATE address_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
-            f"WHERE lat IS NOT NULL AND lng IS NOT NULL AND {cond}"
-        ),
-        params,
-    )
+    await db.execute(text(update_sql), params)
     return (row.lat, row.lng, row.source or "cache")
 
 
@@ -615,7 +624,8 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
         try:
             await _apply_kakao_coordinates(result)
         except Exception:
-            pass  # 좌표 실패해도 주문 저장 계속
+            # 좌표 실패해도 주문 저장 계속
+            logger.debug("카카오 좌표 적용 실패", exc_info=True)
         # Kakao가 legal_emd를 새로 채웠으면 배송동/행정동 재계산 (Kakao는 좌표 이후 실행되므로)
         if result.legal_emd and not result.service_dong:
             result.admin_emd = result.admin_emd or await _admin_emd_for_legal(result.legal_emd, db)
@@ -630,7 +640,8 @@ async def resolve_address(address: str, db: AsyncSession, *, use_kakao: bool = T
     try:
         await _save_cache(result, db)
     except Exception:
-        pass  # 캐시 저장 실패해도 주문 저장 계속
+        # 캐시 저장 실패해도 주문 저장 계속
+        logger.debug("주소 캐시 저장 실패", exc_info=True)
     return result
 
 

@@ -53,7 +53,7 @@ function DriverModal({ driver, onClose }: { driver?: Driver; onClose: () => void
   })
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (): Promise<unknown> => {
       if (driver) {
         const payload: Partial<DriverForm> = { name: form.name.trim(), phone: form.phone.trim() }
         if (form.password.trim()) payload.password = form.password.trim()

@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from html import escape
 import io
+import logging
 import os
 from typing import List
 from zoneinfo import ZoneInfo
@@ -14,6 +15,8 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+logger = logging.getLogger(__name__)
 
 _FONT_REGISTERED = False
 
@@ -163,6 +166,7 @@ def _photo_flowables(order: dict):
             out.append(img)
             out.append(Spacer(1, 0.3 * cm))
         except Exception:
+            logger.warning("배송 사진 PDF 삽입 실패: %s", path, exc_info=True)
             continue
     return out
 

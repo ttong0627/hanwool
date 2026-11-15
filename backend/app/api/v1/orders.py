@@ -1195,7 +1195,7 @@ async def confirm_order_address(
                 lat = kakao.get("lat")
                 lng = kakao.get("lng")
         except Exception:
-            pass
+            logger.debug("카카오 좌표 보정 실패 — 기존 좌표 유지", exc_info=True)
     if lat is None or lng is None:
         raise HTTPException(
             status_code=400,
@@ -1733,8 +1733,8 @@ async def upload_delivery_photo(
 
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{raw_ext}"
@@ -1814,8 +1814,8 @@ async def upload_extra_photo(
         raise HTTPException(status_code=400, detail="파일 크기는 5MB를 초과할 수 없습니다.")
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지 파일입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{raw_ext}"
@@ -1846,16 +1846,16 @@ async def upload_delivery_signature(
         raw = raw.split(",", 1)[1]
     try:
         content = base64.b64decode(raw, validate=True)
-    except Exception:
-        raise HTTPException(status_code=400, detail="서명 이미지 형식이 올바르지 않습니다.")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="서명 이미지 형식이 올바르지 않습니다.") from exc
     if not content:
         raise HTTPException(status_code=400, detail="서명 데이터가 비어 있습니다.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="서명 파일 크기는 5MB를 초과할 수 없습니다.")
     try:
         Image.open(BytesIO(content)).verify()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지입니다.")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="손상되었거나 지원하지 않는 이미지입니다.") from exc
 
     os.makedirs(PHOTO_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.png"
@@ -1986,7 +1986,7 @@ async def _geocode_orders_background(order_ids: list[int]) -> None:
                 apply_resolution_to_order(order, resolution, fallback_dong=order.dong)
                 await log_address_resolution(db, resolution, order_id=order.id)
             except Exception:
-                pass
+                logger.debug("주소 판정 적용 실패 — 주문 저장은 계속", exc_info=True)
         try:
             await db.commit()
         except Exception:
