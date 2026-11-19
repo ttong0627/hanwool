@@ -17,7 +17,7 @@ usermod -aG docker $USER
 
 echo "=== 프로젝트 클론 ==="
 cd /opt
-git clone https://github.com/ttong0627/hanwool.git
+git clone https://github.com/ttong627/hanwool.git
 cd hanwool
 
 echo "=== .env 생성 ==="
